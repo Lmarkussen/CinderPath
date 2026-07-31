@@ -10,7 +10,7 @@ This release provides the original mock pipeline plus a first **explicit, safe, 
 
 `discover` defaults to `--provider mock`. CinderPath never silently changes to live mode or contacts network systems without `--provider live`.
 
-The `safe` profile is the default and the only functionally meaningful profile. `standard` and `aggressive` reserve names for future policy definitions; in this release they still execute only safe mock modules.
+The `safe` profile is the default and the only functionally meaningful profile. `standard` and `aggressive` reserve names for future policy definitions; in this release they still execute only safe modules.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ Cobra CLI
    ├── configuration (flags > CINDERPATH_* environment > YAML > defaults)
    ├── application services (run lifecycle and context timeouts)
    │      │
-   │      ├── module orchestrator ── mock discovery/assessment/correlation
+   │      ├── module orchestrator ── mock pipeline + explicit safe live discovery
    │      └── report service ─────── portable JSON + HTML
    │
    └── SQLite store (versioned schema and deterministic upserts)
@@ -43,7 +43,10 @@ Key packages:
 | `internal/database` | SQLite schema, migrations, upserts, and queries |
 | `internal/modules` | Module contracts and safe orchestrator |
 | `internal/modules/mock` | Synthetic SCCM topology and findings |
+| `internal/discovery/live` | Explicit-scope DNS, TCP, HTTP/TLS, LDAP, and role-inference modules |
 | `internal/discovery`, `internal/assessment` | Module selection by workflow |
+| `internal/scope` | Target parsing, CIDR expansion, normalization, and exclusions |
+| `internal/progress` | Transport-neutral progress events and collectors |
 | `internal/capabilities` | Capability helpers |
 | `internal/report` | JSON model and self-contained HTML renderer |
 | `internal/logging`, `internal/version` | Structured logging and build metadata |
@@ -244,4 +247,4 @@ Future work may add protocol-aware but still read-only SCCM management/distribut
 * `standard` and `aggressive` do not enable additional behavior.
 * SQLite migration history currently contains only schema version 1.
 * Correlation uses an in-memory breadth-first traversal suitable for the small mock graph.
-* There is no TUI, live credential provider, evidence encryption, distributed execution, or real network collector.
+* There is no TUI, general credential-provider abstraction, evidence encryption, distributed execution, or SCCM protocol-aware endpoint validator.
