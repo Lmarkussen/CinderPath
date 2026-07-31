@@ -17,6 +17,8 @@ CinderPath is for authorized assessments and controlled labs. Preserve safe, rea
 - Do not add client registration, policy retrieval, secret extraction, credential attacks, NTLM relay, deployment modification, SQL writes, WMI execution, remote command execution, or other state-changing behavior without a separately authorized task and explicit safety design.
 - Generic TCP probing must remain connect-only. SMB, SQL, LDAP, and SCCM notification ports do not receive protocol actions unless an explicitly enabled safe module owns that protocol.
 - Keep all network operations bounded by context, concurrency, per-host timeouts, per-connection timeouts, response-size limits, and redirect limits.
+- SCCM HTTP validation is restricted to anonymous `GET /SMS_MP/.sms_aut?MPLIST` and `HEAD` requests to the four documented DP virtual-directory roots on already-profiled ports 80/443. Do not extend that allowlist without a separately reviewed safety task.
+- SCCM HTTP requests never carry bodies, authorization, cookies, client certificates, ambient credentials, proxy traffic, or state-changing/WebDAV/BITS methods. Only `live.sccm.http_routes` may generate this traffic; MP and DP classifiers consume persisted evidence.
 
 ## Architecture rules
 
@@ -74,4 +76,4 @@ Live smoke tests must use explicitly authorized targets; prefer loopback fixture
 
 ## Next task
 
-The exact recommended next implementation is protocol-aware, read-only SCCM endpoint validation. Scope and acceptance criteria are recorded in [`docs/STATUS.md`](docs/STATUS.md#exact-recommended-next-task).
+The exact recommended next implementation is read-only SCCM endpoint version and topology correlation from existing LDAP, certificate, DNS, and validated-route evidence. Policy retrieval, content-location requests, package access, authentication, registration, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).

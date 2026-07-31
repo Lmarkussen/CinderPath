@@ -62,6 +62,32 @@ type JSONReport struct {
 	ModuleExecutions []models.ModuleExecution `json:"module_executions"`
 	Evidence         []models.Evidence        `json:"evidence"`
 	Discovery        DiscoverySummary         `json:"discovery"`
+	SCCMEndpoints    []SCCMEndpointValidation `json:"sccm_endpoint_validation"`
+}
+
+type SCCMEndpointValidation struct {
+	AssetID                 string   `json:"asset_id"`
+	Host                    string   `json:"host"`
+	Origin                  string   `json:"origin"`
+	Route                   string   `json:"route"`
+	Method                  string   `json:"method"`
+	StatusCode              int      `json:"status_code,omitempty"`
+	AuthenticationSchemes   []string `json:"authentication_schemes"`
+	ParserResult            string   `json:"parser_result"`
+	Classification          string   `json:"classification"`
+	Confidence              string   `json:"confidence"`
+	SupportingEvidence      []string `json:"supporting_evidence"`
+	WhatRemainsUnverified   string   `json:"what_remains_unverified"`
+	TransportReachable      bool     `json:"transport_reachable"`
+	HTTPResponseReceived    bool     `json:"http_response_received"`
+	AnonymousRequest        bool     `json:"anonymous_request"`
+	AuthenticationRequested bool     `json:"authentication_requested"`
+	AuthenticationAttempted bool     `json:"authentication_attempted"`
+	Authenticated           bool     `json:"authenticated"`
+	UsableReadAccess        bool     `json:"usable_read_access"`
+	ProtocolValidated       bool     `json:"protocol_validated"`
+	InferredRole            string   `json:"inferred_role"`
+	ConfirmedConclusion     bool     `json:"confirmed_conclusion"`
 }
 type Paths struct {
 	JSON string
@@ -125,7 +151,12 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 	for _, f := range findings {
 		summary.FindingsBySeverity[f.Severity]++
 	}
-	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence)}
+	endpoints := buildSCCMEndpointValidations(evidence)
+	for _, endpoint := range endpoints {
+		confirmed = confirmed || endpoint.ConfirmedConclusion
+		inferred = inferred || endpoint.InferredRole != ""
+	}
+	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints)}
 	jp := filepath.Join(outputDir, "cinderpath-report.json")
 	hp := filepath.Join(outputDir, "cinderpath-report.html")
 	b, err := json.MarshalIndent(r, "", "  ")
@@ -145,6 +176,89 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 		return Paths{}, fmt.Errorf("render HTML report: %w", err)
 	}
 	return Paths{JSON: jp, HTML: hp}, nil
+}
+
+func buildSCCMEndpointValidations(evidence []models.Evidence) []SCCMEndpointValidation {
+	classifications := map[string]models.Evidence{}
+	for _, item := range evidence {
+		switch item.Type {
+		case "sccm_mp_protocol":
+			for _, evidenceID := range anyStrings(item.Data["supporting_evidence"]) {
+				classifications[evidenceID] = item
+			}
+		case "sccm_dp_virtual_directory":
+			for _, evidenceID := range anyStrings(item.Data["supporting_evidence"]) {
+				classifications[evidenceID] = item
+			}
+		}
+	}
+	var out []SCCMEndpointValidation
+	for _, item := range evidence {
+		if item.Type != "sccm_http_route" {
+			continue
+		}
+		routeID := fmt.Sprint(item.Data["route_id"])
+		origin := fmt.Sprint(item.Data["origin"])
+		state, _ := item.Data["access_state"].(map[string]any)
+		validation := SCCMEndpointValidation{
+			AssetID: item.AssetID, Host: fmt.Sprint(item.Data["host"]), Origin: origin, Route: fmt.Sprint(item.Data["path"]), Method: fmt.Sprint(item.Data["method"]),
+			StatusCode: reportInt(item.Data["status_code"]), AuthenticationSchemes: anyStrings(item.Data["authentication_schemes"]), ParserResult: fmt.Sprint(item.Data["parser_outcome"]),
+			Classification: "unverified", Confidence: "unverified", SupportingEvidence: []string{item.ID}, WhatRemainsUnverified: fmt.Sprint(item.Data["unverified_reason"]),
+			TransportReachable: reportBool(state["transport_reachable"]), HTTPResponseReceived: reportBool(state["http_response_received"]), AnonymousRequest: reportBool(state["anonymous_request"]),
+			AuthenticationRequested: reportBool(state["authentication_requested"]), AuthenticationAttempted: reportBool(state["authentication_attempted"]), Authenticated: reportBool(state["authenticated"]),
+			UsableReadAccess: reportBool(state["usable_read_access"]), ProtocolValidated: reportBool(state["protocol_validated"]),
+		}
+		if classified, ok := classifications[item.ID]; ok {
+			validation.Classification = fmt.Sprint(classified.Data["classification"])
+			validation.Confidence = fmt.Sprint(classified.Data["confidence"])
+			validation.SupportingEvidence = append(validation.SupportingEvidence, classified.ID)
+			validation.SupportingEvidence = append(validation.SupportingEvidence, anyStrings(classified.Data["supporting_evidence"])...)
+			validation.WhatRemainsUnverified = fmt.Sprint(classified.Data["what_remains_unverified"])
+		}
+		if routeID == "mp_list" && (validation.Classification == "protocol_validated_management_point" || validation.Classification == "likely_management_point_authentication_required") {
+			validation.InferredRole = "management_point"
+		}
+		if strings.HasPrefix(routeID, "dp_") && validation.Classification == "likely_distribution_point" {
+			validation.InferredRole = "distribution_point"
+		}
+		validation.ConfirmedConclusion = validation.ProtocolValidated && validation.Classification == "protocol_validated_management_point"
+		validation.SupportingEvidence = uniqueSorted(validation.SupportingEvidence)
+		out = append(out, validation)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].AssetID != out[j].AssetID {
+			return out[i].AssetID < out[j].AssetID
+		}
+		if out[i].Origin != out[j].Origin {
+			return out[i].Origin < out[j].Origin
+		}
+		return out[i].Route < out[j].Route
+	})
+	return out
+}
+
+func reportBool(value any) bool {
+	valueText := strings.TrimSpace(fmt.Sprint(value))
+	return strings.EqualFold(valueText, "true")
+}
+
+func reportInt(value any) int {
+	var out int
+	_, _ = fmt.Sscan(fmt.Sprint(value), &out)
+	return out
+}
+
+func uniqueSorted(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func buildDiscoverySummary(assets []models.Asset, evidence []models.Evidence) DiscoverySummary {
@@ -258,6 +372,7 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{"
 <section><h2>Discovery summary</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.Discovery.InputScope}}</div>Scoped targets</div><div class="card"><div class="metric">{{.Report.Discovery.DNSResolved}}</div>DNS resolved</div><div class="card"><div class="metric">{{.Report.Discovery.ReachableSystems}}</div>Reachable systems</div><div class="card"><div class="metric">{{.Report.Discovery.OpenServicePorts}}</div>Open ports</div><div class="card"><div class="metric">{{.Report.Discovery.HTTPEndpoints}}</div>HTTP endpoints</div><div class="card"><div class="metric">{{.Report.Discovery.SCCMDirectoryObjects}}</div>SCCM directory objects</div></div><details><summary>Scope and exclusions</summary><p><strong>Scope:</strong> {{range .Report.Discovery.InputScope}}<code>{{.}} </code>{{end}}</p><p><strong>Excluded:</strong> {{range .Report.Discovery.Exclusions}}<code>{{.}} </code>{{end}}</p></details><h3>Inferred roles</h3><table><tr><th>Role</th><th>Count</th></tr>{{range $role,$count := .Report.Discovery.InferredRoles}}<tr><td>{{$role}}</td><td>{{$count}}</td></tr>{{end}}</table></section>
 <section><h2>Assets and topology</h2><div class="grid">{{range .SortedAssetKinds}}<div class="card"><strong>{{.}}</strong><div class="metric">{{index $.Report.Summary.AssetsByType .}}</div></div>{{end}}</div><table><tr><th>From</th><th>Relationship</th><th>To</th><th>Confidence</th></tr>{{range .Report.Relationships}}<tr><td><code>{{.FromID}}</code></td><td>{{.Type}}</td><td><code>{{.ToID}}</code></td><td>{{.Confidence}}</td></tr>{{end}}</table></section>
 <section><h2>Capabilities</h2><table><tr><th>Name</th><th>Available</th><th>Reason</th><th>Source</th></tr>{{range .Report.Capabilities}}<tr><td>{{.Name}}</td><td>{{.Available}}</td><td>{{.Reason}}</td><td>{{.Source}}</td></tr>{{end}}</table></section>
+<section><h2>SCCM endpoint validation</h2><p class="muted">All requests were anonymous and read-only. Authentication requested is distinct from authentication attempted or authenticated. Distribution-point HEAD responses never establish usable content access.</p><table><tr><th>Host / origin</th><th>Route</th><th>Status</th><th>Access state</th><th>Parser / classification</th><th>Conclusion</th></tr>{{range .Report.SCCMEndpoints}}<tr><td><code>{{.Host}}</code><br>{{.Origin}}</td><td><code>{{.Method}} {{.Route}}</code><br>Auth schemes: {{range .AuthenticationSchemes}}<code>{{.}} </code>{{else}}none{{end}}</td><td>{{.StatusCode}}</td><td>Transport reachable: {{.TransportReachable}}<br>HTTP response: {{.HTTPResponseReceived}}<br>Anonymous request: {{.AnonymousRequest}}<br>Authentication required: {{.AuthenticationRequested}}<br>Authentication attempted: {{.AuthenticationAttempted}}<br>Authenticated: {{.Authenticated}}<br>Usable read access: {{.UsableReadAccess}}<br>Protocol validated: {{.ProtocolValidated}}</td><td>Parser: {{.ParserResult}}<br>Classification: {{.Classification}}<br>Confidence: {{.Confidence}}<br>Role: {{if .InferredRole}}{{.InferredRole}}{{else}}none{{end}}</td><td>{{if .ConfirmedConclusion}}validated protocol conclusion{{else}}unconfirmed{{end}}<br><span class="muted">{{.WhatRemainsUnverified}}</span><br>Evidence: {{range .SupportingEvidence}}<code>{{.}} </code>{{end}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No SCCM endpoint-validation observations are stored.</td></tr>{{end}}</table></section>
 <section><h2>Findings by severity</h2>{{range .SeverityOrder}}{{$items := $.FindingsFor .}}{{if $items}}<h3 class="sev-{{.}}">{{upper (printf "%s" .)}} ({{len $items}})</h3>{{range $items}}<article class="card"><strong>{{.Title}}</strong><p>{{.Summary}}</p><p class="muted">Confidence: {{.Confidence}} · Rule: {{.RuleID}} · Evidence: {{range .EvidenceIDs}}<code>{{.}} </code>{{end}}</p><details><summary>Details and remediation</summary><p>{{.Description}}</p><p><strong>Remediation:</strong> {{.Remediation}}</p></details></article>{{end}}{{end}}{{end}}</section>
 <section><h2>Attack paths</h2>{{range .Report.AttackPaths}}<article class="card"><h3>{{.Title}}</h3><p>{{.Summary}}</p><p class="sev-{{.Severity}}">Severity: {{.Severity}} · Confidence: {{.Confidence}}</p><ol>{{range .Steps}}<li><code>{{.FromID}}</code> — <strong>{{.RelationshipType}}</strong> → <code>{{.ToID}}</code><br><span class="muted">{{.Description}}</span></li>{{end}}</ol></article>{{else}}<p class="muted">No attack paths were generated.</p>{{end}}</section>
 <section><h2>Evidence references</h2><p class="muted">Evidence data is bounded to 1,000 characters per record in this portable report.</p>{{range .Evidence}}<details><summary><code>{{.ID}}</code> — {{.Title}}</summary><p>{{.Summary}}</p><code>{{.Data}}</code></details>{{end}}</section>

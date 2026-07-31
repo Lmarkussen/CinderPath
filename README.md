@@ -6,7 +6,7 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 ## Current status
 
-This release provides the original mock pipeline plus a first **explicit, safe, read-only live discovery provider**. Live mode only normalizes user scope, performs DNS queries, attempts bounded TCP connections, collects bounded HTTP/TLS metadata, and—only when explicitly enabled—performs bounded LDAP RootDSE and SCCM directory searches. It does not register clients, retrieve policy, recover credentials, authenticate to SMB/SQL, enumerate shares, execute code, relay authentication, create deployments, or modify a target.
+This release provides the original mock pipeline plus an **explicit, safe, read-only live discovery provider**. Live mode normalizes user scope, performs DNS queries, attempts bounded TCP connections, collects bounded HTTP/TLS metadata, optionally performs bounded LDAP RootDSE and SCCM directory searches, and validates a fixed allowlist of SCCM management-point and distribution-point HTTP routes. It does not register clients, retrieve policy, recover credentials, request content locations, download packages, authenticate to SCCM/SMB/SQL, enumerate shares or DP content, execute code, relay authentication, create deployments, or modify a target.
 
 `discover` defaults to `--provider mock`. CinderPath never silently changes to live mode or contacts network systems without `--provider live`.
 
@@ -43,7 +43,7 @@ Key packages:
 | `internal/database` | SQLite schema, migrations, upserts, and queries |
 | `internal/modules` | Module contracts and safe orchestrator |
 | `internal/modules/mock` | Synthetic SCCM topology and findings |
-| `internal/discovery/live` | Explicit-scope DNS, TCP, HTTP/TLS, LDAP, and role-inference modules |
+| `internal/discovery/live` | Explicit-scope DNS, TCP, HTTP/TLS, LDAP, SCCM route validation, and role-inference modules |
 | `internal/discovery`, `internal/assessment` | Module selection by workflow |
 | `internal/scope` | Target parsing, CIDR expansion, normalization, and exclusions |
 | `internal/progress` | Transport-neutral progress events and collectors |
@@ -145,7 +145,49 @@ sccm01.lab.local
 3. **Reachability:** uses bounded TCP connect attempts with global concurrency, per-host timeouts, and per-connection timeouts. Closed ports are summarized once per host. SMB, LDAP, SQL, and TCP 10123 receive no protocol messages in this stage.
 4. **HTTP/TLS:** performs bounded `HEAD /` and `GET /` requests only on open web ports. Bodies, redirects, and request duration are capped. Certificate verification is evaluated and recorded; self-signed certificates remain collectable without being treated as vulnerabilities.
 5. **Optional LDAP:** validates only the explicitly selected bind, reads a fixed RootDSE attribute list, and performs paged, size-limited searches for SCCM-related service connection points and objects.
-6. **Role inference:** combines LDAP references, open ports, HTTP metadata, hostname patterns, and user hints. Hostname-only conclusions remain low confidence. An open SQL or WSUS port supports a possibility but does not prove SCCM database or software-update roles.
+6. **SCCM HTTP route validation:** only already-profiled HTTP/HTTPS origins on ports 80/443 receive the fixed anonymous allowlist below. The route collector performs the network requests; separate MP and DP modules classify stored evidence without more traffic.
+7. **Role inference:** combines protocol validation, LDAP references, SCCM route correlation, user hints, generic HTTP metadata, ports, and hostname patterns in that precedence order. Hostname-only conclusions remain low confidence.
+
+### Read-only SCCM HTTP validation
+
+The live pipeline includes:
+
+```text
+live.sccm.http_routes
+live.sccm.management_point
+live.sccm.distribution_point
+```
+
+They run after optional LDAP discovery and before `live.roles.infer`. If no successful root HTTP profile exists on a scoped port 80/443 origin, all three record an applicability skip. Only `live.sccm.http_routes` sends requests. Per origin the exact allowlist is:
+
+```text
+GET  /SMS_MP/.sms_aut?MPLIST
+HEAD /SMS_DP_SMSPKG$/
+HEAD /SMS_DP_SMSSIG$/
+HEAD /NOCERT_SMS_DP_SMSPKG$/
+HEAD /NOCERT_SMS_DP_SMSSIG$/
+```
+
+The collector makes at most five initial route probes per origin, uses at most HTTP and HTTPS per host, has no retries, probes routes sequentially per host, and reuses bounded host concurrency and timeouts. Its dedicated transport disables environment proxies, cookies, client certificates, and keep-alive reuse. Requests never contain bodies, authorization, ambient Windows credentials, NTLM/Negotiate authentication attempts, or state-changing, WebDAV, BITS, SCCM messaging, package, policy, content-location, or arbitrary-directory operations.
+
+Redirects are limited to the lower of the configured limit and two and must preserve scheme, hostname, and port and remain in explicit scope. Cross-host, cross-port, cross-scheme, and out-of-scope redirects are rejected; redirect destinations never expand scope.
+
+Every route independently records:
+
+```text
+transport_reachable
+http_response_received
+anonymous_request
+authentication_requested
+authentication_attempted
+authenticated
+usable_read_access
+protocol_validated
+```
+
+This phase always records an anonymous request with `authentication_attempted=false` and `authenticated=false`. `401` means authentication was requested; `403` means access was denied. Neither status proves authentication. Usable MP read access and protocol validation require a bounded successful parse of a meaningful SCCM MP-list XML structure. Generic HTML, generic/malformed XML, empty or oversized responses, route existence, and generic `200/401/403` responses do not validate an MP. MP-list host references and site codes are normalized as evidence only and are never contacted or added to scope.
+
+An exact DP virtual-directory root returning a distinct `2xx` response is strong, high-confidence route evidence, not absolute confirmation. `401/403` requires a second distinct non-catch-all DP route or independent SCCM LDAP/protocol evidence. Responses matching the existing root status/authentication profile are treated as generic IIS catch-all behavior. `404`, `405`, `5xx`, timeout, and rejected redirect results remain inconclusive. DP probes never read bodies or request package IDs, signature files, directory listings, CAB/MSI files, manifests, payloads, or content below the four virtual-directory roots.
 
 ### LDAP and secret handling
 
@@ -236,7 +278,7 @@ go build -ldflags "-X github.com/Lmarkussen/CinderPath/internal/version.Version=
 
 ## Planned capabilities
 
-Future work may add protocol-aware but still read-only SCCM management/distribution point validation, richer DNS discovery, authenticated LDAP mechanisms beyond simple reference binds, evidence encryption, machine-readable schemas, and more general graph correlation. Active or intrusive SCCM operations require separate design, authorization controls, availability safeguards, and tests; they remain intentionally absent.
+Future work may add read-only version/topology correlation from already collected route, LDAP, DNS, and certificate evidence, richer DNS discovery, authenticated LDAP mechanisms beyond simple reference binds, evidence encryption, machine-readable schemas, and more general graph correlation. Active or intrusive SCCM operations require separate design, authorization controls, availability safeguards, and tests; they remain intentionally absent.
 
 ## Known limitations
 
@@ -247,4 +289,7 @@ Future work may add protocol-aware but still read-only SCCM management/distribut
 * `standard` and `aggressive` do not enable additional behavior.
 * SQLite migration history currently contains only schema version 1.
 * Correlation uses an in-memory breadth-first traversal suitable for the small mock graph.
-* There is no TUI, general credential-provider abstraction, evidence encryption, distributed execution, or SCCM protocol-aware endpoint validator.
+* SCCM HTTP validation is limited to standard ports 80/443 and the five exact routes above; custom ports, CMG paths, policy endpoints, package/content paths, and authenticated behavior are not tested.
+* A DP conclusion remains a high- or medium-confidence inference because this phase uses only virtual-directory-root `HEAD` responses.
+* MP-list parsing is intentionally conservative and may reject undocumented or vendor-modified response structures.
+* There is no TUI, general credential-provider abstraction, evidence encryption, or distributed execution.

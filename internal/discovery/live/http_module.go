@@ -98,6 +98,10 @@ func profileEndpoint(ctx context.Context, endpoint string, opts HTTPOptions) map
 	headReq.Header.Set("User-Agent", opts.UserAgent)
 	if resp, err := client.Do(headReq); err == nil {
 		data["head_status_code"] = resp.StatusCode
+		copyHeader(data, resp.Header, "Server", "head_server")
+		copyHeader(data, resp.Header, "Content-Type", "head_content_type")
+		copyHeader(data, resp.Header, "Content-Length", "head_content_length")
+		data["head_authentication_headers"] = resp.Header.Values("WWW-Authenticate")
 		_ = resp.Body.Close()
 	} else {
 		data["head_error"] = err.Error()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -111,8 +112,17 @@ func resolver(server string) *net.Resolver {
 }
 
 func ResolveLDAPPassword(opts *LDAPOptions) error {
+	return ResolveLDAPPasswordContext(context.Background(), opts)
+}
+
+const maxLDAPPasswordFileBytes int64 = 64 * 1024
+
+func ResolveLDAPPasswordContext(ctx context.Context, opts *LDAPOptions) error {
 	if !opts.Enabled || opts.Anonymous {
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if opts.PasswordEnv != "" {
 		value, ok := os.LookupEnv(opts.PasswordEnv)
@@ -124,11 +134,19 @@ func ResolveLDAPPassword(opts *LDAPOptions) error {
 		return nil
 	}
 	if opts.PasswordFile != "" {
-		data, err := os.ReadFile(opts.PasswordFile)
+		file, err := os.Open(opts.PasswordFile)
 		if err != nil {
 			return fmt.Errorf("read LDAP password file: %w", err)
 		}
-		if len(data) > 65536 {
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, maxLDAPPasswordFileBytes+1))
+		if err != nil {
+			return fmt.Errorf("read LDAP password file: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if int64(len(data)) > maxLDAPPasswordFileBytes {
 			return fmt.Errorf("LDAP password file exceeds 65536 bytes")
 		}
 		opts.Password = strings.TrimRight(string(data), "\r\n")
@@ -144,6 +162,9 @@ func ValidateOptions(opts Options) error {
 	}
 	if opts.ConnectTimeout <= 0 || opts.HostTimeout <= 0 {
 		return fmt.Errorf("connect and host timeouts must be greater than zero")
+	}
+	if opts.HTTP.Timeout <= 0 || opts.HTTP.MaxBodyBytes <= 0 || opts.HTTP.MaxRedirects < 0 {
+		return fmt.Errorf("HTTP timeout and body limit must be positive and redirect limit cannot be negative")
 	}
 	if len(opts.Ports) == 0 {
 		return fmt.Errorf("at least one probe port is required")

@@ -11,7 +11,7 @@ This document is the implementation handover for the next Codex session. It desc
 
 > CinderPath is intended for authorized security assessments and controlled lab environments. Users are responsible for ensuring they have explicit permission before assessing any system.
 
-CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and attack-path correlation platform. It now has a safe mock pipeline and an explicit-scope, read-only live discovery pipeline. It does not yet perform SCCM protocol-aware endpoint validation or any SCCM abuse.
+CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and attack-path correlation platform. It now has a safe mock pipeline and an explicit-scope, read-only live discovery pipeline with conservative SCCM management-point and distribution-point HTTP endpoint validation. It does not perform SCCM authentication, content or policy retrieval, secret recovery, messaging, registration, or abuse.
 
 ## Current architecture
 
@@ -163,6 +163,9 @@ live.network.probe
 live.http.profile
 live.ldap.rootdse
 live.ldap.sccm_directory
+live.sccm.http_routes
+live.sccm.management_point
+live.sccm.distribution_point
 live.roles.infer
 ```
 
@@ -183,9 +186,23 @@ rootdse_readable
 default_naming_context_known
 configuration_naming_context_known
 sccm_directory_objects_discovered
+sccm_http_route_probing
+sccm_mp_endpoint_reachable
+sccm_mp_http_response_received
+sccm_mp_anonymous_request
+sccm_mp_protocol_validated
+sccm_mp_authentication_required
+sccm_mp_usable_read_access
+sccm_dp_route_reachable
+sccm_dp_http_response_received
+sccm_dp_anonymous_request
+sccm_dp_access_controlled
+sccm_dp_likely
 ```
 
 LDAP modules record an applicability skip when LDAP was not explicitly enabled or a required capability is unavailable.
+
+The three SCCM modules are global discovery modules. They record an applicability skip when no successful HTTP/HTTPS profile exists on a scoped port 80/443 endpoint. Only `live.sccm.http_routes` performs network requests; the MP and DP modules classify persisted route evidence without additional traffic.
 
 ## Progress event architecture
 
@@ -352,7 +369,16 @@ Failed connection or authentication creates operational evidence and unavailable
 
 ## SCCM role inference
 
-`live.roles.infer` is conservative and evidence-driven:
+`live.roles.infer` is conservative and evidence-driven. Its precedence is:
+
+1. Successfully parsed SCCM management-point protocol evidence
+2. Explicit SCCM LDAP host/role reference
+3. Correlated SCCM-specific route observations
+4. User-supplied role hint
+5. Generic HTTP metadata
+6. Open-port or hostname pattern
+
+Current conclusions include:
 
 - LDAP SCCM object explicitly referencing a host as a role: high confidence
 - User-supplied role hint: medium confidence and labeled `user_input`; never automatically confirmed
@@ -380,6 +406,56 @@ unknown
 
 Informational role findings explain the evidence, confidence, and what remains unverified. No high-severity live finding is created merely because a service exists.
 
+## SCCM HTTP endpoint validation
+
+The network collector operates only on already-profiled origins using the standard scheme/port pairs `http:80` and `https:443`. It sends the following exact allowlist, sequentially per host:
+
+```text
+GET  /SMS_MP/.sms_aut?MPLIST
+HEAD /SMS_DP_SMSPKG$/
+HEAD /SMS_DP_SMSSIG$/
+HEAD /NOCERT_SMS_DP_SMSPKG$/
+HEAD /NOCERT_SMS_DP_SMSSIG$/
+```
+
+Limits are five initial route probes per origin, at most two origins and ten initial route probes per host, no retries, existing bounded host concurrency, the configured per-host/client timeouts, and the existing bounded MP response-body limit. Redirects are capped at `min(configured, 2)` and must remain on the same scheme, hostname, and port inside explicit scope. Redirects never add targets to scope.
+
+The dedicated transport has no proxy callback or cookie jar, sends no client certificate, disables keep-alive reuse, and permits only GET/HEAD with nil bodies. Authorization, proxy authorization, cookies, ambient Windows credentials, NTLM/Negotiate authentication, POST/PUT/PATCH/DELETE/OPTIONS/PROPFIND, WebDAV, BITS, and SCCM messaging are absent and rejected by testable request guards.
+
+Each `sccm_http_route` record has an independent `sccm_access_state`:
+
+```text
+transport_reachable
+http_response_received
+anonymous_request
+authentication_requested
+authentication_attempted
+authenticated
+usable_read_access
+protocol_validated
+```
+
+All current probes are anonymous; authentication is never attempted and `authenticated` is always false. A `401`, an advertised authentication challenge, or a TLS client-certificate request means authentication was requested. A `403` means denial, not authentication. Reports expose every state separately.
+
+### Management-point rules
+
+The bounded parser accepts only a well-formed SCCM MP-list root containing MP elements and meaningful normalized host/site fields. It rejects HTML, generic XML, malformed XML, empty bodies, and bodies exceeding the configured limit. Referenced hosts and site codes remain bounded evidence; they are not persisted as new active targets and are never contacted.
+
+* **High:** meaningful SCCM MP-list parse; usable read access and protocol validation are true.
+* **Medium:** the exact route requests authentication and SCCM LDAP evidence independently references the same host.
+* **Low:** route/status behavior only; no finding.
+* **Unverified:** generic/malformed/oversized/empty content, rejected redirect, timeout, `404`, `405`, or `5xx`; no finding.
+
+Positive results use `DISCOVERY-SCCM-MP-ENDPOINT`. Generic route existence or `200/401/403` never creates a finding by itself.
+
+### Distribution-point rules
+
+DP requests use `HEAD` and do not read response bodies. A distinct `2xx` from one exact virtual-directory root is strong, high-confidence evidence for a likely DP, not absolute confirmation. A `401/403` route requires either a second distinct non-catch-all DP response or independent SCCM LDAP/protocol evidence. Responses identical to the stored root HTTP status/authentication signature are suppressed as IIS catch-all behavior. `404`, `405`, `5xx`, timeouts, and rejected redirects remain inconclusive.
+
+Positive results use `DISCOVERY-SCCM-DP-ENDPOINT`. The implementation never requests package IDs, signature files, directory listings, CAB/MSI files, manifests, payloads, content metadata below a virtual-directory root, or returned content URLs.
+
+Normalized evidence types are `sccm_http_route`, `sccm_access_state`, `sccm_mp_protocol`, and `sccm_dp_virtual_directory`. Stable data excludes timings and never captures Date, request/correlation IDs, cookies, raw authorization, or unbounded bodies. Status, parser, access, and redirect state are material fingerprint inputs, so identical runs deduplicate while material response changes remain observable. Schema version 1 is unchanged.
+
 ## Safety boundaries
 
 The current implementation must remain within these boundaries:
@@ -389,6 +465,7 @@ The current implementation must remain within these boundaries:
 - Only modules marked `safe` run; placeholder profiles do not override this.
 - No SCCM client registration.
 - No policy retrieval or secret extraction.
+- No content-location request or package/content download. Content-location requests remain deferred because they can initiate on-demand distribution and alter target state.
 - No password spraying or credential attacks.
 - No NTLM relay.
 - No package/content download during discovery.
@@ -440,6 +517,13 @@ Existing tests cover:
 - SCCM LDAP object parsing
 - Role-inference confidence
 - LDAP password serialization redaction
+- LDAP password-file reads limited to 64 KiB plus one sentinel byte, including exact-limit, oversized, empty, and cancellation cases
+- Valid, generic, malformed, authentication-required, and oversized MP-list fixtures
+- Passive handling of MP-list host references with no scope expansion
+- Exact DP `HEAD` allowlist and positive, missing, catch-all `200`, and catch-all `401` behavior
+- Same-origin, cross-host, cross-port, cross-scheme, out-of-scope, and redirect-limit policy
+- Absence of authorization, cookies, request bodies, client certificates, and environment proxy traffic
+- SCCM request cancellation, timeout return, request budgets, stable fingerprints, finding deduplication, and report access states
 - Concurrent progress-event collection and emitted workflow events
 
 Local HTTP/TLS tests use loopback fixture servers. LDAP unit tests operate at parser/client boundaries and do not require AD. The integration-tag LDAP test skips cleanly unless all fixture variables are present:
@@ -488,9 +572,11 @@ go run ./cmd/cinderpath discover \
 ## Known limitations
 
 - Live discovery is explicit-target only; there is no broad AD/DNS enumeration.
-- There is no protocol-aware SCCM HTTP route identification yet.
-- Distribution point identity is inferred rather than validated through SCCM endpoints.
-- There is no content-location metadata inspection yet.
+- SCCM route validation is restricted to standard HTTP/HTTPS ports 80/443 and five exact routes; custom SCCM ports and CMG paths are not inspected.
+- DP identity remains high- or medium-confidence inference because only exact virtual-directory-root `HEAD` behavior is observed.
+- The MP-list parser is conservative and may reject undocumented or customized structures.
+- Authentication-required routes remain unparsed because this phase never authenticates.
+- Content-location inspection is deliberately absent because requests may cause on-demand distribution and target-state changes.
 - Generic SMB, SQL, LDAP, and TCP 10123 checks are reachability-only.
 - LDAP authentication is simple bind or explicit anonymous; current-process Kerberos/SASL providers are not implemented.
 - Role inference cannot confirm SCCM roles from ports or hostname patterns alone.
@@ -501,54 +587,22 @@ go run ./cmd/cinderpath discover \
 - There is no TUI, event-stream CLI, general credential-provider abstraction, evidence encryption, or distributed execution.
 - `standard` and `aggressive` are placeholders.
 
-## Exact recommended next task
+## Recommended next task
 
-Implement **protocol-aware, read-only SCCM endpoint validation** without changing the existing safe defaults or adding authentication attacks/state-changing behavior.
+Implement **read-only SCCM version and topology correlation using already collected evidence**, without adding new routes or authentication.
 
-Required scope:
+Suggested scope:
 
-1. **Management point endpoint identification**
-   - Identify management points using SCCM-specific, documented HTTP response characteristics rather than ports or hostnames alone.
-   - Normalize positive and negative evidence and state precisely what is verified.
+1. Correlate validated MP/likely DP origins with LDAP service bindings, DNS canonical names, IP addresses, and TLS certificate names.
+2. Add explicit conflict evidence when LDAP, DNS, certificate, and route conclusions disagree.
+3. Derive SCCM version only from a documented, bounded field already present in a validated MP response; otherwise record `version_unverified`.
+4. Improve report grouping by host/origin and show stale or materially conflicting observations without hiding either state.
+5. Keep schema-v1 asset fingerprints unchanged and add local-only fixtures for every new parser/correlation rule.
 
-2. **SCCM-specific HTTP route fingerprinting**
-   - Probe a small, reviewed allowlist of read-only SCCM routes.
-   - Use bounded methods, response sizes, redirects, timeouts, and same-host policy.
-   - Avoid client registration, policy retrieval, secret-bearing endpoints, or authentication attacks.
+Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`, token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration, certificate enrollment, machine identity creation, Network Access Account/task-sequence recovery, package or DP enumeration/download, PXE collection, NTLM/Kerberos authentication, relay, deployments, execution, SQL, and SMB authentication.
 
-3. **Distribution point identification**
-   - Distinguish a generic web server from a likely SCCM distribution point using protocol-aware metadata.
-   - Correlate results with DNS, LDAP references, certificates, and existing role hints.
-
-4. **Content-location metadata inspection without downloading packages**
-   - Inspect only bounded metadata required to identify SCCM content-location behavior.
-   - Do not enumerate unlimited content, retrieve package payloads, or save package data.
-
-5. **Unauthenticated versus authenticated access**
-   - Record separately whether an endpoint is reachable, responds anonymously, requests authentication, was authenticated, and provides usable read access.
-   - Do not label a credential valid based only on a banner or HTTP status.
-
-6. **Protocol and version confidence**
-   - Add structured protocol observations and confidence rules.
-   - Do not claim a specific SCCM version unless direct bounded evidence supports it.
-
-7. **Local HTTP fixtures**
-   - Add local fixture handlers for every supported management-point and distribution-point endpoint pattern.
-   - Cover positive, negative, authentication-required, redirects, oversized bodies, malformed responses, cancellation, deduplication, and report output.
-
-Suggested module names:
+Suggested commit message:
 
 ```text
-live.sccm.http_routes
-live.sccm.management_point
-live.sccm.distribution_point
-live.sccm.content_location
-```
-
-All modules must remain `safe`, require an explicitly selected live provider and existing HTTP/network capabilities, publish progress events, and produce conservative informational findings only.
-
-Suggested commit message for that next task:
-
-```text
-Add read-only SCCM endpoint validation
+Correlate SCCM endpoint topology evidence
 ```
