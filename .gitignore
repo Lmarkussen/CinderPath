@@ -1,0 +1,8 @@
+/cinderpath
+/*.db
+/*.db-shm
+/*.db-wal
+/reports/
+/demo/
+*.test
+coverage.out

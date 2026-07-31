@@ -1,0 +1,250 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/Lmarkussen/CinderPath/internal/assessment"
+	"github.com/Lmarkussen/CinderPath/internal/config"
+	"github.com/Lmarkussen/CinderPath/internal/database"
+	"github.com/Lmarkussen/CinderPath/internal/discovery"
+	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
+	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/modules"
+	"github.com/Lmarkussen/CinderPath/internal/modules/mock"
+	"github.com/Lmarkussen/CinderPath/internal/progress"
+	"github.com/Lmarkussen/CinderPath/internal/report"
+	"github.com/Lmarkussen/CinderPath/internal/version"
+)
+
+type Application struct {
+	Config config.Config
+	Logger *slog.Logger
+}
+type Outcome struct {
+	Run           models.Run
+	ModuleSummary modules.Summary
+	Assets        int
+	Findings      map[models.Severity]int
+	AttackPaths   int
+	DatabasePath  string
+	ReportPaths   report.Paths
+	Provider      string
+	Discovery     DiscoverySummary
+	Events        []progress.Event
+}
+
+type DiscoverySummary struct {
+	ScopeTargets, Excluded, DNSResolved, DNSUnresolved, ReachableHosts, OpenPorts, HTTPEndpoints, SCCMDirectoryObjects int
+	LDAPBind, DefaultNamingContext                                                                                     string
+	Roles                                                                                                              map[string]int
+}
+type DiscoverOptions struct {
+	Provider string
+	Live     live.Options
+}
+
+func (a *Application) Discover(ctx context.Context, args []string) (Outcome, error) {
+	return a.DiscoverWithOptions(ctx, args, DiscoverOptions{Provider: "mock"})
+}
+func (a *Application) DiscoverWithOptions(ctx context.Context, args []string, options DiscoverOptions) (Outcome, error) {
+	switch options.Provider {
+	case "", "mock":
+		return a.executeModules(ctx, "discover", args, "mock", discovery.Select(mock.All()))
+	case "live":
+		if err := live.ValidateOptions(options.Live); err != nil {
+			return Outcome{}, err
+		}
+		return a.executeModules(ctx, "discover", args, "live", discovery.Select(live.All(options.Live)))
+	default:
+		return Outcome{}, fmt.Errorf("invalid discovery provider %q (use mock or live)", options.Provider)
+	}
+}
+func (a *Application) Assess(ctx context.Context, args []string) (Outcome, error) {
+	return a.executeModules(ctx, "assess", args, "mock", assessment.Select(mock.All()))
+}
+
+func (a *Application) executeModules(ctx context.Context, command string, args []string, provider string, list []modules.Module) (Outcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return Outcome{}, err
+	}
+	defer store.Close()
+	run, err := store.CreateRun(ctx, command, string(a.Config.Profile), version.Current().Version, args)
+	if err != nil {
+		return Outcome{}, err
+	}
+	a.Logger.Info("run started", "run_id", run.ID, "command", command, "profile", run.Profile, "database", store.Path())
+	assets, err := store.ListAssets(ctx)
+	if err != nil {
+		return Outcome{}, a.finishError(store, run, ctx, err)
+	}
+	if command == "assess" && len(assets) == 0 {
+		return Outcome{}, a.finishError(store, run, ctx, errors.New("no assets found; run cinderpath discover first"))
+	}
+	events := &progress.Collector{}
+	events.Publish(progress.Event{Type: progress.RunStarted, RunID: run.ID, Message: command, Data: map[string]any{"provider": provider}})
+	rc := modules.RunContext{RunID: run.ID, Profile: string(a.Config.Profile), Mock: provider == "mock", Store: store, Logger: a.Logger, Progress: events}
+	summary, execErr := modules.NewOrchestrator(store).Execute(ctx, rc, list, assets)
+	status := models.RunCompleted
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		status = models.RunCancelled
+	} else if execErr != nil {
+		status = models.RunFailed
+	} else if summary.Failed > 0 {
+		status = models.RunCompletedWithErrors
+	}
+	allAssets, _ := store.ListAssets(context.WithoutCancel(ctx))
+	findings, _ := store.ListFindings(context.WithoutCancel(ctx))
+	paths, _ := store.ListAttackPaths(context.WithoutCancel(ctx))
+	counts := severityCounts(findings)
+	discoverySummary := summarizeDiscovery(context.WithoutCancel(ctx), store, provider)
+	runSummary := map[string]any{"provider": provider, "modules_executed": summary.Executed, "modules_skipped": summary.Skipped, "modules_failed": summary.Failed, "assets": len(allAssets), "findings": counts, "attack_paths": len(paths), "mock_data": provider == "mock", "scope_targets": discoverySummary.ScopeTargets, "excluded_targets": discoverySummary.Excluded}
+	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, status, runSummary)
+	now := time.Now().UTC()
+	run.FinishedAt = &now
+	run.Status = status
+	run.Summary = runSummary
+	events.Publish(progress.Event{Type: progress.RunCompleted, RunID: run.ID, Data: map[string]any{"status": status}})
+	out := Outcome{Run: *run, ModuleSummary: summary, Assets: len(allAssets), Findings: counts, AttackPaths: len(paths), DatabasePath: store.Path(), Provider: provider, Discovery: discoverySummary, Events: events.Events()}
+	if execErr != nil {
+		return out, execErr
+	}
+	if ctx.Err() != nil {
+		return out, ctx.Err()
+	}
+	return out, nil
+}
+
+func summarizeDiscovery(ctx context.Context, store *database.Store, provider string) DiscoverySummary {
+	d := DiscoverySummary{Roles: map[string]int{}}
+	assets, _ := store.ListAssets(ctx)
+	evidence, _ := store.ListEvidence(ctx)
+	caps, _ := store.ListCapabilities(ctx)
+	for _, a := range assets {
+		if provider == "live" && a.Properties["observation_origin"] != "live" {
+			continue
+		}
+		if a.Properties["normalized_target"] != "" {
+			d.ScopeTargets++
+		}
+		if a.Properties["reachable"] == "true" {
+			d.ReachableHosts++
+		}
+		if a.Properties["open_ports"] != "" {
+			d.OpenPorts += len(strings.Split(a.Properties["open_ports"], ","))
+		}
+		if a.Properties["http_endpoints"] != "" {
+			d.HTTPEndpoints += len(strings.Split(a.Properties["http_endpoints"], ","))
+		}
+		for _, role := range a.Roles {
+			d.Roles[role]++
+		}
+	}
+	for _, e := range evidence {
+		switch e.Type {
+		case "scope_decision":
+			switch x := e.Data["excluded"].(type) {
+			case []any:
+				d.Excluded = len(x)
+			case []string:
+				d.Excluded = len(x)
+			}
+		case "dns_resolution":
+			switch x := e.Data["answers"].(type) {
+			case []any:
+				if len(x) > 0 {
+					d.DNSResolved++
+				} else {
+					d.DNSUnresolved++
+				}
+			case []string:
+				if len(x) > 0 {
+					d.DNSResolved++
+				} else {
+					d.DNSUnresolved++
+				}
+			}
+		case "ldap_rootdse":
+			d.DefaultNamingContext = fmt.Sprint(e.Data["default_naming_context"])
+		case "ldap_sccm_object":
+			d.SCCMDirectoryObjects++
+		}
+	}
+	for _, c := range caps {
+		if c.Name == "ldap_bind_successful" {
+			if c.Available {
+				d.LDAPBind = "successful"
+			} else {
+				d.LDAPBind = "failed"
+			}
+		}
+	}
+	return d
+}
+
+func (a *Application) Report(ctx context.Context, args []string) (Outcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return Outcome{}, err
+	}
+	defer store.Close()
+	run, err := store.CreateRun(ctx, "report", string(a.Config.Profile), version.Current().Version, args)
+	if err != nil {
+		return Outcome{}, err
+	}
+	assets, err := store.ListAssets(ctx)
+	if err != nil {
+		return Outcome{}, a.finishError(store, run, ctx, err)
+	}
+	if len(assets) == 0 {
+		return Outcome{}, a.finishError(store, run, ctx, errors.New("no stored assets available to report"))
+	}
+	findings, _ := store.ListFindings(ctx)
+	paths, _ := store.ListAttackPaths(ctx)
+	mockData := false
+	liveData := false
+	for _, asset := range assets {
+		mockData = mockData || asset.Properties["mock"] == "true"
+		liveData = liveData || asset.Properties["observation_origin"] == "live"
+	}
+	summary := map[string]any{"assets": len(assets), "findings": len(findings), "attack_paths": len(paths), "mock_data": mockData, "live_data": liveData}
+	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, models.RunCompleted, summary)
+	now := time.Now().UTC()
+	run.FinishedAt = &now
+	run.Status = models.RunCompleted
+	run.Summary = summary
+	reportPaths, err := report.Generate(ctx, store, a.Config.OutputDir, store.Path(), version.Current().Version, run)
+	if err != nil {
+		_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, models.RunFailed, map[string]any{"error": err.Error()})
+		return Outcome{}, err
+	}
+	return Outcome{Run: *run, Assets: len(assets), Findings: severityCounts(findings), AttackPaths: len(paths), DatabasePath: store.Path(), ReportPaths: reportPaths}, nil
+}
+
+func (a *Application) finishError(store *database.Store, run *models.Run, ctx context.Context, err error) error {
+	status := models.RunFailed
+	if ctx.Err() != nil {
+		status = models.RunCancelled
+	}
+	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, status, map[string]any{"error": err.Error()})
+	return err
+}
+func severityCounts(items []models.Finding) map[models.Severity]int {
+	out := map[models.Severity]int{models.SeverityCritical: 0, models.SeverityHigh: 0, models.SeverityMedium: 0, models.SeverityLow: 0, models.SeverityInformational: 0}
+	for _, f := range items {
+		out[f.Severity]++
+	}
+	return out
+}
+
+func ProfileNotice(p config.Profile) string {
+	if p == config.ProfileSafe {
+		return "safe, read-only modules only"
+	}
+	return fmt.Sprintf("%s is a placeholder; this release still runs safe, read-only mock modules only", p)
+}

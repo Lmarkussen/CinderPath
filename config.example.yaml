@@ -1,0 +1,25 @@
+# CinderPath example configuration.
+# Precedence: explicit CLI flags > CINDERPATH_* environment > this file > defaults.
+db: cinderpath.db
+output_dir: reports
+log_level: info
+no_color: false
+timeout: 2m
+profile: safe
+
+scope:
+  max_expanded_targets: 4096
+
+discovery:
+  ports: 53,80,88,135,389,443,445,636,1433,3268,3269,8530,8531,10123
+  connect_timeout: 2s
+  host_timeout: 30s
+  concurrency: 32
+  http_max_body_bytes: 32768
+  http_max_redirects: 3
+  user_agent: CinderPath-safe-discovery/dev
+
+ldap:
+  page_size: 500
+  max_entries: 10000
+  search_timeout: 30s
