@@ -17,6 +17,7 @@ const (
 	ProfileSafe       Profile = "safe"
 	ProfileStandard   Profile = "standard"
 	ProfileAggressive Profile = "aggressive"
+	ProfileYolo       Profile = "yolo"
 )
 
 type Config struct {
@@ -33,6 +34,12 @@ type Config struct {
 	LDAP           LDAPConfig           `yaml:"ldap"`
 	Staleness      StalenessConfig      `yaml:"staleness"`
 	AuthValidation AuthValidationConfig `yaml:"auth_validation"`
+	Project        ProjectConfig        `yaml:"project,omitempty" json:"project,omitempty"`
+	WorkflowScope  WorkflowScopeConfig  `yaml:"workflow_scope,omitempty" json:"scope,omitempty"`
+	Identity       IdentityConfig       `yaml:"identity,omitempty" json:"identity,omitempty"`
+	Workflow       WorkflowConfig       `yaml:"workflow,omitempty" json:"workflow,omitempty"`
+	Safety         SafetyConfig         `yaml:"safety,omitempty" json:"safety,omitempty"`
+	Output         OutputConfig         `yaml:"output,omitempty" json:"output,omitempty"`
 }
 type StalenessConfig struct {
 	AssetDays              int `yaml:"asset_days"`
@@ -134,9 +141,9 @@ func Load(path string, cli Overrides) (Config, error) {
 		return cfg, errors.New("auth_validation.minimum_delay must be a non-negative duration")
 	}
 	switch cfg.Profile {
-	case ProfileSafe, ProfileStandard, ProfileAggressive:
+	case ProfileSafe, ProfileStandard, ProfileAggressive, ProfileYolo:
 	default:
-		return cfg, fmt.Errorf("invalid profile %q (use safe, standard, or aggressive)", cfg.Profile)
+		return cfg, fmt.Errorf("invalid profile %q (use safe, standard, aggressive, or yolo)", cfg.Profile)
 	}
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug", "info", "warn", "error":

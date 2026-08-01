@@ -6,11 +6,46 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 ## Current status
 
+## Recommended operator workflow
+
+Routine assessments use a generated configuration and the unified runner:
+
+```bash
+cinderpath config init
+cinderpath run --config lab_local.yaml
+```
+
+For noninteractive automation (all values below are placeholders):
+
+```bash
+export CINDERPATH_PASSWORD='example-only'
+cinderpath config init --non-interactive --domain lab.local \
+  --username 'LAB\alice' --password-env CINDERPATH_PASSWORD --profile aggressive
+
+cinderpath run --domain lab.local --username 'LAB\alice' \
+  --password-env CINDERPATH_PASSWORD --profile yolo --save-config
+```
+
+Generated filenames are lower-case domain names with separators normalized to
+underscores (`corp.example.com` becomes `corp_example_com.yaml`). Files are
+atomically written with mode `0600` and contain references only, never password
+values, tickets, keys, hashes, or tokens. Use `config validate FILE`, `config
+show FILE --format yaml|json`, and `run --config FILE --dry-run` to review the
+effective plan without network activity or authentication-budget consumption.
+
+Profiles are explicit defaults: `safe` never authenticates; `standard` permits
+guarded authentication only with all existing gates; `aggressive` requests
+deeper read-only coverage; and `yolo` is the fully automated authorized-assessment
+profile. The latter two list unavailable future modules as `not implemented`.
+Secret-recovery, policy/content retrieval, registration, messaging, relay,
+state changes, and remote execution remain unimplemented. Granular commands
+remain supported for troubleshooting and expert control.
+
 This release provides the original mock pipeline plus an **explicit, safe, read-only live discovery provider**. Live mode normalizes user scope, performs DNS queries, attempts bounded TCP connections, collects bounded HTTP/TLS metadata, optionally performs bounded LDAP RootDSE and SCCM directory searches, validates a fixed allowlist of SCCM management-point and distribution-point HTTP routes, and passively correlates stored topology evidence. It does not register clients, retrieve policy, recover credentials, request content locations, download packages, authenticate to SCCM/SMB/SQL, enumerate shares or DP content, execute code, relay authentication, create deployments, or modify a target.
 
 `discover` defaults to `--provider mock`. CinderPath never silently changes to live mode or contacts network systems without `--provider live`.
 
-The `safe` profile is the default and the only functionally meaningful profile. `standard` and `aggressive` reserve names for future policy definitions; in this release they still execute only safe modules.
+The `safe` profile remains the default. Unified planning also understands `standard`, `aggressive`, and `yolo`; hard safety gates continue to apply regardless of profile.
 
 ## Identity and authentication-capability modeling
 

@@ -1,5 +1,22 @@
 # CinderPath status and handover
 
+## Unified operator workflow
+
+CinderPath now provides `config init`, `config validate`, `config show`, and a
+unified `run` command. Generated configuration is atomic, mode `0600`, and
+secret-reference-only. Domain-derived filenames are normalized safely. `run
+--dry-run` builds the full plan without network traffic, secret reads,
+authentication attempts, budget consumption, or target observations. The
+generated workflow defaults to the mock provider; live activity remains an
+explicit configuration choice with explicit scope.
+
+Profiles `safe`, `standard`, `aggressive`, and `yolo` resolve operator defaults.
+Safe never authenticates. Authentication in other profiles remains subject to
+the existing acknowledgement, identity, exact-route, freshness, and historical
+budget gates. Future policy, DP, PXE, secret-recovery, and live attack-path
+modules are reported as unavailable rather than completed. Granular commands
+remain unchanged.
+
 This document is the implementation handover for the next Codex session. It describes the repository at the current `main` branch state.
 
 ## Project identity and safety statement

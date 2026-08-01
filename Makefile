@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: build test vet fmt fmt-check check run clean race integration install-local auth-dry-run
+.PHONY: build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry
 
 build:
 	mkdir -p bin
@@ -52,3 +52,12 @@ install-local: build
 
 auth-dry-run: build
 	$(BINARY) auth validate --dry-run $(ARGS)
+
+config-example: build
+	@tmp=$$(mktemp -d); $(BINARY) config init --non-interactive --domain lab.local --profile safe --output $$tmp/lab_local.yaml; $(BINARY) config validate $$tmp/lab_local.yaml
+
+run-mock: build
+	@tmp=$$(mktemp -d); $(BINARY) --db $$tmp/cinderpath.db --output-dir $$tmp/reports run --domain lab.local --profile safe --provider mock
+
+run-dry: build
+	$(BINARY) run --domain lab.local --profile safe --provider mock --dry-run

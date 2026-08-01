@@ -7,6 +7,49 @@ no_color: false
 timeout: 2m
 profile: safe
 
+# Unified operator workflow. All values are placeholders. Mock is deliberately
+# the default; change to live only with explicit authorization and target scope.
+project:
+  name: lab.local
+workflow_scope:
+  domain: lab.local
+  domain_controller: ""
+  dns_server: ""
+  targets: []
+  targets_file: ""
+  include_cidrs: []
+  exclude_hosts: []
+  exclude_cidrs: []
+  max_targets: 4096
+identity:
+  kind: ""
+  username: ""
+  domain: ""
+  password_env: ""
+  password_file: ""
+  certificate: ""
+  private_key: ""
+  kerberos_cache: ""
+workflow:
+  provider: mock
+  discovery: true
+  ldap: true
+  authentication: false
+  acknowledge_lockout_risk: false
+  assessment: true
+  reporting: true
+safety:
+  allow_authentication: false
+  allow_content_download: false
+  allow_client_registration: false
+  allow_state_changes: false
+  allow_remote_execution: false
+output:
+  directory: reports/lab_local
+  html: true
+  json: true
+  secrets_file: false
+
 scope:
   max_expanded_targets: 4096
 

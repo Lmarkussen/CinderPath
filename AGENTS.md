@@ -77,4 +77,4 @@ Live smoke tests must use explicitly authorized targets; prefer loopback fixture
 
 ## Next task
 
-The recommended next implementation is hardening authentication validation with OS-backed secret providers and external lockout-policy input, without expanding routes or authentication methods. Policy retrieval, content-location requests, package access, registration, account creation, certificate enrollment, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).
+The primary operator workflow is `cinderpath config init` followed by `cinderpath run --config FILE`. Preserve its mock-safe default, explainable plan, secret-reference-only configuration, and future-module `not_implemented` decisions. The recommended next implementation is durable unified-run stage metadata and deeper automatic guarded-authentication endpoint selection, without expanding routes or authentication methods. Policy retrieval, content-location requests, package access, registration, messaging, secret recovery, relay, and all state-changing behavior remain deferred.
