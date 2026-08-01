@@ -59,29 +59,30 @@ type mpListResult struct {
 }
 
 type routeObservation struct {
-	AssetID               string
-	Origin                string
-	Scheme                string
-	Host                  string
-	Port                  int
-	RouteID               string
-	Path                  string
-	Method                string
-	StatusCode            int
-	SelectedHeaders       map[string]string
-	AuthenticationSchemes []string
-	RedirectDecision      string
-	ResponseLength        int64
-	Truncated             bool
-	ParserOutcome         string
-	SCCMMarkers           []string
-	SiteCodes             []string
-	ReferencedHosts       []string
-	AccessState           SCCMAccessState
-	UnverifiedReason      string
-	Preview               string
-	MatchesRootProfile    bool
-	Error                 string
+	AssetID                       string
+	Origin                        string
+	Scheme                        string
+	Host                          string
+	Port                          int
+	RouteID                       string
+	Path                          string
+	Method                        string
+	StatusCode                    int
+	SelectedHeaders               map[string]string
+	AuthenticationSchemes         []string
+	RedirectDecision              string
+	ResponseLength                int64
+	Truncated                     bool
+	ParserOutcome                 string
+	SCCMMarkers                   []string
+	SiteCodes                     []string
+	ReferencedHosts               []string
+	AccessState                   SCCMAccessState
+	UnverifiedReason              string
+	Preview                       string
+	MatchesRootProfile            bool
+	TLSClientCertificateRequested bool
+	Error                         string
 }
 
 type requestTracker struct {
@@ -227,6 +228,7 @@ func probeSCCMOrigin(ctx context.Context, assetID, origin string, rootProfile ma
 		obs.RedirectDecision = *redirectDecision
 		if tracker.clientCertRequested.Load() {
 			obs.AccessState.AuthenticationRequested = true
+			obs.TLSClientCertificateRequested = true
 		}
 		if doErr != nil {
 			obs.Error = doErr.Error()

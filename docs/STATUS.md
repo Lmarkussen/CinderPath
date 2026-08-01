@@ -11,11 +11,17 @@ This document is the implementation handover for the next Codex session. It desc
 
 > CinderPath is intended for authorized security assessments and controlled lab environments. Users are responsible for ensuring they have explicit permission before assessing any system.
 
-CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and attack-path correlation platform. It now has a safe mock pipeline and an explicit-scope, read-only live discovery pipeline with conservative SCCM management-point and distribution-point HTTP endpoint validation. It does not perform SCCM authentication, content or policy retrieval, secret recovery, messaging, registration, or abuse.
+CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and attack-path correlation platform. It has a safe mock pipeline, explicit-scope read-only live discovery, and a separate disabled-by-default authentication-validation workflow. Authentication validation is restricted to user-selected identities and exact previously observed SCCM routes; it does not retrieve policy/content, recover secrets, register clients, or modify targets.
 
-It also has local SCCM identity and authentication-capability modeling. `identity inspect` normalizes logical identities, validates only local references, and parses bounded public PEM/DER certificates. `capabilities` correlates those references with persisted anonymous SCCM route challenges. Identity fingerprints exclude secret values and reference locations. File references are persisted and reported as type plus basename; environment-variable names may be retained. Remote authentication attempted and validated remain false.
+It also has local SCCM identity and authentication-capability modeling. `identity inspect` normalizes logical identities, validates local references, and parses bounded public PEM/DER certificates. `capabilities` correlates references with persisted anonymous SCCM route challenges. Identity fingerprints exclude secret values and reference locations. Reports show basename-only file references. Authentication results are exact identity/origin/route/method observations and never imply global SCCM authentication.
 
-Capability states distinguish `available`, `unavailable`, `unknown`, `requires_validation`, and `blocked_by_safety`. Negotiate/NTLM advertisements, Kerberos-cache existence, and client-auth certificate metadata indicate only potential applicability. Passive evidence older than `staleness.evidence_days` downgrades dependent potential capabilities. Certificate metadata records expired, future, and near-expiry state using the configured warning threshold.
+Capability states distinguish `available`, `unavailable`, `unknown`, `requires_validation`, and `blocked_by_safety`. Run-attributed temporal states distinguish current, stale, missing, out-of-scope, unknown, superseded, and conflicting observations. Missing states require latest scope plus successful stage execution. Stale or missing endpoint evidence cannot authorize an authentication attempt.
+
+### `cinderpath auth validate` and `auth results`
+
+`auth validate` supports Basic and TLS client-certificate validation only. It requires exact stored identity selection and either exact origin selection or validated-management-point selection. Actual requests require `--enable-auth-validation` and `--acknowledge-lockout-risk`; multiple planned attempts require an additional acknowledgement. The request reuses only the exact GET/HEAD route already observed, has no body, proxy, cookie jar, redirect, retry, or ambient credentials. `--dry-run` reads no secret and sends no traffic. Schema version 2 preserves actual attempt history so restarting the CLI does not erase budget state.
+
+Authentication validation may cause account lockout or security alerts. Use only with explicit authorization and carefully selected identities.
 
 ## Current architecture
 
@@ -113,7 +119,7 @@ The HTML report is portable with embedded CSS. Reports distinguish mock data, li
 
 ### `cinderpath identity` and `cinderpath capabilities`
 
-`identity inspect` accepts domain/user, machine, current-process, password/hash environment or file references, Kerberos cache references, and public-certificate/private-key path references. It never accepts plaintext secret CLI values and never reads private keys or ticket contents. `identity list` shows redacted stored models. `capabilities` performs only local/passive planning and prominently states that no remote authentication was attempted.
+`identity inspect` accepts domain/user, machine, current-process, password/hash environment or file references, Kerberos cache references, and public-certificate/private-key path references. It never accepts plaintext secret CLI values and does not read private keys or ticket contents. The separate guarded validator may parse a selected bounded PEM private key solely to verify pairing and construct one TLS client-auth request. `identity list` shows redacted stored models.
 
 ### Global flags
 
@@ -236,7 +242,7 @@ run_completed
 
 ## Database and deterministic fingerprints
 
-The database uses schema version 1. No schema change was needed for live discovery because existing JSON-backed records already support provenance and stage data.
+The database uses schema version 2. Migration 1 is unchanged; migration 2 adds durable authentication-attempt history. Existing model records remain JSON-backed.
 
 Persisted record types:
 
@@ -594,13 +600,13 @@ go run ./cmd/cinderpath discover \
 - SCCM route validation is restricted to standard HTTP/HTTPS ports 80/443 and five exact routes; custom SCCM ports and CMG paths are not inspected.
 - DP identity remains high- or medium-confidence inference because only exact virtual-directory-root `HEAD` behavior is observed.
 - The MP-list parser is conservative and may reject undocumented or customized structures.
-- Authentication-required routes remain unparsed because this phase never authenticates.
+- Authentication-required routes remain unparsed during discovery. The separate guarded validator can test only Basic or TLS client certificates on the exact observed route.
 - Content-location inspection is deliberately absent because requests may cause on-demand distribution and target-state changes.
 - Generic SMB, SQL, LDAP, and TCP 10123 checks are reachability-only.
 - LDAP authentication is simple bind or explicit anonymous; current-process Kerberos/SASL providers are not implemented.
 - Role inference cannot confirm SCCM roles from ports or hostname patterns alone.
 - Service graph targets use deterministic endpoint node identifiers rather than separately persisted service assets.
-- Schema migration history contains only version 1.
+- Schema migration version 2 stores authentication attempt history; pre-v2 evidence lacks run attribution and is classified as unknown until observed again.
 - Attack-path correlation remains an in-memory breadth-first traversal designed around the mock graph.
 - Live discovery does not currently generate real attack paths.
 - There is no TUI, event-stream CLI, general credential-provider abstraction, evidence encryption, or distributed execution.
@@ -608,12 +614,12 @@ go run ./cmd/cinderpath discover \
 
 ## Recommended next task
 
-Design a separately reviewed, opt-in authentication-validation phase. It should require explicit scope and identity selection, enforce method allowlists, attempt budgets and lockout safeguards, isolate credential material, retain the no-ambient-credentials transport defaults, and produce clear audit evidence. No authenticated operation should be added until that design is approved.
+Harden the guarded validator with OS-backed secret providers, explicit CA/trust-bundle configuration, and operator-supplied lockout-policy metadata. Preserve exact route selection and do not add policy, content, registration, messaging, account mutation, or broader authentication methods.
 
 Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`, token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration, certificate enrollment, machine identity creation, Network Access Account/task-sequence recovery, package or DP enumeration/download, PXE collection, NTLM/Kerberos authentication, relay, deployments, execution, SQL, and SMB authentication.
 
 Suggested commit message for the completed phase:
 
 ```text
-Add SCCM identity and capability modeling
+Add guarded SCCM authentication validation
 ```

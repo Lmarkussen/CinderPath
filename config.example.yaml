@@ -28,3 +28,14 @@ staleness:
   asset_days: 30
   evidence_days: 30
   certificate_warning_days: 30
+
+auth_validation:
+  enabled: false
+  max_total_attempts: 3
+  max_attempts_per_identity: 1
+  max_attempts_per_endpoint: 1
+  max_attempts_per_identity_endpoint: 1
+  minimum_delay: 2s
+  stop_after_success: true
+  refuse_multiple_password_identities: true
+  concurrency: 1

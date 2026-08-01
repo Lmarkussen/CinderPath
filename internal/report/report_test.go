@@ -116,3 +116,44 @@ func TestSCCMTopologyReportRendersExplicitUnknownVersion(t *testing.T) {
 		t.Fatal("HTML does not explicitly render unknown SCCM version")
 	}
 }
+
+func TestAuthenticationReportDistinguishesAttemptAndDoesNotLeakSecret(t *testing.T) {
+	const secret = "REPORT_AUTH_SENTINEL_52c9"
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := database.Open(ctx, filepath.Join(dir, "auth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	asset := models.Asset{Kind: models.AssetManagementPoint, FQDN: "mp.lab", Source: "test", Properties: map[string]string{"observation_origin": "live"}}
+	if _, err := store.UpsertAsset(ctx, &asset); err != nil {
+		t.Fatal(err)
+	}
+	cred := models.Credential{Kind: models.CredentialPasswordRef, Type: models.CredentialPasswordRef, Username: "alice", Domain: "LAB", Source: "test", SecretReference: "env:REPORT_PASSWORD", RedactedReference: "env:REPORT_PASSWORD"}
+	if _, err := store.UpsertCredential(ctx, &cred); err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.CreateRun(ctx, "auth validate", "safe", "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt := models.AuthenticationAttempt{ID: "auth_result", RunID: run.ID, IdentityID: cred.ID, AssetID: asset.ID, Origin: "https://mp.lab", Route: "/SMS_MP/.sms_aut?MPLIST", Method: "GET", AuthenticationMethod: "basic", StartedAt: now, Status: models.AuthRejected, Attempted: true, Rejected: true, StatusCode: 401, FailureCategory: "invalid_credentials", Reason: "endpoint returned 401", BudgetCost: 1, SafetyAcknowledged: true, EvidenceFreshness: models.TemporalCurrent}
+	if err := store.SaveAuthenticationAttempt(ctx, &attempt); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := Generate(ctx, store, filepath.Join(dir, "reports"), store.Path(), "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonRaw, _ := os.ReadFile(paths.JSON)
+	htmlRaw, _ := os.ReadFile(paths.HTML)
+	combined := string(jsonRaw) + string(htmlRaw)
+	if strings.Contains(combined, secret) || strings.Contains(combined, "Authorization") || strings.Contains(combined, "Set-Cookie") {
+		t.Fatal("authentication report leaked secret-bearing material")
+	}
+	if !strings.Contains(combined, "Authentication validation was performed") || !strings.Contains(combined, "invalid_credentials") {
+		t.Fatal("authentication result distinction missing")
+	}
+}

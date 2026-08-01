@@ -421,6 +421,7 @@ func routeObservationData(observation routeObservation) map[string]any {
 		"response_length": observation.ResponseLength, "truncated": observation.Truncated, "parser_outcome": observation.ParserOutcome, "sccm_markers": observation.SCCMMarkers,
 		"site_codes": observation.SiteCodes, "referenced_hosts": observation.ReferencedHosts, "access_state": accessStateData(observation.AccessState),
 		"unverified_reason": observation.UnverifiedReason, "matches_root_profile": observation.MatchesRootProfile,
+		"tls_client_certificate_requested": observation.TLSClientCertificateRequested,
 	}
 	if observation.Preview != "" {
 		data["bounded_preview"] = observation.Preview
@@ -442,6 +443,7 @@ func routeObservationFromEvidence(item models.Evidence) (routeObservation, bool)
 		ResponseLength: int64(intFromAny(item.Data["response_length"])), Truncated: boolFromAny(item.Data["truncated"]), ParserOutcome: fmt.Sprint(item.Data["parser_outcome"]),
 		SCCMMarkers: anyStringsLocal(item.Data["sccm_markers"]), SiteCodes: anyStringsLocal(item.Data["site_codes"]), ReferencedHosts: anyStringsLocal(item.Data["referenced_hosts"]),
 		UnverifiedReason: fmt.Sprint(item.Data["unverified_reason"]), Preview: fmt.Sprint(item.Data["bounded_preview"]), MatchesRootProfile: boolFromAny(item.Data["matches_root_profile"]), Error: fmt.Sprint(item.Data["error"]),
+		TLSClientCertificateRequested: boolFromAny(item.Data["tls_client_certificate_requested"]),
 	}
 	observation.AccessState = accessStateFromAny(item.Data["access_state"])
 	if headers, ok := item.Data["selected_headers"].(map[string]any); ok {

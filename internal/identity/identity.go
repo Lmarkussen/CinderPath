@@ -56,7 +56,7 @@ func Parse(in Input, now time.Time, warningDays int) (models.Credential, error) 
 		return c, errors.New("machine-account name must end in $")
 	}
 	ref, refType := chooseReference(in)
-	c.SecretReference, c.ReferenceType, c.HasSecret = RedactReference(ref), refType, ref != ""
+	c.SecretReference, c.ReferenceType, c.HasSecret = ref, refType, ref != ""
 	c.RedactedReference = RedactReference(ref)
 	if refType == "ccache" {
 		c.KerberosCacheReference = c.RedactedReference
@@ -95,6 +95,10 @@ func Parse(in Input, now time.Time, warningDays int) (models.Credential, error) 
 		key = in.SCCMClientKey
 	}
 	if key != "" {
+		if certPath != "" {
+			c.SecretReference = "certificate:" + certPath + "\nprivate-key:" + key
+			c.HasSecret = true
+		}
 		p, _, warn, reason := validateFile(key, MaxCertificateBytes, false)
 		c.Properties["private_key_reference_present"] = fmt.Sprint(p)
 		c.Properties["private_key_pairing_verified"] = "false"
@@ -224,6 +228,44 @@ func validateNTLMHashReference(ref string) error {
 	}
 	return err
 }
+
+// LoadSecret performs one bounded read for an explicitly selected reference.
+// Callers must discard the returned bytes immediately after the single use.
+func LoadSecret(ref string) ([]byte, error) {
+	p := strings.IndexByte(ref, ':')
+	if p < 0 {
+		return nil, errors.New("invalid secret reference")
+	}
+	typ, val := ref[:p], ref[p+1:]
+	switch typ {
+	case "env":
+		v, ok := os.LookupEnv(val)
+		if !ok {
+			return nil, errors.New("secret environment reference is unavailable")
+		}
+		if len(v) > int(MaxSecretBytes) {
+			return nil, errors.New("secret exceeds bounded limit")
+		}
+		return []byte(v), nil
+	case "file":
+		f, err := os.Open(val)
+		if err != nil {
+			return nil, errors.New("secret file reference is unavailable")
+		}
+		defer f.Close()
+		b := make([]byte, MaxSecretBytes+1)
+		n, err := f.Read(b)
+		if err != nil && n == 0 {
+			return nil, errors.New("secret file reference could not be read")
+		}
+		if int64(n) > MaxSecretBytes {
+			return nil, errors.New("secret exceeds bounded limit")
+		}
+		return []byte(strings.TrimRight(string(b[:n]), "\r\n")), nil
+	default:
+		return nil, errors.New("reference is not a password source")
+	}
+}
 func validateFile(path string, max int64, bounded bool) (bool, bool, string, string) {
 	st, err := os.Stat(path)
 	if err != nil {
@@ -314,7 +356,7 @@ type AuthRequirement struct {
 	Stale                         bool     `json:"stale"`
 }
 
-func Requirements(evidence []models.Evidence, now time.Time, staleDays int) []AuthRequirement {
+func Requirements(evidence []models.Evidence, now time.Time, staleDays int, latestRun ...string) []AuthRequirement {
 	by := map[string]*AuthRequirement{}
 	for _, e := range evidence {
 		if e.Type != "sccm_http_route" {
@@ -336,6 +378,9 @@ func Requirements(evidence []models.Evidence, now time.Time, staleDays int) []Au
 		r.TLSClientCertificateRequested = r.TLSClientCertificateRequested || boolValue(e.Data["tls_client_certificate_requested"])
 		r.EvidenceIDs = append(r.EvidenceIDs, e.ID)
 		r.Stale = r.Stale || now.Sub(e.CollectedAt) > time.Duration(staleDays)*24*time.Hour
+		if len(latestRun) > 0 && latestRun[0] != "" && e.RunID != latestRun[0] {
+			r.Stale = true
+		}
 		if strings.Contains(fmt.Sprint(e.Data["route_id"]), "mp_") {
 			r.EndpointRole = "management_point"
 		} else if strings.Contains(fmt.Sprint(e.Data["route_id"]), "dp_") {
@@ -441,6 +486,27 @@ func Plan(ids []models.Credential, reqs []AuthRequirement) []models.Capability {
 				c.State = models.CapabilityRequiresValidation
 				c.Stale = true
 				c.Reason = "capability depends on stale endpoint evidence"
+			}
+			add(c)
+		}
+		if contains(r.AdvertisedSchemes, "basic") {
+			c := models.Capability{Name: "basic_auth_potentially_available", State: models.CapabilityRequiresValidation, Reason: "endpoint advertises Basic and validation requires an explicit guarded auth command", AssetID: r.AssetID, CredentialID: related, RelatedEndpoint: r.Origin, EvidenceIDs: r.EvidenceIDs, RequiredInputs: []string{"password identity reference", "explicit authentication enablement", "lockout-risk acknowledgement"}}
+			passwordAvailable := false
+			for _, id := range ids {
+				if id.Validated && id.Kind == models.CredentialPasswordRef {
+					passwordAvailable = true
+					c.CredentialID = id.ID
+					break
+				}
+			}
+			if !passwordAvailable {
+				c.State = models.CapabilityUnavailable
+				c.MissingInputs = []string{"locally available password identity reference"}
+			}
+			if r.Stale {
+				c.State = models.CapabilityRequiresValidation
+				c.Stale = true
+				c.Reason = "Basic authentication potential depends on stale or missing endpoint evidence"
 			}
 			add(c)
 		}

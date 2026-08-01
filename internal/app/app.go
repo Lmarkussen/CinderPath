@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/assessment"
+	"github.com/Lmarkussen/CinderPath/internal/authvalidate"
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery"
@@ -55,6 +56,85 @@ type IdentityOutcome struct {
 	Requirements []identity.AuthRequirement
 	DatabasePath string
 }
+type AuthOutcome struct {
+	Run          models.Run
+	Attempts     []models.AuthenticationAttempt
+	DatabasePath string
+}
+
+func (a *Application) ValidateAuthentication(ctx context.Context, args []string, o authvalidate.Options) (AuthOutcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return AuthOutcome{}, err
+	}
+	defer store.Close()
+	run, err := store.CreateRun(ctx, "auth validate", string(a.Config.Profile), version.Current().Version, args)
+	if err != nil {
+		return AuthOutcome{}, err
+	}
+	runs, _ := store.ListRuns(ctx)
+	latest := ""
+	for _, r := range runs {
+		if r.Command == "discover" && fmt.Sprint(r.Summary["provider"]) == "live" && (r.Status == models.RunCompleted || r.Status == models.RunCompletedWithErrors) {
+			latest = r.ID
+			break
+		}
+	}
+	attempts, execErr := authvalidate.Validate(ctx, store, run.ID, latest, o)
+	for _, attempt := range attempts {
+		cap := capabilityFromAttempt(attempt)
+		_, _ = store.UpsertCapability(context.WithoutCancel(ctx), &cap)
+	}
+	status := models.RunCompleted
+	if execErr != nil {
+		status = models.RunFailed
+	}
+	if ctx.Err() != nil {
+		status = models.RunCancelled
+	}
+	summary := map[string]any{"attempts": len(attempts), "actual_attempts": countActualAttempts(attempts)}
+	if execErr != nil {
+		summary["error"] = execErr.Error()
+	}
+	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, status, summary)
+	now := time.Now().UTC()
+	run.FinishedAt = &now
+	run.Status = status
+	run.Summary = summary
+	return AuthOutcome{Run: *run, Attempts: attempts, DatabasePath: store.Path()}, execErr
+}
+func (a *Application) AuthenticationResults(ctx context.Context) (AuthOutcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return AuthOutcome{}, err
+	}
+	defer store.Close()
+	attempts, err := store.ListAuthenticationAttempts(ctx)
+	return AuthOutcome{Attempts: attempts, DatabasePath: store.Path()}, err
+}
+func countActualAttempts(v []models.AuthenticationAttempt) int {
+	n := 0
+	for _, a := range v {
+		if a.Attempted {
+			n++
+		}
+	}
+	return n
+}
+func capabilityFromAttempt(a models.AuthenticationAttempt) models.Capability {
+	name, state, available := "authentication_validation_planned", models.CapabilityRequiresValidation, false
+	switch a.Status {
+	case models.AuthSucceeded:
+		name, state, available = a.AuthenticationMethod+"_auth_validated", models.CapabilityAvailable, true
+	case models.AuthRejected:
+		name, state = "authentication_validation_rejected", models.CapabilityUnavailable
+	case models.AuthInconclusive:
+		name = "authentication_validation_inconclusive"
+	case models.AuthBlocked:
+		name, state = "authentication_validation_blocked", models.CapabilityBlockedBySafety
+	}
+	return models.Capability{Name: name, Available: available, State: state, Reason: a.Reason, Source: "auth.validate", CredentialID: a.IdentityID, AssetID: a.AssetID, RelatedEndpoint: a.Origin, RelatedRoute: a.Route, AuthenticationMethod: a.AuthenticationMethod, EvidenceIDs: a.EvidenceIDs, SafetyBlocked: a.Status == models.AuthBlocked, Stale: a.EvidenceFreshness != models.TemporalCurrent}
+}
 
 func (a *Application) InspectIdentity(ctx context.Context, in identity.Input) (IdentityOutcome, error) {
 	store, err := database.Open(ctx, a.Config.DBPath)
@@ -70,7 +150,7 @@ func (a *Application) InspectIdentity(ctx context.Context, in identity.Input) (I
 		return IdentityOutcome{}, err
 	}
 	evidence, _ := store.ListEvidence(ctx)
-	req := identity.Requirements(evidence, time.Now().UTC(), a.Config.Staleness.EvidenceDays)
+	req := identity.Requirements(evidence, time.Now().UTC(), a.Config.Staleness.EvidenceDays, latestDiscoveryRunID(ctx, store))
 	ids, _ := store.ListCredentials(ctx)
 	caps := identity.Plan(ids, req)
 	for i := range caps {
@@ -97,12 +177,21 @@ func (a *Application) PlanCapabilities(ctx context.Context) (IdentityOutcome, er
 	defer store.Close()
 	ids, _ := store.ListCredentials(ctx)
 	evidence, _ := store.ListEvidence(ctx)
-	req := identity.Requirements(evidence, time.Now().UTC(), a.Config.Staleness.EvidenceDays)
+	req := identity.Requirements(evidence, time.Now().UTC(), a.Config.Staleness.EvidenceDays, latestDiscoveryRunID(ctx, store))
 	caps := identity.Plan(ids, req)
 	for i := range caps {
 		_, _ = store.UpsertCapability(ctx, &caps[i])
 	}
 	return IdentityOutcome{Identities: ids, Capabilities: caps, Requirements: req, DatabasePath: store.Path()}, nil
+}
+func latestDiscoveryRunID(ctx context.Context, store *database.Store) string {
+	runs, _ := store.ListRuns(ctx)
+	for _, r := range runs {
+		if r.Command == "discover" && fmt.Sprint(r.Summary["provider"]) == "live" && (r.Status == models.RunCompleted || r.Status == models.RunCompletedWithErrors) {
+			return r.ID
+		}
+	}
+	return ""
 }
 
 func (a *Application) Discover(ctx context.Context, args []string) (Outcome, error) {
@@ -275,7 +364,7 @@ func (a *Application) Report(ctx context.Context, args []string) (Outcome, error
 	run.FinishedAt = &now
 	run.Status = models.RunCompleted
 	run.Summary = summary
-	reportPaths, err := report.Generate(ctx, store, a.Config.OutputDir, store.Path(), version.Current().Version, run)
+	reportPaths, err := report.Generate(ctx, store, a.Config.OutputDir, store.Path(), version.Current().Version, run, a.Config.Staleness)
 	if err != nil {
 		_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, models.RunFailed, map[string]any{"error": err.Error()})
 		return Outcome{}, err

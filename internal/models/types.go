@@ -37,20 +37,21 @@ const (
 )
 
 type Asset struct {
-	ID          string            `json:"id"`
-	Kind        AssetKind         `json:"kind"`
-	Hostname    string            `json:"hostname,omitempty"`
-	FQDN        string            `json:"fqdn,omitempty"`
-	IPAddresses []string          `json:"ip_addresses,omitempty"`
-	Domain      string            `json:"domain,omitempty"`
-	SiteCode    string            `json:"site_code,omitempty"`
-	Roles       []string          `json:"roles,omitempty"`
-	Properties  map[string]string `json:"properties,omitempty"`
-	FirstSeen   time.Time         `json:"first_seen"`
-	LastSeen    time.Time         `json:"last_seen"`
-	Source      string            `json:"source"`
-	Confidence  Confidence        `json:"confidence"`
-	Fingerprint string            `json:"fingerprint"`
+	ID                string            `json:"id"`
+	Kind              AssetKind         `json:"kind"`
+	Hostname          string            `json:"hostname,omitempty"`
+	FQDN              string            `json:"fqdn,omitempty"`
+	IPAddresses       []string          `json:"ip_addresses,omitempty"`
+	Domain            string            `json:"domain,omitempty"`
+	SiteCode          string            `json:"site_code,omitempty"`
+	Roles             []string          `json:"roles,omitempty"`
+	Properties        map[string]string `json:"properties,omitempty"`
+	FirstSeen         time.Time         `json:"first_seen"`
+	LastSeen          time.Time         `json:"last_seen"`
+	Source            string            `json:"source"`
+	Confidence        Confidence        `json:"confidence"`
+	Fingerprint       string            `json:"fingerprint"`
+	LastObservedRunID string            `json:"last_observed_run_id,omitempty"`
 }
 
 type CredentialType string
@@ -125,21 +126,23 @@ const (
 )
 
 type Capability struct {
-	ID              string          `json:"id"`
-	Name            string          `json:"name"`
-	Available       bool            `json:"available"`
-	State           CapabilityState `json:"state,omitempty"`
-	Reason          string          `json:"reason,omitempty"`
-	Source          string          `json:"source"`
-	CredentialID    string          `json:"credential_id,omitempty"`
-	AssetID         string          `json:"asset_id,omitempty"`
-	EvidenceIDs     []string        `json:"evidence_ids,omitempty"`
-	RequiredInputs  []string        `json:"required_inputs,omitempty"`
-	AvailableInputs []string        `json:"available_inputs,omitempty"`
-	MissingInputs   []string        `json:"missing_inputs,omitempty"`
-	RelatedEndpoint string          `json:"related_endpoint,omitempty"`
-	SafetyBlocked   bool            `json:"safety_blocked"`
-	Stale           bool            `json:"stale"`
+	ID                   string          `json:"id"`
+	Name                 string          `json:"name"`
+	Available            bool            `json:"available"`
+	State                CapabilityState `json:"state,omitempty"`
+	Reason               string          `json:"reason,omitempty"`
+	Source               string          `json:"source"`
+	CredentialID         string          `json:"credential_id,omitempty"`
+	AssetID              string          `json:"asset_id,omitempty"`
+	EvidenceIDs          []string        `json:"evidence_ids,omitempty"`
+	RequiredInputs       []string        `json:"required_inputs,omitempty"`
+	AvailableInputs      []string        `json:"available_inputs,omitempty"`
+	MissingInputs        []string        `json:"missing_inputs,omitempty"`
+	RelatedEndpoint      string          `json:"related_endpoint,omitempty"`
+	SafetyBlocked        bool            `json:"safety_blocked"`
+	Stale                bool            `json:"stale"`
+	AuthenticationMethod string          `json:"authentication_method,omitempty"`
+	RelatedRoute         string          `json:"related_route,omitempty"`
 }
 
 type Sensitivity string
@@ -163,6 +166,76 @@ type Evidence struct {
 	CollectedAt  time.Time      `json:"collected_at"`
 	Sensitivity  Sensitivity    `json:"sensitivity"`
 	Fingerprint  string         `json:"fingerprint"`
+	RunID        string         `json:"run_id,omitempty"`
+}
+
+type TemporalState string
+
+const (
+	TemporalCurrent          TemporalState = "current"
+	TemporalStale            TemporalState = "stale"
+	TemporalMissingLatest    TemporalState = "missing_in_latest_run"
+	TemporalNotInLatestScope TemporalState = "not_in_latest_scope"
+	TemporalUnknown          TemporalState = "unknown"
+	TemporalSuperseded       TemporalState = "superseded"
+	TemporalConflicting      TemporalState = "conflicting"
+)
+
+type TemporalObservation struct {
+	Type        string        `json:"type"`
+	State       TemporalState `json:"state"`
+	AssetID     string        `json:"asset_id,omitempty"`
+	Endpoint    string        `json:"endpoint,omitempty"`
+	EvidenceIDs []string      `json:"evidence_ids,omitempty"`
+	LatestRunID string        `json:"latest_run_id,omitempty"`
+	Reason      string        `json:"reason"`
+}
+
+type AuthenticationAttemptStatus string
+
+const (
+	AuthPlanned      AuthenticationAttemptStatus = "planned"
+	AuthDryRun       AuthenticationAttemptStatus = "dry_run"
+	AuthSucceeded    AuthenticationAttemptStatus = "succeeded"
+	AuthRejected     AuthenticationAttemptStatus = "rejected"
+	AuthInconclusive AuthenticationAttemptStatus = "inconclusive"
+	AuthBlocked      AuthenticationAttemptStatus = "blocked"
+	AuthCancelled    AuthenticationAttemptStatus = "cancelled"
+	AuthError        AuthenticationAttemptStatus = "error"
+)
+
+type AuthenticationAttempt struct {
+	ID                      string                      `json:"id"`
+	RunID                   string                      `json:"run_id"`
+	IdentityID              string                      `json:"identity_id"`
+	AssetID                 string                      `json:"asset_id,omitempty"`
+	Origin                  string                      `json:"origin"`
+	Route                   string                      `json:"route"`
+	Method                  string                      `json:"method"`
+	AuthenticationMethod    string                      `json:"authentication_method"`
+	StartedAt               time.Time                   `json:"started_at"`
+	FinishedAt              *time.Time                  `json:"finished_at,omitempty"`
+	Status                  AuthenticationAttemptStatus `json:"status"`
+	Attempted               bool                        `json:"attempted"`
+	Succeeded               bool                        `json:"succeeded"`
+	Rejected                bool                        `json:"rejected"`
+	Inconclusive            bool                        `json:"inconclusive"`
+	TransportSucceeded      bool                        `json:"transport_succeeded"`
+	HTTPResponseReceived    bool                        `json:"http_response_received"`
+	StatusCode              int                         `json:"status_code,omitempty"`
+	ChallengeBefore         []string                    `json:"challenge_before,omitempty"`
+	ChallengeAfter          []string                    `json:"challenge_after,omitempty"`
+	ProtocolValidatedBefore bool                        `json:"protocol_validated_before"`
+	UsableAccessAfter       bool                        `json:"usable_access_after"`
+	FailureCategory         string                      `json:"failure_category,omitempty"`
+	Reason                  string                      `json:"reason"`
+	EvidenceIDs             []string                    `json:"evidence_ids,omitempty"`
+	BudgetCost              int                         `json:"budget_cost"`
+	SafetyAcknowledged      bool                        `json:"safety_acknowledged"`
+	PreviousAttempts        int                         `json:"previous_attempts"`
+	EvidenceFreshness       TemporalState               `json:"evidence_freshness"`
+	RemainingUncertainty    string                      `json:"remaining_uncertainty,omitempty"`
+	RepeatOverride          bool                        `json:"repeat_override"`
 }
 
 type FindingStatus string

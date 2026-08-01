@@ -18,7 +18,8 @@ CinderPath is for authorized assessments and controlled labs. Preserve safe, rea
 - Generic TCP probing must remain connect-only. SMB, SQL, LDAP, and SCCM notification ports do not receive protocol actions unless an explicitly enabled safe module owns that protocol.
 - Keep all network operations bounded by context, concurrency, per-host timeouts, per-connection timeouts, response-size limits, and redirect limits.
 - SCCM HTTP validation is restricted to anonymous `GET /SMS_MP/.sms_aut?MPLIST` and `HEAD` requests to the four documented DP virtual-directory roots on already-profiled ports 80/443. Do not extend that allowlist without a separately reviewed safety task.
-- SCCM HTTP requests never carry bodies, authorization, cookies, client certificates, ambient credentials, proxy traffic, or state-changing/WebDAV/BITS methods. Only `live.sccm.http_routes` may generate this traffic; MP and DP classifiers consume persisted evidence.
+- Discovery SCCM HTTP requests never carry bodies, authorization, cookies, client certificates, ambient credentials, proxy traffic, or state-changing/WebDAV/BITS methods. Only `live.sccm.http_routes` may generate discovery traffic; MP and DP classifiers consume persisted evidence.
+- `auth validate` is the sole authentication workflow. It is disabled by default and requires explicit enablement, identity, exact known endpoint selection, lockout acknowledgement, freshness, and attempt-budget checks. It may send one Basic header or one selected TLS client certificate only to the exact previously observed allowlisted route. It never redirects, retries, uses proxies/cookies/ambient credentials, or broadens scope.
 
 ## Architecture rules
 
@@ -76,4 +77,4 @@ Live smoke tests must use explicitly authorized targets; prefer loopback fixture
 
 ## Next task
 
-The recommended next implementation is a separately reviewed, explicitly enabled authentication-validation design with strict scope, method allowlists, attempt budgets, lockout protections, and audit evidence. Policy retrieval, content-location requests, package access, registration, account creation, certificate enrollment, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).
+The recommended next implementation is hardening authentication validation with OS-backed secret providers and external lockout-policy input, without expanding routes or authentication methods. Policy retrieval, content-location requests, package access, registration, account creation, certificate enrollment, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/app"
+	"github.com/Lmarkussen/CinderPath/internal/authvalidate"
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/identity"
@@ -29,6 +30,7 @@ type state struct {
 	stdout, stderr                            io.Writer
 	discover                                  discoverFlags
 	identity                                  identity.Input
+	auth                                      authFlags
 }
 
 type discoverFlags struct {
@@ -44,6 +46,12 @@ type discoverFlags struct {
 	managementPoints, distributionPoints, siteServers, sqlServers  []string
 	siteCode                                                       string
 }
+type authFlags struct {
+	enabled, dryRun, ackLockout, ackMultiple, allowBasicHTTP, allowRepeat, validatedMPs bool
+	identityID, method, minimumDelay                                                    string
+	endpoints                                                                           []string
+	maxTotal, maxIdentity, maxEndpoint, maxPair                                         int
+}
 
 func New(stdout, stderr io.Writer) *cobra.Command {
 	s := &state{stdout: stdout, stderr: stderr}
@@ -57,8 +65,71 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
 	f.StringVar(&s.profile, "profile", string(d.Profile), "assessment profile: safe, standard, aggressive")
-	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand(), s.identityCommand(), s.capabilitiesCommand())
+	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand())
 	return root
+}
+func (s *state) authCommand() *cobra.Command {
+	root := &cobra.Command{Use: "auth", Short: "Explicitly validate selected authentication against exact known SCCM routes"}
+	validate := &cobra.Command{Use: "validate", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		delay, err := time.ParseDuration(valueOr(s.auth.minimumDelay, s.cfg.AuthValidation.MinimumDelay))
+		if err != nil {
+			return err
+		}
+		o := authvalidate.Options{Enabled: s.auth.enabled, DryRun: s.auth.dryRun, AcknowledgeLockout: s.auth.ackLockout, AcknowledgeMultiple: s.auth.ackMultiple, AllowBasicHTTP: s.auth.allowBasicHTTP, AllowRepeat: s.auth.allowRepeat, ValidatedManagementPoints: s.auth.validatedMPs, IdentityID: s.auth.identityID, Endpoints: s.auth.endpoints, Method: s.auth.method, Timeout: s.cfg.Timeout, Budget: authvalidate.Budget{MaxTotal: intOr(s.auth.maxTotal, s.cfg.AuthValidation.MaxTotalAttempts), MaxPerIdentity: intOr(s.auth.maxIdentity, s.cfg.AuthValidation.MaxAttemptsPerIdentity), MaxPerEndpoint: intOr(s.auth.maxEndpoint, s.cfg.AuthValidation.MaxAttemptsPerEndpoint), MaxPerIdentityEndpoint: intOr(s.auth.maxPair, s.cfg.AuthValidation.MaxAttemptsPerIdentityEndpoint), MinimumDelay: delay, StopAfterSuccess: s.cfg.AuthValidation.StopAfterSuccess}}
+		o.PlanSink = func(plans []authvalidate.Plan) {
+			fmt.Fprintln(s.stdout, "Authentication validation plan")
+			fmt.Fprintf(s.stdout, "Attempts planned: %d\nRemote authentication has not yet been attempted.\n", len(plans))
+			for _, p := range plans {
+				fmt.Fprintf(s.stdout, "\nIdentity: %s\nEndpoint: %s\nRoute: %s\nMethod: %s\nAuthentication: %s\nPrevious attempts: %d\n", p.IdentityID(), p.Origin, p.Route, p.HTTPMethod, p.AuthenticationMethod, p.PreviousAttempts)
+			}
+			fmt.Fprintln(s.stdout, "\nWarning: A failed authentication attempt may contribute to account lockout.")
+		}
+		out, err := s.application.ValidateAuthentication(cmd.Context(), os.Args[1:], o)
+		for _, a := range out.Attempts {
+			fmt.Fprintf(s.stdout, "\nEndpoint: %s\nRoute: %s\nMethod: %s\nAuthentication: %s\nAttempts planned: 1\nPrevious attempts: %d\nAttempted: %t\nResult: %s\nHTTP response: %d\nCredentials stored: no\nAuthorization data persisted: no\n", a.Origin, a.Route, a.Method, a.AuthenticationMethod, a.PreviousAttempts, a.Attempted, a.Status, a.StatusCode)
+		}
+		return err
+	}}
+	f := validate.Flags()
+	f.BoolVar(&s.auth.enabled, "enable-auth-validation", false, "explicitly enable remote authentication validation")
+	f.BoolVar(&s.auth.dryRun, "dry-run", false, "plan without reading secrets or sending traffic")
+	f.BoolVar(&s.auth.ackLockout, "acknowledge-lockout-risk", false, "acknowledge that one failed attempt may contribute to lockout")
+	f.BoolVar(&s.auth.ackMultiple, "acknowledge-multiple-attempts", false, "acknowledge a plan containing more than one attempt")
+	f.BoolVar(&s.auth.allowBasicHTTP, "allow-basic-over-http", false, "allow Basic over cleartext HTTP (strongly discouraged)")
+	f.BoolVar(&s.auth.allowRepeat, "allow-repeat-attempt", false, "permit a repeated tuple within remaining budgets")
+	f.BoolVar(&s.auth.validatedMPs, "validated-management-points", false, "select matching routes on validated management points")
+	f.StringVar(&s.auth.identityID, "identity-id", "", "exact stored identity ID")
+	f.StringArrayVar(&s.auth.endpoints, "endpoint", nil, "exact previously observed origin (repeatable)")
+	f.StringVar(&s.auth.method, "authentication-method", "basic", "basic or tls_client_certificate")
+	f.StringVar(&s.auth.minimumDelay, "minimum-delay", "", "minimum delay between attempts")
+	f.IntVar(&s.auth.maxTotal, "max-total-attempts", 0, "maximum total attempt budget")
+	f.IntVar(&s.auth.maxIdentity, "max-attempts-per-identity", 0, "maximum attempts per identity")
+	f.IntVar(&s.auth.maxEndpoint, "max-attempts-per-endpoint", 0, "maximum attempts per endpoint")
+	f.IntVar(&s.auth.maxPair, "max-attempts-per-identity-endpoint", 0, "maximum attempts per identity/endpoint")
+	results := &cobra.Command{Use: "results", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		out, err := s.application.AuthenticationResults(cmd.Context())
+		if err != nil {
+			return err
+		}
+		for _, a := range out.Attempts {
+			fmt.Fprintf(s.stdout, "%s %s %s %s attempted=%t status=%s code=%d\n", a.StartedAt, a.IdentityID, a.Origin, a.AuthenticationMethod, a.Attempted, a.Status, a.StatusCode)
+		}
+		return nil
+	}}
+	root.AddCommand(validate, results)
+	return root
+}
+func valueOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+func intOr(a, b int) int {
+	if a > 0 {
+		return a
+	}
+	return b
 }
 func (s *state) identityCommand() *cobra.Command {
 	c := &cobra.Command{Use: "identity", Short: "Inspect local identity references without authenticating"}
@@ -131,7 +202,7 @@ func printIdentity(w io.Writer, id models.Credential) {
 	if name == "" {
 		name = string(id.Kind)
 	}
-	fmt.Fprintf(w, "Identity: %s\nKind: %s\nReference: %s\nReference available: %t\nMetadata validated locally: %t\nValidation: %s\n", name, id.Kind, id.RedactedReference, id.Validated, id.Validated, id.ValidationReason)
+	fmt.Fprintf(w, "Identity: %s\nIdentity ID: %s\nKind: %s\nReference: %s\nReference available: %t\nMetadata validated locally: %t\nValidation: %s\n", name, id.ID, id.Kind, id.RedactedReference, id.Validated, id.Validated, id.ValidationReason)
 }
 func printCapabilities(w io.Writer, caps []models.Capability) {
 	for _, c := range caps {

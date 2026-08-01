@@ -99,7 +99,7 @@ func (o *Orchestrator) Execute(ctx context.Context, run RunContext, list []Modul
 			if result == nil {
 				result = &Result{}
 			}
-			counts, persistErr := o.persist(ctx, result)
+			counts, persistErr := o.persist(ctx, run.RunID, result)
 			ex.AssetsCreated = counts[0]
 			ex.EvidenceCreated = counts[1]
 			ex.FindingsCreated = counts[2]
@@ -170,9 +170,10 @@ func (o *Orchestrator) skip(ctx context.Context, e *models.ModuleExecution, reas
 	e.SkipReason = reason
 	_ = o.store.SaveModuleExecution(context.WithoutCancel(ctx), e)
 }
-func (o *Orchestrator) persist(ctx context.Context, r *Result) ([4]int, error) {
+func (o *Orchestrator) persist(ctx context.Context, runID string, r *Result) ([4]int, error) {
 	var c [4]int
 	for i := range r.Assets {
+		r.Assets[i].LastObservedRunID = runID
 		n, e := o.store.UpsertAsset(ctx, &r.Assets[i])
 		if e != nil {
 			return c, e
@@ -192,6 +193,7 @@ func (o *Orchestrator) persist(ctx context.Context, r *Result) ([4]int, error) {
 		}
 	}
 	for i := range r.Evidence {
+		r.Evidence[i].RunID = runID
 		n, e := o.store.UpsertEvidence(ctx, &r.Evidence[i])
 		if e != nil {
 			return c, e

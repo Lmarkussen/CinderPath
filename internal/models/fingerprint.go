@@ -68,7 +68,12 @@ func (c *Credential) Prepare() {
 }
 
 func (c *Capability) Prepare() {
-	fp := StableFingerprint(c.Name, c.Source, c.CredentialID, c.AssetID)
+	var fp string
+	if c.AuthenticationMethod == "" && c.RelatedRoute == "" && c.RelatedEndpoint == "" {
+		fp = StableFingerprint(c.Name, c.Source, c.CredentialID, c.AssetID)
+	} else {
+		fp = StableFingerprint(c.Name, c.Source, c.CredentialID, c.AssetID, c.RelatedEndpoint, c.RelatedRoute, c.AuthenticationMethod)
+	}
 	c.ID = StableID("cap", fp)
 }
 

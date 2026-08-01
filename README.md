@@ -28,9 +28,33 @@ Supported kinds are `anonymous`, `domain_user`, `machine_account`, `current_proc
 
 Passwords and hashes are accepted only through environment or bounded-file references. Kerberos caches and private keys are checked for local existence only; ticket and private-key contents are not parsed. Persisted and reported file references contain only the basename. Public PEM and DER certificates are bounded and parsed for subject, issuer, validity, names, usages, algorithms, SHA-256 fingerprint, and client-auth EKU. PFX/PKCS#12 and certificate stores are unsupported.
 
-Endpoint challenges are normalized as `anonymous`, `negotiate`, `ntlm`, `kerberos`, `basic`, `digest`, `client_certificate`, or `unknown`. An advertised scheme is not proof it can be used. Capability states are `available`, `unavailable`, `unknown`, `requires_validation`, and `blocked_by_safety`; “potentially available” always means future applicability, never successful authentication. Reports explicitly state that no remote authentication was attempted.
+Endpoint challenges are normalized as `anonymous`, `negotiate`, `ntlm`, `kerberos`, `basic`, `digest`, `client_certificate`, or `unknown`. An advertised scheme is not proof it can be used. Capability states are `available`, `unavailable`, `unknown`, `requires_validation`, and `blocked_by_safety`; “potentially available” always means future applicability, never successful authentication. Reports explicitly state whether guarded authentication validation was performed.
 
-Passive staleness uses stored timestamps only. Asset, evidence, and certificate-warning thresholds are configured under `staleness`; stale inputs downgrade planned capabilities to `requires_validation` and do not create vulnerabilities.
+Passive staleness uses stored timestamps and run attribution. The latest completed discovery run is distinguished from report and authentication runs. Missing observations require current explicit scope and a successfully completed relevant stage; skipped, failed, cancelled, pre-provenance, and out-of-scope records remain uncertain. Asset, evidence, and certificate-warning thresholds are configured under `staleness`; stale inputs downgrade planned capabilities to `requires_validation` and do not create vulnerabilities.
+
+## Guarded authentication validation
+
+Authentication validation is disabled by default and exists only under `auth validate`. It never runs from `discover`, `assess`, or `report`.
+
+```bash
+cinderpath auth validate --dry-run \
+  --identity-id cred_placeholder \
+  --endpoint https://sccm01.lab.example \
+  --authentication-method basic
+
+cinderpath auth validate \
+  --enable-auth-validation \
+  --acknowledge-lockout-risk \
+  --identity-id cred_placeholder \
+  --endpoint https://sccm01.lab.example \
+  --authentication-method basic
+```
+
+> **Authentication validation may cause account lockout or security alerts. Use only with explicit authorization and carefully selected identities.**
+
+Only Basic and TLS client-certificate validation are supported. Basic requires an existing password reference, an exact previously observed Basic challenge, and HTTPS unless `--allow-basic-over-http` is explicitly supplied. TLS client authentication requires bounded PEM certificate/key files, a locally verified pair, current validity, client-auth EKU, and a previously observed client-certificate request. Redirects, retries, proxies, cookies, request bodies, arbitrary paths, ambient credentials, Kerberos, NTLM, Negotiate, PFX/P12, and encrypted keys are unsupported.
+
+Actual attempts additionally require `--enable-auth-validation` and `--acknowledge-lockout-risk`. Plans with more than one request require `--acknowledge-multiple-attempts`. Defaults allow three total historical attempts and one per identity, endpoint, and identity/endpoint tuple, with sequential execution and a two-second minimum delay. `--dry-run` reads no secret and sends no network traffic. `auth results` shows durable history without authorization material.
 
 ## Architecture
 
@@ -307,7 +331,7 @@ go build -ldflags "-X github.com/Lmarkussen/CinderPath/internal/version.Version=
 
 ## Planned capabilities
 
-The recommended next phase is a separately reviewed, opt-in authentication-validation design with explicit target scope, method allowlists, credential isolation, attempt budgets, lockout safeguards, and audit evidence. Policy retrieval, registration, account creation, certificate enrollment, content access, SCCM messaging, relay, SQL/SMB authentication, execution, and all state-changing operations remain deferred.
+The recommended next phase is authentication-provider hardening: OS-backed secret references, operator-supplied lockout-policy metadata, and stronger certificate trust configuration without adding routes or methods. Policy retrieval, registration, account creation, certificate enrollment, content access, SCCM messaging, relay, SQL/SMB authentication, execution, and all state-changing operations remain deferred.
 
 ## Known limitations
 
@@ -316,7 +340,7 @@ The recommended next phase is a separately reviewed, opt-in authentication-valid
 * LDAP currently uses simple bind, explicit anonymous bind, LDAPS, or STARTTLS; current-process Kerberos/SASL providers are future work.
 * Role inference is intentionally conservative and cannot confirm an SCCM role from ports or hostnames alone.
 * `standard` and `aggressive` do not enable additional behavior.
-* SQLite migration history currently contains only schema version 1; passive correlation uses existing JSON records and preserves fingerprints.
+* SQLite schema version 2 adds durable authentication-attempt history; passive model records remain JSON-backed and preserve schema-v1 fingerprints.
 * Correlation is in-memory and cannot independently resolve stale, load-balanced, or reassigned identities.
 * SCCM HTTP validation is limited to standard ports 80/443 and the five exact routes above; custom ports, CMG paths, policy endpoints, package/content paths, and authenticated behavior are not tested.
 * A DP conclusion remains a high- or medium-confidence inference because this phase uses only virtual-directory-root `HEAD` responses.

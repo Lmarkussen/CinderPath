@@ -20,23 +20,35 @@ const (
 )
 
 type Config struct {
-	DBPath      string          `yaml:"db"`
-	OutputDir   string          `yaml:"output_dir"`
-	LogLevel    string          `yaml:"log_level"`
-	NoColor     bool            `yaml:"no_color"`
-	Timeout     time.Duration   `yaml:"-"`
-	TimeoutText string          `yaml:"timeout"`
-	Profile     Profile         `yaml:"profile"`
-	ConfigPath  string          `yaml:"-"`
-	Scope       ScopeConfig     `yaml:"scope"`
-	Discovery   DiscoveryConfig `yaml:"discovery"`
-	LDAP        LDAPConfig      `yaml:"ldap"`
-	Staleness   StalenessConfig `yaml:"staleness"`
+	DBPath         string               `yaml:"db"`
+	OutputDir      string               `yaml:"output_dir"`
+	LogLevel       string               `yaml:"log_level"`
+	NoColor        bool                 `yaml:"no_color"`
+	Timeout        time.Duration        `yaml:"-"`
+	TimeoutText    string               `yaml:"timeout"`
+	Profile        Profile              `yaml:"profile"`
+	ConfigPath     string               `yaml:"-"`
+	Scope          ScopeConfig          `yaml:"scope"`
+	Discovery      DiscoveryConfig      `yaml:"discovery"`
+	LDAP           LDAPConfig           `yaml:"ldap"`
+	Staleness      StalenessConfig      `yaml:"staleness"`
+	AuthValidation AuthValidationConfig `yaml:"auth_validation"`
 }
 type StalenessConfig struct {
 	AssetDays              int `yaml:"asset_days"`
 	EvidenceDays           int `yaml:"evidence_days"`
 	CertificateWarningDays int `yaml:"certificate_warning_days"`
+}
+type AuthValidationConfig struct {
+	Enabled                          bool   `yaml:"enabled"`
+	MaxTotalAttempts                 int    `yaml:"max_total_attempts"`
+	MaxAttemptsPerIdentity           int    `yaml:"max_attempts_per_identity"`
+	MaxAttemptsPerEndpoint           int    `yaml:"max_attempts_per_endpoint"`
+	MaxAttemptsPerIdentityEndpoint   int    `yaml:"max_attempts_per_identity_endpoint"`
+	MinimumDelay                     string `yaml:"minimum_delay"`
+	StopAfterSuccess                 bool   `yaml:"stop_after_success"`
+	RefuseMultiplePasswordIdentities bool   `yaml:"refuse_multiple_password_identities"`
+	Concurrency                      int    `yaml:"concurrency"`
 }
 
 type ScopeConfig struct {
@@ -68,10 +80,11 @@ type Overrides struct {
 func Defaults() Config {
 	return Config{
 		DBPath: "cinderpath.db", OutputDir: "reports", LogLevel: "info", Timeout: 2 * time.Minute, TimeoutText: "2m", Profile: ProfileSafe,
-		Scope:     ScopeConfig{MaxExpandedTargets: 4096},
-		Discovery: DiscoveryConfig{Ports: "53,80,88,135,389,443,445,636,1433,3268,3269,8530,8531,10123", ConnectTimeout: "2s", HostTimeout: "30s", Concurrency: 32, HTTPMaxBodyBytes: 32768, HTTPMaxRedirects: 3, UserAgent: "CinderPath-safe-discovery/dev"},
-		LDAP:      LDAPConfig{PageSize: 500, MaxEntries: 10000, SearchTimeout: "30s"},
-		Staleness: StalenessConfig{AssetDays: 30, EvidenceDays: 30, CertificateWarningDays: 30},
+		Scope:          ScopeConfig{MaxExpandedTargets: 4096},
+		Discovery:      DiscoveryConfig{Ports: "53,80,88,135,389,443,445,636,1433,3268,3269,8530,8531,10123", ConnectTimeout: "2s", HostTimeout: "30s", Concurrency: 32, HTTPMaxBodyBytes: 32768, HTTPMaxRedirects: 3, UserAgent: "CinderPath-safe-discovery/dev"},
+		LDAP:           LDAPConfig{PageSize: 500, MaxEntries: 10000, SearchTimeout: "30s"},
+		Staleness:      StalenessConfig{AssetDays: 30, EvidenceDays: 30, CertificateWarningDays: 30},
+		AuthValidation: AuthValidationConfig{Enabled: false, MaxTotalAttempts: 3, MaxAttemptsPerIdentity: 1, MaxAttemptsPerEndpoint: 1, MaxAttemptsPerIdentityEndpoint: 1, MinimumDelay: "2s", StopAfterSuccess: true, RefuseMultiplePasswordIdentities: true, Concurrency: 1},
 	}
 }
 
@@ -113,6 +126,12 @@ func Load(path string, cli Overrides) (Config, error) {
 	}
 	if cfg.Staleness.AssetDays <= 0 || cfg.Staleness.EvidenceDays <= 0 || cfg.Staleness.CertificateWarningDays <= 0 {
 		return cfg, errors.New("staleness thresholds must be greater than zero")
+	}
+	if cfg.AuthValidation.MaxTotalAttempts <= 0 || cfg.AuthValidation.MaxAttemptsPerIdentity <= 0 || cfg.AuthValidation.MaxAttemptsPerEndpoint <= 0 || cfg.AuthValidation.MaxAttemptsPerIdentityEndpoint <= 0 || cfg.AuthValidation.Concurrency != 1 {
+		return cfg, errors.New("authentication validation budgets must be positive and concurrency must be one")
+	}
+	if d, err := time.ParseDuration(cfg.AuthValidation.MinimumDelay); err != nil || d < 0 {
+		return cfg, errors.New("auth_validation.minimum_delay must be a non-negative duration")
 	}
 	switch cfg.Profile {
 	case ProfileSafe, ProfileStandard, ProfileAggressive:

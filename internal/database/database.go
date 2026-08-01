@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/models"
@@ -68,12 +69,32 @@ func (s *Store) initialize(ctx context.Context) error {
 				return fmt.Errorf("apply schema v1: %w", err)
 			}
 		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit schema: %w", err)
+		}
+		version = 1
+	}
+	if version == 1 {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		for _, statement := range schemaV2 {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply schema v2: %w", err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit schema v2: %w", err)
 		}
 	}
 	return nil
@@ -319,6 +340,31 @@ func (s *Store) SaveModuleExecution(ctx context.Context, e *models.ModuleExecuti
 
 func (s *Store) ListModuleExecutions(ctx context.Context) ([]models.ModuleExecution, error) {
 	return listJSON[models.ModuleExecution](ctx, s.db, "module_executions")
+}
+func (s *Store) SaveAuthenticationAttempt(ctx context.Context, a *models.AuthenticationAttempt) error {
+	b, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO authentication_attempts(id,run_id,identity_id,asset_id,origin,authentication_method,started_at,status,data) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET run_id=excluded.run_id,identity_id=excluded.identity_id,asset_id=excluded.asset_id,origin=excluded.origin,authentication_method=excluded.authentication_method,started_at=excluded.started_at,status=excluded.status,data=excluded.data`, a.ID, a.RunID, a.IdentityID, a.AssetID, a.Origin, a.AuthenticationMethod, timeText(a.StartedAt), a.Status, string(b))
+	return err
+}
+func (s *Store) ListAuthenticationAttempts(ctx context.Context) ([]models.AuthenticationAttempt, error) {
+	return listJSON[models.AuthenticationAttempt](ctx, s.db, "authentication_attempts")
+}
+func (s *Store) AcquireAuthenticationLock(ctx context.Context, identityID string) (bool, error) {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO authentication_locks(identity_id,acquired_at) VALUES(?,?)`, identityID, timeText(time.Now().UTC()))
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+func (s *Store) ReleaseAuthenticationLock(ctx context.Context, identityID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM authentication_locks WHERE identity_id=?`, identityID)
+	return err
 }
 func timeText(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 

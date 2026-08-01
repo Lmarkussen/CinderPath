@@ -49,3 +49,16 @@ func TestMakeCheckIncludesRequiredValidation(t *testing.T) {
 		}
 	}
 }
+func TestAuthDryRunTargetCannotEnableAuthentication(t *testing.T) {
+	root := repositoryRoot(t)
+	cmd := exec.Command("make", "-n", "auth-dry-run", "ARGS=--identity-id cred --endpoint https://example.invalid")
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(out)
+	if !strings.Contains(text, "auth validate --dry-run") || strings.Contains(text, "--enable-auth-validation") {
+		t.Fatalf("unsafe auth dry-run target:\n%s", text)
+	}
+}
