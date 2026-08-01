@@ -42,11 +42,12 @@ Authentication validation may cause account lockout or security alerts. Use only
 
 ## Offline policy protocol foundation
 
-Schema v5 adds offline capture sources, normalized exchanges, evidence-graph
-sequences, bounded structural observations, parser candidates, matrices, and
-ambiguity records while preserving schema-v4 databases. HAR exchange order is
-supported; encrypted TLS, HTTP/2/3, and PCAPNG application reassembly remain
-opaque or unsupported. Raw bodies are not stored. Parser candidates are
+Schema v5 introduced offline capture sources. Because it was already committed,
+schema v6 adds files, interfaces, packet metadata, flows, sequence edges,
+parser validations, matrix cells/findings, corpus results, and dossiers while
+preserving populated v5 databases. HAR ordering and bounded PCAPNG Ethernet
+packet decoding are supported; unsupported link types, encrypted TLS, and
+HTTP/2/3 remain opaque or unsupported. Raw bodies are not stored. Parser candidates are
 offline-only and cannot change the live execution gate.
 
 Schema v4 adds offline research sets, bundle signature state, experimental

@@ -127,10 +127,12 @@ func importHAR(b []byte, l Limits) (NormalizedCapture, error) {
 		}
 		reqBody := []byte(e.Request.Post.Text)
 		respBody := []byte(e.Response.Content.Text)
-		req := &Message{Direction: "request", Method: e.Request.Method, Route: route, HTTPVersion: e.Request.HTTPVersion, QueryKeys: q, MediaType: media(e.Request.Post.MimeType), Body: bodyField(reqBody, l), Headers: redactHeaders(e.Request.Headers, c.RedactionSummary), RawMemberFingerprint: fingerprint(reqBody)}
-		resp := &Message{Direction: "response", StatusCode: e.Response.Status, HTTPVersion: e.Response.HTTPVersion, MediaType: media(e.Response.Content.MimeType), Body: bodyField(respBody, l), Headers: redactHeaders(e.Response.Headers, c.RedactionSummary), RawMemberFingerprint: fingerprint(respBody)}
+		req := &Message{Direction: "request", Method: e.Request.Method, Route: route, HTTPVersion: e.Request.HTTPVersion, QueryKeys: q, MediaType: media(e.Request.Post.MimeType), Body: bodyField(reqBody, l), Headers: redactHeaders(e.Request.Headers, c.RedactionSummary), RawMemberFingerprint: fingerprint(reqBody), rawBody: reqBody}
+		resp := &Message{Direction: "response", StatusCode: e.Response.Status, HTTPVersion: e.Response.HTTPVersion, MediaType: media(e.Response.Content.MimeType), Body: bodyField(respBody, l), Headers: redactHeaders(e.Response.Headers, c.RedactionSummary), RawMemberFingerprint: fingerprint(respBody), rawBody: respBody}
+		req.Structured, req.Warnings = ParseStructured(e.Request.Post.MimeType, reqBody, l)
+		resp.Structured, resp.Warnings = ParseStructured(e.Response.Content.MimeType, respBody, l)
 		t, _ := time.Parse(time.RFC3339Nano, e.Started)
-		ex := Exchange{Index: i, Request: req, Response: resp, ResponseComplete: int64(len(respBody)) <= l.MaxBodyBytes, StartedAt: t, AssociationEvidence: []string{"HAR entry pairing"}, AssociationConfidence: "high"}
+		ex := Exchange{Index: i, Request: req, Response: resp, ResponseComplete: int64(len(respBody)) <= l.MaxBodyBytes, StartedAt: t, AssociationEvidence: []string{"HAR entry pairing"}, AssociationConfidence: "high", State: "complete"}
 		c.Exchanges = append(c.Exchanges, ex)
 	}
 	return c, nil
@@ -180,7 +182,7 @@ func finalize(c *NormalizedCapture) {
 			e.Response.ID = stableID("message", e.ID, "response")
 		}
 		c.Sequence.ExchangeIDs = append(c.Sequence.ExchangeIDs, e.ID)
-		if i > 0 {
+		if i > 0 && (c.Source.Format == "har" || (e.StreamID != "" && e.StreamID == c.Exchanges[i-1].StreamID)) {
 			prev := c.Exchanges[i-1]
 			edge := SequenceEdge{From: prev.ID, To: e.ID, Kind: "source_order", Evidence: "capture record order", Confidence: "high"}
 			if !prev.StartedAt.IsZero() && !e.StartedAt.IsZero() {
@@ -193,8 +195,11 @@ func finalize(c *NormalizedCapture) {
 		c.Sequence.Classification = "incomplete"
 	} else if len(c.Exchanges) == 1 {
 		c.Sequence.Classification = "single_exchange"
-	} else {
+	} else if c.Source.Format == "har" || len(c.Flows) <= 1 {
 		c.Sequence.Classification = "fully_ordered"
+	} else {
+		c.Sequence.Classification = "partially_ordered"
+		c.Sequence.Warnings = append(c.Sequence.Warnings, "independent TCP flows remain unordered")
 	}
 	c.Sequence.ID = stableID("sequence", strings.Join(c.Sequence.ExchangeIDs, ","))
 	c.Observations = Observe(c)
@@ -211,11 +216,7 @@ func messageKey(m *Message) string {
 func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 	c := NormalizedCapture{RedactionSummary: map[string]int{}}
 	if ng {
-		if len(b) < 12 || binary.LittleEndian.Uint32(b[:4]) != 0x0a0d0d0a {
-			return c, errors.New("invalid pcapng header")
-		}
-		c.Source.Warnings = []string{"pcapng blocks preserved; multiplexed and encrypted payloads remain opaque"}
-		return c, nil
+		return decodePCAPNG(b, l)
 	}
 	if len(b) < 24 {
 		return c, errors.New("truncated pcap header")
@@ -236,11 +237,17 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 	o := 24
 	packets := 0
 	for o+16 <= len(b) {
-		var n uint32
+		var n, orig, sec, usec uint32
 		if le {
+			sec = binary.LittleEndian.Uint32(b[o : o+4])
+			usec = binary.LittleEndian.Uint32(b[o+4 : o+8])
 			n = binary.LittleEndian.Uint32(b[o+8 : o+12])
+			orig = binary.LittleEndian.Uint32(b[o+12 : o+16])
 		} else {
+			sec = binary.BigEndian.Uint32(b[o : o+4])
+			usec = binary.BigEndian.Uint32(b[o+4 : o+8])
 			n = binary.BigEndian.Uint32(b[o+8 : o+12])
+			orig = binary.BigEndian.Uint32(b[o+12 : o+16])
 		}
 		o += 16
 		if n > uint32(l.MaxStreamBytes) || o+int(n) > len(b) {
@@ -253,6 +260,8 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 		}
 		packet := b[o : o+int(n)]
 		o += int(n)
+		idx := len(c.Packets)
+		c.Packets = append(c.Packets, Packet{ID: stableID("packet", fmt.Sprint(idx), fingerprint(packet)), Index: idx, Timestamp: time.Unix(int64(sec), int64(usec)*1000).UTC(), CapturedLength: n, OriginalLength: orig, Truncated: n < orig, LinkType: 1, Fingerprint: fingerprint(packet)})
 		payload, flow, seq, ok := tcpPayload(packet)
 		if ok && len(payload) > 0 {
 			if len(flows) >= l.MaxStreams {
@@ -282,8 +291,21 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 				c.Source.Warnings = append(c.Source.Warnings, "missing TCP segment bytes")
 			}
 			if i > 0 && x.seq < next {
-				c.Source.Warnings = append(c.Source.Warnings, "duplicate or overlapping TCP segment")
 				skip := int(next - x.seq)
+				cmp := skip
+				if cmp > len(x.payload) {
+					cmp = len(x.payload)
+				}
+				start := len(stream) - skip
+				if start < 0 {
+					start = 0
+				}
+				conflict := start+cmp <= len(stream) && !bytes.Equal(stream[start:start+cmp], x.payload[:cmp])
+				if conflict {
+					c.Source.Warnings = append(c.Source.Warnings, "conflicting overlapping TCP segment")
+				} else {
+					c.Source.Warnings = append(c.Source.Warnings, "duplicate retransmitted TCP segment")
+				}
 				if skip >= len(x.payload) {
 					continue
 				}
@@ -299,30 +321,134 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 			next = x.seq + uint32(len(x.payload))
 		}
 		if bytes.HasPrefix(stream, []byte("HTTP/")) {
-			resp, e := http.ReadResponse(bufio.NewReader(bytes.NewReader(stream)), nil)
-			if e != nil {
-				c.Source.Warnings = append(c.Source.Warnings, "malformed visible HTTP response")
-				continue
+			br := bufio.NewReader(bytes.NewReader(stream))
+			for {
+				if _, e := br.Peek(1); e != nil {
+					break
+				}
+				resp, e := http.ReadResponse(br, nil)
+				if e != nil {
+					c.Source.Warnings = append(c.Source.Warnings, "malformed or incomplete visible HTTP response")
+					break
+				}
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, l.MaxBodyBytes+1))
+				_ = resp.Body.Close()
+				m := &Message{Direction: "response", StatusCode: resp.StatusCode, HTTPVersion: resp.Proto, Headers: redactHTTPHeaders(resp.Header, c.RedactionSummary), MediaType: media(resp.Header.Get("Content-Type")), ContentEncoding: resp.Header.Get("Content-Encoding"), TransferEncoding: strings.Join(resp.TransferEncoding, ","), DeclaredLength: resp.ContentLength, Body: bodyField(body, l), rawBody: body}
+				m.Structured, m.Warnings = ParseStructured(resp.Header.Get("Content-Type"), body, l)
+				state := "response_only"
+				if !complete || int64(len(body)) > l.MaxBodyBytes {
+					state = "partial_response"
+				}
+				c.Exchanges = append(c.Exchanges, Exchange{Index: len(c.Exchanges), StreamID: stableID("stream", canonicalFlowKey(k)), Response: m, ResponseComplete: state == "response_only", AssociationEvidence: []string{"bounded TCP stream framing"}, AssociationConfidence: "medium", State: state})
 			}
-			m := &Message{Direction: "response", StatusCode: resp.StatusCode, HTTPVersion: resp.Proto, Headers: redactHTTPHeaders(resp.Header, c.RedactionSummary)}
-			c.Exchanges = append(c.Exchanges, Exchange{Index: len(c.Exchanges), StreamID: stableID("stream", k), Response: m, ResponseComplete: complete, AssociationEvidence: []string{"bounded TCP stream framing"}, AssociationConfidence: "low", Ambiguities: []string{"opposite-direction pairing not established"}})
 		} else if looksRequest(stream) {
-			req, e := http.ReadRequest(bufio.NewReader(bytes.NewReader(stream)))
-			if e != nil {
-				c.Source.Warnings = append(c.Source.Warnings, "malformed visible HTTP request")
-				continue
+			br := bufio.NewReader(bytes.NewReader(stream))
+			for {
+				if _, e := br.Peek(1); e != nil {
+					break
+				}
+				req, e := http.ReadRequest(br)
+				if e != nil {
+					c.Source.Warnings = append(c.Source.Warnings, "malformed or incomplete visible HTTP request")
+					break
+				}
+				route := req.URL.EscapedPath()
+				if route == "" {
+					route = "/"
+				}
+				body, _ := io.ReadAll(io.LimitReader(req.Body, l.MaxBodyBytes+1))
+				_ = req.Body.Close()
+				m := &Message{Direction: "request", Method: req.Method, Route: route, HTTPVersion: req.Proto, Headers: redactHTTPHeaders(req.Header, c.RedactionSummary), MediaType: media(req.Header.Get("Content-Type")), ContentEncoding: req.Header.Get("Content-Encoding"), TransferEncoding: strings.Join(req.TransferEncoding, ","), DeclaredLength: req.ContentLength, Body: bodyField(body, l), rawBody: body}
+				m.Structured, m.Warnings = ParseStructured(req.Header.Get("Content-Type"), body, l)
+				state := "request_only"
+				if !complete || int64(len(body)) > l.MaxBodyBytes {
+					state = "partial_request"
+				}
+				c.Exchanges = append(c.Exchanges, Exchange{Index: len(c.Exchanges), StreamID: stableID("stream", canonicalFlowKey(k)), Request: m, AssociationEvidence: []string{"bounded TCP stream framing"}, AssociationConfidence: "medium", State: state})
 			}
-			route := req.URL.EscapedPath()
-			if route == "" {
-				route = "/"
-			}
-			m := &Message{Direction: "request", Method: req.Method, Route: route, HTTPVersion: req.Proto, Headers: redactHTTPHeaders(req.Header, c.RedactionSummary)}
-			c.Exchanges = append(c.Exchanges, Exchange{Index: len(c.Exchanges), StreamID: stableID("stream", k), Request: m, ResponseComplete: false, AssociationEvidence: []string{"bounded TCP stream framing"}, AssociationConfidence: "low", Ambiguities: []string{"response pairing not established"}})
 		} else if len(stream) > 2 && stream[0] == 0x16 && stream[1] == 0x03 {
 			c.Source.Warnings = append(c.Source.Warnings, "opaque TLS stream; HTTP content not visible")
 		}
 	}
+	pairDirectional(&c)
 	return c, nil
+}
+
+func canonicalFlowKey(k string) string {
+	p := strings.Split(k, ">")
+	if len(p) != 2 {
+		return k
+	}
+	if p[0] > p[1] {
+		p[0], p[1] = p[1], p[0]
+	}
+	return p[0] + "<>" + p[1]
+}
+func pairDirectional(c *NormalizedCapture) {
+	groups := map[string][]Exchange{}
+	for _, e := range c.Exchanges {
+		groups[e.StreamID] = append(groups[e.StreamID], e)
+	}
+	var out []Exchange
+	keys := make([]string, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		xs := groups[k]
+		var reqs, resps []*Message
+		for _, e := range xs {
+			if e.Request != nil {
+				reqs = append(reqs, e.Request)
+			}
+			if e.Response != nil {
+				resps = append(resps, e.Response)
+			}
+		}
+		n := len(reqs)
+		if len(resps) > n {
+			n = len(resps)
+		}
+		f := Flow{ID: k, Transport: "tcp", DirectionConfidence: "medium", RequestCount: len(reqs), ResponseCount: len(resps)}
+		for _, w := range c.Source.Warnings {
+			switch {
+			case strings.Contains(w, "missing TCP"):
+				f.Gaps++
+			case strings.Contains(w, "duplicate"):
+				f.Duplicates++
+				f.Retransmissions++
+			case strings.Contains(w, "overlapping"):
+				f.Conflicts++
+			}
+		}
+		if f.Gaps > 0 || f.Conflicts > 0 {
+			f.State = "partial"
+		} else {
+			f.State = "reassembled"
+		}
+		for i := 0; i < n; i++ {
+			e := Exchange{Index: len(out), StreamID: k, AssociationEvidence: []string{"same bidirectional TCP flow", "HTTP/1 response order"}, AssociationConfidence: "medium"}
+			if i < len(reqs) {
+				e.Request = reqs[i]
+			}
+			if i < len(resps) {
+				e.Response = resps[i]
+				e.ResponseComplete = true
+			}
+			switch {
+			case e.Request != nil && e.Response != nil:
+				e.State = "complete"
+			case e.Request != nil:
+				e.State = "request_only"
+			case e.Response != nil:
+				e.State = "response_only"
+			}
+			out = append(out, e)
+		}
+		c.Flows = append(c.Flows, f)
+	}
+	c.Exchanges = out
 }
 
 func tcpPayload(p []byte) ([]byte, string, uint32, bool) {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/Lmarkussen/CinderPath/internal/capture"
 	"github.com/Lmarkussen/CinderPath/internal/database"
+	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/version"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -101,7 +103,56 @@ func (s *state) persistCapture(c capture.NormalizedCapture) error {
 		return e
 	}
 	defer db.Close()
-	return db.UpsertCaptureRecord(ctx, "capture_sources", database.CaptureRecord{ID: c.Source.ID, Fingerprint: c.Source.Fingerprint, Data: c})
+	run, e := db.CreateRun(ctx, "capture import", string(s.cfg.Profile), version.Version, []string{"offline", "redacted"})
+	if e != nil {
+		return e
+	}
+	fail := func(err error) error {
+		_ = db.FinishRun(ctx, run.ID, models.RunFailed, map[string]any{"live_requests": 0, "error_code": "capture_persistence_failed"})
+		return err
+	}
+	put := func(table, id, captureID, fp string, data any) error {
+		return db.UpsertCaptureRecord(ctx, table, database.CaptureRecord{ID: id, RunID: run.ID, CaptureID: captureID, Fingerprint: fp, Data: data})
+	}
+	if e = put("capture_sources", c.Source.ID, "", c.Source.Fingerprint, c); e != nil {
+		return fail(e)
+	}
+	for _, x := range c.Interfaces {
+		id := fmt.Sprintf("interface_%s_%d", c.Source.ID, x.ID)
+		if e = put("capture_interfaces", id, c.Source.ID, c.Source.Fingerprint, x); e != nil {
+			return fail(e)
+		}
+	}
+	for _, x := range c.Packets {
+		if e = put("capture_packets", x.ID, c.Source.ID, x.Fingerprint, x); e != nil {
+			return fail(e)
+		}
+	}
+	for _, x := range c.Flows {
+		if e = put("capture_flows", x.ID, c.Source.ID, c.Source.Fingerprint, x); e != nil {
+			return fail(e)
+		}
+	}
+	for _, x := range c.Exchanges {
+		if e = put("capture_exchanges", x.ID, c.Source.ID, c.Source.Fingerprint, x); e != nil {
+			return fail(e)
+		}
+	}
+	if e = put("capture_sequences", c.Sequence.ID, c.Source.ID, c.Source.Fingerprint, c.Sequence); e != nil {
+		return fail(e)
+	}
+	for i, x := range c.Sequence.Edges {
+		id := fmt.Sprintf("edge_%s_%d", c.Sequence.ID, i)
+		if e = put("capture_sequence_edges", id, c.Source.ID, c.Source.Fingerprint, x); e != nil {
+			return fail(e)
+		}
+	}
+	for _, x := range c.Observations {
+		if e = put("capture_observations", x.ID, c.Source.ID, c.Source.Fingerprint, x); e != nil {
+			return fail(e)
+		}
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"capture_id": c.Source.ID, "live_requests": 0, "exchanges": len(c.Exchanges), "flows": len(c.Flows)})
 }
 
 func (s *state) captureCommand() *cobra.Command {
@@ -127,6 +178,35 @@ func (s *state) captureCommand() *cobra.Command {
 	inspect := &cobra.Command{Use: "inspect", Args: cobra.NoArgs, RunE: run(false)}
 	normalize := &cobra.Command{Use: "normalize", Args: cobra.NoArgs, RunE: run(true)}
 	verify := &cobra.Command{Use: "verify", Args: cobra.NoArgs, RunE: run(false)}
+	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		ctx := context.Background()
+		db, e := database.Open(ctx, s.cfg.DBPath)
+		if e != nil {
+			return e
+		}
+		defer db.Close()
+		rs, e := db.ListCaptureRecords(ctx, "capture_sources")
+		if e != nil {
+			return e
+		}
+		for _, r := range rs {
+			fmt.Fprintf(s.stdout, "%s %s\n", r.ID, r.Fingerprint)
+		}
+		return nil
+	}}
+	show := &cobra.Command{Use: "show CAPTURE_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
+		ctx := context.Background()
+		db, e := database.Open(ctx, s.cfg.DBPath)
+		if e != nil {
+			return e
+		}
+		defer db.Close()
+		r, e := db.GetCaptureRecord(ctx, "capture_sources", a[0])
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(s.stdout).Encode(r.Data)
+	}}
 	for _, c := range []*cobra.Command{imp, inspect, normalize, verify} {
 		c.Flags().StringVar(&input, "input", "", "HAR, PCAP, PCAPNG, or normalized JSON capture")
 		c.Flags().StringVar(&format, "format", "", "input format (auto from extension)")
@@ -134,7 +214,7 @@ func (s *state) captureCommand() *cobra.Command {
 	}
 	normalize.Flags().StringVar(&output, "output", "", "mode-0600 normalized JSON output")
 	_ = normalize.MarkFlagRequired("output")
-	root.AddCommand(imp, inspect, normalize, verify)
+	root.AddCommand(imp, inspect, normalize, verify, list, show)
 	return root
 }
 
@@ -245,6 +325,25 @@ func (s *state) parserCommand() *cobra.Command {
 		return nil
 	}}
 	derive.Flags().StringArrayVar(&inputs, "input", nil, "capture path (repeatable)")
+	candidates := &cobra.Command{Use: "candidates", RunE: derive.RunE}
+	candidates.Flags().StringArrayVar(&inputs, "input", nil, "capture path (repeatable)")
+	show := &cobra.Command{Use: "show PARSER_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
+		var cs []capture.NormalizedCapture
+		for _, p := range inputs {
+			c, e := loadCapture(p, "")
+			if e != nil {
+				return e
+			}
+			cs = append(cs, c)
+		}
+		for _, p := range capture.DeriveCandidates(cs, 2) {
+			if p.ID == a[0] {
+				return json.NewEncoder(s.stdout).Encode(p)
+			}
+		}
+		return errors.New("parser candidate not found")
+	}}
+	show.Flags().StringArrayVar(&inputs, "input", nil, "capture path (repeatable)")
 	observe := &cobra.Command{Use: "observe", RunE: derive.RunE}
 	observe.Flags().StringArrayVar(&inputs, "input", nil, "capture path (repeatable)")
 	validate := &cobra.Command{Use: "validate", RunE: derive.RunE}
@@ -253,7 +352,17 @@ func (s *state) parserCommand() *cobra.Command {
 		fmt.Fprintln(s.stdout, "Parser review recorded for offline research only. Live SCCM execution: blocked")
 		return nil
 	}}
-	root.AddCommand(observe, derive, validate, review)
+	reject := &cobra.Command{Use: "reject PARSER_ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
+		ctx := context.Background()
+		db, e := database.Open(ctx, s.cfg.DBPath)
+		if e != nil {
+			return e
+		}
+		defer db.Close()
+		id := "parser_rejection_" + a[0]
+		return db.UpsertCaptureRecord(ctx, "parser_validation_results", database.CaptureRecord{ID: id, Fingerprint: a[0], Data: map[string]any{"parser_id": a[0], "state": "rejected", "live_permission_effect": "none"}})
+	}}
+	root.AddCommand(observe, derive, candidates, show, validate, review, reject)
 	return root
 }
 func (s *state) analysisCommand() *cobra.Command {
@@ -289,7 +398,28 @@ func (s *state) analysisCommand() *cobra.Command {
 	dossier.Flags().BoolVar(&force, "force", false, "replace an existing empty output (currently refused safely)")
 	_ = dossier.MarkFlagRequired("input")
 	_ = dossier.MarkFlagRequired("output")
-	root.AddCommand(replay, dossier)
+	var corpusDir string
+	corpus := &cobra.Command{Use: "corpus", Short: "Validate deterministic synthetic capture corpora offline"}
+	corpusRun := func(*cobra.Command, []string) error {
+		r, e := capture.ReplayCorpus(corpusDir, capture.DefaultLimits())
+		if e != nil {
+			return e
+		}
+		b, _ := json.MarshalIndent(r, "", "  ")
+		fmt.Fprintln(s.stdout, string(b))
+		if r.Failed > 0 {
+			return errors.New("expected analysis mismatch")
+		}
+		return nil
+	}
+	validateCorpus := &cobra.Command{Use: "validate", RunE: corpusRun}
+	replayCorpus := &cobra.Command{Use: "replay", RunE: corpusRun}
+	for _, x := range []*cobra.Command{validateCorpus, replayCorpus} {
+		x.Flags().StringVar(&corpusDir, "directory", "", "synthetic or reviewed sanitized corpus directory")
+		_ = x.MarkFlagRequired("directory")
+	}
+	corpus.AddCommand(validateCorpus, replayCorpus)
+	root.AddCommand(replay, dossier, corpus)
 	return root
 }
 func (s *state) captureResearchCommand() *cobra.Command {

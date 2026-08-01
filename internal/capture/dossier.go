@@ -25,7 +25,7 @@ func GenerateDossier(output string, a Analysis, force bool) error {
 	if e = os.Chmod(tmp, 0o700); e != nil {
 		return e
 	}
-	files := map[string]any{"capture-inventory.json": a.Capture.Source, "matrix-validation.json": a.Matrix, "exchange-summary.json": a.Capture.Exchanges, "sequence-model.json": a.Capture.Sequence, "structured-observations.json": a.Capture.Observations, "parser-candidates.json": a.Candidates, "counterexamples.json": []string{}, "ambiguities.json": a.Capture.Source.Warnings, "expected-analysis.json": map[string]any{"analysis_fingerprint": a.Fingerprint, "algorithm_version": AlgorithmVersion}, "review.json": map[string]any{"state": "not_reviewed", "live_permission_effect": "none"}}
+	files := map[string]any{"capture-summary.json": a.Capture.Source, "interfaces.json": a.Capture.Interfaces, "packets-metadata.json": a.Capture.Packets, "flows.json": a.Capture.Flows, "exchanges.json": a.Capture.Exchanges, "sequences.json": a.Capture.Sequence, "sequence-graph.json": a.Capture.Sequence, "structured-observations.json": a.Capture.Observations, "parser-candidates.json": a.Candidates, "matrix-summary.json": a.Matrix, "corpus-results.json": map[string]any{"state": "not_run"}, "counterexamples.json": []string{}, "ambiguities.json": a.Capture.Source.Warnings, "expected-analysis.json": map[string]any{"analysis_fingerprint": a.Fingerprint, "algorithm_version": AlgorithmVersion}, "review.json": map[string]any{"state": "not_reviewed", "live_permission_effect": "none"}}
 	for name, v := range files {
 		b, _ := json.MarshalIndent(v, "", "  ")
 		b = append(b, '\n')
@@ -42,7 +42,21 @@ func GenerateDossier(output string, a Analysis, force bool) error {
 			if !st.IsDir() {
 				return fmt.Errorf("refuse to replace non-directory dossier output")
 			}
-			return errors.New("force replacement of an existing dossier is intentionally unsupported in this build")
+			backup, e := os.MkdirTemp(parent, ".cinderpath-old-dossier-")
+			if e != nil {
+				return e
+			}
+			if e = os.Remove(backup); e != nil {
+				return e
+			}
+			if e = os.Rename(output, backup); e != nil {
+				return e
+			}
+			if e = os.Rename(tmp, output); e != nil {
+				_ = os.Rename(backup, output)
+				return e
+			}
+			return os.RemoveAll(backup)
 		}
 	}
 	return os.Rename(tmp, output)

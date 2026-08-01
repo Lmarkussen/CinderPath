@@ -20,11 +20,13 @@ results, and contract dossiers are implemented. Signatures and candidate
 contracts have no live-execution or automatic trust effect. See
 [`docs/PROTOCOL_RESEARCH.md`](docs/PROTOCOL_RESEARCH.md).
 
-The offline capture phase adds versioned HAR, classic-PCAP, PCAPNG, and
+The offline capture phase adds versioned HAR, classic-PCAP, bounded PCAPNG, and
 normalized-JSON ingestion; redacted exchange metadata; evidence-backed sequence
 graphs; controlled-matrix checks; conservative binary observations; and
-deterministic parser candidates. PCAPNG, encrypted TLS, and multiplexed HTTP
-remain opaque where framing evidence is unsupported. No importer or analysis
+deterministic parser candidates. PCAPNG section, interface, enhanced-packet,
+and simple-packet blocks are decoded for Ethernet; unknown blocks and link
+types remain explicit limitations. Encrypted TLS and multiplexed HTTP remain
+opaque where framing evidence is unsupported. No importer or analysis
 command contacts an SCCM system. See [`docs/CAPTURE_INGESTION.md`](docs/CAPTURE_INGESTION.md).
 
 ```bash
@@ -32,6 +34,7 @@ cinderpath protocol capture import --input synthetic.har
 cinderpath protocol capture normalize --input synthetic.har --output normalized.json
 cinderpath protocol sequence analyze --input synthetic.har
 cinderpath protocol analysis replay --input normalized.json --output analysis.json
+cinderpath analysis corpus replay --directory testdata/capture-corpus
 ```
 
 ## Recommended operator workflow

@@ -156,6 +156,26 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err = tx.Commit(); err != nil {
 			return fmt.Errorf("commit schema v5: %w", err)
 		}
+		version = 5
+	}
+	if version == 5 {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		for _, statement := range schemaV6 {
+			if _, err = tx.ExecContext(ctx, statement); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply schema v6: %w", err)
+			}
+		}
+		if _, err = tx.ExecContext(ctx, "PRAGMA user_version = 6"); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return fmt.Errorf("commit schema v6: %w", err)
+		}
 	}
 	return nil
 }

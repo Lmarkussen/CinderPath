@@ -5,6 +5,11 @@ Capture-level research is documented in [CAPTURE_INGESTION.md](CAPTURE_INGESTION
 and [CONTROLLED_CAPTURE_MATRIX.md](CONTROLLED_CAPTURE_MATRIX.md). It consumes
 synthetic or authorized-lab files locally and never elevates candidate contracts.
 
+Generic XML, JSON, and multipart parsers emit bounded redacted structure, not
+SCCM semantics. Parser lifecycle states are `observed_structure`,
+`candidate_parser`, `fixture_validated`, `corpus_validated`, `rejected`, and
+`conflicting`; none can enable live execution.
+
 This workflow is for synthetic fixtures or reviewed captures from already
 registered clients in an explicitly authorized isolated lab. It never sends an
 SCCM policy request, creates an identity, registers a client, or approves live

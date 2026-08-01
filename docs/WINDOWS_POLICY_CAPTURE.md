@@ -65,3 +65,8 @@ live collection.
 Captures can contain credentials, cookies, certificates, client identifiers, machine/user SIDs, hostnames, and customer data. Never upload raw captures to a public repository. A sanitizer cannot replace manual review of an unknown binary protocol. Only synthetic or reviewed sanitized fixtures belong in `testdata`.
 
 Current CinderPath sanitization is conservative and does not claim opaque binary bodies are safe. Reviewed bundles may be Ed25519-signed and compared through research sets as described in [`PROTOCOL_RESEARCH.md`](PROTOCOL_RESEARCH.md), but signatures and candidate contracts do not approve live use. Live policy support still requires independently reviewed authorized captures, an exact reproducible contract, identity prerequisites, framing/version rules, demonstrated read-only behavior, and separate safety approval.
+
+Reviewed HAR, PCAP, and PCAPNG files may be imported through offline `capture`
+commands. PCAPNG Ethernet decoding does not make TLS plaintext visible, and an
+HTTP/1 reconstruction remains evidence with an explicit completeness state—not
+authorization or technical support for sending that traffic.

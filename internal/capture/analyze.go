@@ -52,6 +52,11 @@ func ValidateMatrix(m Matrix, captures map[string]NormalizedCapture) MatrixResul
 	}
 	seen := map[string]string{}
 	formats := map[string]bool{}
+	fixedValues := map[string]string{}
+	controlledValues := map[string]map[string]bool{}
+	for _, v := range m.Controlled {
+		controlledValues[v] = map[string]bool{}
+	}
 	for _, x := range m.Members {
 		c, ok := captures[x.Label]
 		if !ok {
@@ -59,6 +64,33 @@ func ValidateMatrix(m Matrix, captures map[string]NormalizedCapture) MatrixResul
 			continue
 		}
 		formats[c.Source.Format] = true
+		for _, v := range m.Fixed {
+			value, ok := x.Variables[v]
+			if !ok {
+				r.Warnings = append(r.Warnings, "fixed variable missing: "+v)
+				continue
+			}
+			if prior, ok := fixedValues[v]; ok && prior != value {
+				r.Confounders = append(r.Confounders, "fixed variable changed: "+v)
+			} else {
+				fixedValues[v] = value
+			}
+		}
+		for v, value := range x.Variables {
+			if values, ok := controlledValues[v]; ok {
+				values[value] = true
+			} else {
+				declared := false
+				for _, f := range m.Fixed {
+					if f == v {
+						declared = true
+					}
+				}
+				if !declared {
+					r.Confounders = append(r.Confounders, "undeclared variable: "+v)
+				}
+			}
+		}
 		if prior, ok := seen[c.Source.Fingerprint]; ok {
 			r.Duplicates = append(r.Duplicates, prior+" and "+x.Label)
 		} else {
@@ -71,6 +103,23 @@ func ValidateMatrix(m Matrix, captures map[string]NormalizedCapture) MatrixResul
 	if len(r.Duplicates) > 0 {
 		r.Confounders = append(r.Confounders, "duplicate source fingerprints")
 	}
+	for v, values := range controlledValues {
+		if len(values) < 2 {
+			r.Limitations = append(r.Limitations, "controlled variable does not vary: "+v)
+			r.Recommendations = append(r.Recommendations, "add a synthetic or authorized capture varying only "+v)
+		}
+	}
+	valid := len(m.Members) - len(r.Warnings)
+	if len(m.Members) > 0 {
+		r.Completeness = float64(valid) / float64(len(m.Members))
+	}
+	if r.Completeness == 1 && len(r.Confounders) == 0 {
+		r.Confidence = "high"
+	} else if valid > 1 {
+		r.Confidence = "medium"
+	} else {
+		r.Confidence = "low"
+	}
 	if r.Quality == "" {
 		if len(r.Confounders) > 0 || len(r.Warnings) > 0 {
 			r.Quality = "suitable_with_limitations"
@@ -81,6 +130,8 @@ func ValidateMatrix(m Matrix, captures map[string]NormalizedCapture) MatrixResul
 	sort.Strings(r.Confounders)
 	sort.Strings(r.Duplicates)
 	sort.Strings(r.Warnings)
+	sort.Strings(r.Limitations)
+	sort.Strings(r.Recommendations)
 	return r
 }
 
@@ -112,7 +163,7 @@ func DeriveCandidates(captures []NormalizedCapture, minimum int) []ParserCandida
 		if n < minimum {
 			continue
 		}
-		p := ParserCandidate{State: "candidate", AlgorithmVersion: AlgorithmVersion, Constraints: []string{k}, Preconditions: []string{"visible plaintext HTTP"}, SampleCoverage: n, PositiveExamples: examples[k], Unknowns: []string{"semantic body fields remain unknown"}, LiveExecution: false}
+		p := ParserCandidate{State: "candidate_parser", AlgorithmVersion: AlgorithmVersion, ParserVersion: "structural-v1", Constraints: []string{k}, Preconditions: []string{"visible plaintext HTTP"}, SampleCoverage: n, PositiveExamples: examples[k], Unknowns: []string{"semantic body fields remain unknown"}, LiveExecution: false}
 		raw, _ := json.Marshal(p)
 		h := sha256.Sum256(raw)
 		p.Fingerprint = hex.EncodeToString(h[:])
@@ -124,7 +175,22 @@ func DeriveCandidates(captures []NormalizedCapture, minimum int) []ParserCandida
 }
 
 func Analyze(c NormalizedCapture) Analysis {
-	a := Analysis{Capture: c, Candidates: DeriveCandidates([]NormalizedCapture{c}, 2), LivePolicyCollectionBlocked: true}
+	a := Analysis{Capture: c, Candidates: DeriveCandidates([]NormalizedCapture{c}, 2), LivePolicyCollectionBlocked: true, Capabilities: []string{"har_ingestion_available", "classic_pcap_ingestion_available", "pcapng_ingestion_available", "normalized_capture_ingestion_available", "tcp_reassembly_available", "http_exchange_reconstruction_available", "opaque_tls_classification_available", "partial_order_sequence_analysis_available", "xml_structural_parser_available", "json_structural_parser_available", "multipart_structural_parser_available", "parser_candidate_derivation_available", "controlled_matrix_analysis_available", "expected_analysis_corpus_available", "live_policy_collection_blocked"}}
+	a.Findings = append(a.Findings, ResearchFinding{ID: "SCCM-CAPTURE-IMPORTED", State: "observed", Description: "capture imported for offline research", Vulnerability: false})
+	for _, w := range c.Source.Warnings {
+		if strings.Contains(w, "opaque TLS") {
+			a.Findings = append(a.Findings, ResearchFinding{ID: "SCCM-CAPTURE-OPAQUE-TLS", State: "observed", Description: "encrypted stream remains opaque", Vulnerability: false})
+		}
+		if strings.Contains(w, "missing TCP") {
+			a.Findings = append(a.Findings, ResearchFinding{ID: "SCCM-CAPTURE-PARTIAL-REASSEMBLY", State: "observed", Description: "stream reconstruction contains a gap", Vulnerability: false})
+		}
+	}
+	for _, e := range c.Exchanges {
+		if e.State == "complete" {
+			a.Findings = append(a.Findings, ResearchFinding{ID: "SCCM-CAPTURE-HTTP-EXCHANGE-RECONSTRUCTED", State: "observed", Description: "offline HTTP/1 exchange reconstructed", Vulnerability: false})
+			break
+		}
+	}
 	raw, _ := json.Marshal(a)
 	a.Fingerprint = fingerprint(raw)
 	return a

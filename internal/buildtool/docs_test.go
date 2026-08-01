@@ -22,7 +22,7 @@ func TestDocumentationConsistency(t *testing.T) {
 	}
 	readme, status, makefile, cfg := read("README.md"), read("docs/STATUS.md"), read("Makefile"), read("config.example.yaml")
 	cmd := cli.New(os.Stdout, os.Stderr)
-	for _, path := range [][]string{{"protocol", "inspect-binary"}, {"protocol", "sanitize"}, {"protocol", "review-sanitization"}, {"protocol", "bundle", "export"}, {"protocol", "bundle", "inspect"}, {"protocol", "bundle", "import"}, {"protocol", "bundle", "sign"}, {"protocol", "bundle", "verify"}, {"protocol", "bundle", "test"}, {"protocol", "signing-key", "generate"}, {"protocol", "research-set", "create"}, {"protocol", "research-set", "analyze"}, {"protocol", "contract", "derive"}, {"protocol", "contract", "dossier"}, {"protocol", "serve-fixtures"}, {"lab", "capture-plan"}, {"runs", "list"}, {"policy", "fixtures"}} {
+	for _, path := range [][]string{{"capture", "import"}, {"capture", "list"}, {"matrix", "validate"}, {"sequence", "analyze"}, {"parser", "derive"}, {"analysis", "corpus", "replay"}, {"research", "analyze-captures"}, {"protocol", "inspect-binary"}, {"protocol", "sanitize"}, {"protocol", "review-sanitization"}, {"protocol", "bundle", "export"}, {"protocol", "bundle", "inspect"}, {"protocol", "bundle", "import"}, {"protocol", "bundle", "sign"}, {"protocol", "bundle", "verify"}, {"protocol", "bundle", "test"}, {"protocol", "signing-key", "generate"}, {"protocol", "research-set", "create"}, {"protocol", "research-set", "analyze"}, {"protocol", "contract", "derive"}, {"protocol", "contract", "dossier"}, {"protocol", "serve-fixtures"}, {"lab", "capture-plan"}, {"runs", "list"}, {"policy", "fixtures"}} {
 		c := cmd
 		for _, name := range path {
 			x, _, e := c.Find([]string{name})
@@ -32,7 +32,7 @@ func TestDocumentationConsistency(t *testing.T) {
 			c = x
 		}
 	}
-	for _, target := range []string{"protocol-test:", "protocol-report-test:", "protocol-bundle-test:", "protocol-signing-test:", "protocol-research-test:", "protocol-contract-test:", "protocol-dossier-test:", "protocol-expected-results-test:", "policy-offline-test:", "fuzz-policy:", "fuzz-protocol:", "fuzz-protocol-research:", "docs-check:", "help:"} {
+	for _, target := range []string{"capture-test:", "pcapng-test:", "exchange-test:", "capture-dossier-test:", "capture-cli-test:", "pcapng-fuzz:", "exchange-fuzz:", "matrix-fuzz:", "analysis-fuzz:", "protocol-test:", "protocol-report-test:", "protocol-bundle-test:", "protocol-signing-test:", "protocol-research-test:", "protocol-contract-test:", "protocol-dossier-test:", "protocol-expected-results-test:", "policy-offline-test:", "fuzz-policy:", "fuzz-protocol:", "fuzz-protocol-research:", "docs-check:", "help:"} {
 		if !strings.Contains(makefile, target) {
 			t.Errorf("Makefile target missing: %s", target)
 		}

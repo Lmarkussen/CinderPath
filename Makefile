@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration sequence-test parser-test matrix-test analysis-replay-test capture-fuzz sequence-fuzz parser-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -31,10 +31,14 @@ help:
 	  '  fuzz-protocol-research bounded signing/research fuzz smoke tests' \
 	  '  capture-test          bounded HAR/PCAP/normalized import tests' \
 	  '  capture-integration   offline capture CLI and persistence tests' \
+	  '  pcapng-test           bounded PCAPNG block/packet decoder tests' \
+	  '  exchange-test         TCP/HTTP reconstruction and pairing tests' \
 	  '  sequence-test         deterministic partial-order tests' \
 	  '  parser-test           structural observation/candidate tests' \
 	  '  matrix-test           controlled-matrix validation tests' \
 	  '  analysis-replay-test deterministic offline re-analysis tests' \
+	  '  capture-dossier-test  atomic redacted dossier tests' \
+	  '  capture-cli-test      command-tree and offline CLI tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
 	  '  capture-fuzz/sequence-fuzz/parser-fuzz bounded offline fuzz smoke tests' \
 	  '  docs-check            high-value CLI/docs/Makefile consistency tests' \
@@ -151,7 +155,7 @@ capture-test:
 	go test ./internal/capture -run 'TestHAR|TestPCAP'
 
 capture-integration:
-	go test ./internal/capture ./internal/database -run 'Test.*Import|TestSchemaV5'
+	go test ./internal/capture ./internal/database -run 'Test.*Import|TestSchemaV[56]'
 
 sequence-test:
 	go test ./internal/capture -run 'Test.*Deterministic|Test.*Sequence'
@@ -165,16 +169,44 @@ matrix-test:
 analysis-replay-test:
 	go test ./internal/capture -run 'TestHARImportRedactsAndDeterministic'
 
-protocol-offline-check: capture-test capture-integration sequence-test parser-test matrix-test analysis-replay-test
+pcapng-test:
+	go test ./internal/capture -run '^TestPCAPNG'
+
+exchange-test:
+	go test ./internal/capture -run 'TestPCAP|Test.*Exchange'
+
+capture-dossier-test:
+	go test ./internal/capture -run 'TestCorpusReplayAndDossier'
+
+capture-cli-test:
+	go test ./internal/buildtool -run '^TestCaptureCLIIntegrationOffline$$|^TestDocumentationConsistency$$'
+
+protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 
 capture-fuzz:
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzHAR$$' -fuzztime=1s
 
 sequence-fuzz:
-	go test ./internal/capture -run '^$$' -fuzz '^FuzzHAR$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzSequenceGraph$$' -fuzztime=1s
 
 parser-fuzz:
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzBinaryObservations$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzXMLStructural$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzJSONStructural$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzMultipartStructural$$' -fuzztime=1s
+
+pcapng-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzPCAPNGBlocks$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzPacketDecoder$$' -fuzztime=1s
+
+exchange-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzHTTPFraming$$' -fuzztime=1s
+
+matrix-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzMatrixValidator$$' -fuzztime=1s
+
+analysis-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzCorpusManifest$$' -fuzztime=1s
 
 docs-check:
 	go test ./internal/buildtool -run '^TestDocumentationConsistency$$'

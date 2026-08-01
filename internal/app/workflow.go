@@ -115,6 +115,9 @@ func BuildWorkflowPlan(c config.Config, dry bool) WorkflowPlan {
 		if c.Policy.Research.GenerateDossier {
 			add("protocol contract dossier generation", "ready", "redacted offline evidence")
 		}
+		for _, n := range []string{"capture input validation", "capture ingestion", "packet decoding", "flow reconstruction", "exchange pairing", "sequence derivation", "structured body parsing", "parser candidate derivation", "controlled matrix analysis", "corpus expected analysis", "capture findings", "capture capabilities", "capture dossier generation", "capture report generation"} {
+			add(n, "ready", "offline capture research only; zero live requests")
+		}
 	}
 	if c.Profile == config.ProfileAggressive || c.Profile == config.ProfileYolo {
 		for _, m := range FutureModuleRegistry() {
