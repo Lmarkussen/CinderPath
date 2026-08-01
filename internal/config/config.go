@@ -40,6 +40,8 @@ type Config struct {
 	Workflow       WorkflowConfig       `yaml:"workflow,omitempty" json:"workflow,omitempty"`
 	Safety         SafetyConfig         `yaml:"safety,omitempty" json:"safety,omitempty"`
 	Output         OutputConfig         `yaml:"output,omitempty" json:"output,omitempty"`
+	Policy         PolicyConfig         `yaml:"policy,omitempty" json:"policy,omitempty"`
+	Secrets        SecretsConfig        `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 }
 type StalenessConfig struct {
 	AssetDays              int `yaml:"asset_days"`

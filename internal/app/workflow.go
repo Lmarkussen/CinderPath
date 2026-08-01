@@ -79,6 +79,17 @@ func BuildWorkflowPlan(c config.Config, dry bool) WorkflowPlan {
 		add("authentication validation", "planned", "exact validated endpoint and attempt budgets are still required")
 	}
 	add("assessment", "ready", "")
+	add("policy protocol contract", "blocked", "no approved live protocol contract; live execution unavailable")
+	if c.Policy.Fixtures.Enabled && len(c.Policy.Fixtures.Directories) > 0 {
+		add("policy fixture import", "ready", "offline only")
+		add("policy fixture analysis", "ready", "offline only")
+		add("policy offline assignment parsing", "ready", "no network access")
+		add("policy offline document parsing", "ready", "no network access")
+		add("policy secret classification", "ready", "fixture-derived")
+		add("policy secret output", "ready", "dedicated output controls apply")
+	} else {
+		add("policy fixture import", "not applicable", "no fixture directories configured")
+	}
 	if c.Profile == config.ProfileAggressive || c.Profile == config.ProfileYolo {
 		for _, m := range FutureModuleRegistry() {
 			add(m.Name, "not implemented", "registered future module")

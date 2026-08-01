@@ -91,6 +91,37 @@ Only Basic and TLS client-certificate validation are supported. Basic requires a
 
 Actual attempts additionally require `--enable-auth-validation` and `--acknowledge-lockout-risk`. Plans with more than one request require `--acknowledge-multiple-attempts`. Defaults allow three total historical attempts and one per identity, endpoint, and identity/endpoint tuple, with sequential execution and a two-second minimum delay. `--dry-run` reads no secret and sends no network traffic. `auth results` shows durable history without authorization material.
 
+## Fixture-driven SCCM policy research
+
+Live SCCM policy requests remain blocked because no approved request contract is
+present. CinderPath does not invent `CCM_POST` bodies, client identifiers, or
+registration state. It can import synthetic or sanitized captures, analyze
+observed fields, replay them only against loopback fixture servers, and parse
+policy XML offline.
+
+```bash
+# All paths and values are synthetic examples for authorized research.
+cinderpath protocol sanitize --input captures/raw-example --output testdata/policy-captures/example01
+cinderpath protocol import --directory testdata/policy-captures/example01
+cinderpath protocol analyze --directory testdata/policy-captures/example01
+cinderpath protocol replay contract_placeholder --directory testdata/policy-captures/example01 --endpoint http://127.0.0.1:8080
+cinderpath policy secrets --directory testdata/policy-captures/example01 --show-secrets --secrets-output reports/fixture/secrets.txt
+```
+
+Contract states are `unknown`, `fixture_only`, `captured_unverified`,
+`verified_local_replay`, `approved_live`, and `rejected`. Normal commands cannot
+create `approved_live`; current contracts are local-replay-only. Existing SCCM
+client metadata may be imported with `client-identity import --metadata FILE`,
+but this neither registers nor validates a client.
+
+Confirmed fixture plaintext is held only in memory until the dedicated output
+component displays it or atomically writes a mode-`0600` text/JSON file. Safe
+never displays it, standard requires `--show-secrets`, aggressive/yolo use TTY
+defaults, `--hide-secrets` wins, and non-TTY output is hidden unless explicitly
+enabled. Ordinary reports, logs, progress, and contract metadata receive no
+plaintext. Protected values are identified but not decrypted; offline
+credentials are always labeled unvalidated.
+
 ## Architecture
 
 ```text

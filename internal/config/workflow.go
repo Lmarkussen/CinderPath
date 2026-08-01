@@ -63,6 +63,25 @@ type OutputConfig struct {
 	JSON        bool   `yaml:"json" json:"json"`
 	SecretsFile bool   `yaml:"secrets_file" json:"secrets_file"`
 }
+type PolicyConfig struct {
+	LiveCollection bool `yaml:"live_collection" json:"live_collection"`
+	Fixtures       struct {
+		Enabled     bool     `yaml:"enabled" json:"enabled"`
+		Directories []string `yaml:"directories" json:"directories"`
+	} `yaml:"fixtures" json:"fixtures"`
+	Protocol struct {
+		RequireApprovedLiveContract bool `yaml:"require_approved_live_contract" json:"require_approved_live_contract"`
+	} `yaml:"protocol" json:"protocol"`
+	Parsing struct {
+		Enabled bool `yaml:"enabled" json:"enabled"`
+	} `yaml:"parsing" json:"parsing"`
+}
+type SecretsConfig struct {
+	Enabled        bool   `yaml:"enabled" json:"enabled"`
+	ShowInTerminal bool   `yaml:"show_in_terminal" json:"show_in_terminal"`
+	OutputFile     string `yaml:"output_file,omitempty" json:"output_file,omitempty"`
+	Format         string `yaml:"format,omitempty" json:"format,omitempty"`
+}
 type Diagnostic struct{ Level, Message string }
 
 func NewWorkflow(domain string, profile Profile) Config {
@@ -75,6 +94,9 @@ func NewWorkflow(domain string, profile Profile) Config {
 	c.Safety = SafetyConfig{AllowAuthentication: profile != ProfileSafe}
 	c.Output = OutputConfig{Directory: derivedReportDir(domain), HTML: true, JSON: true, SecretsFile: profile == ProfileAggressive || profile == ProfileYolo}
 	c.OutputDir = c.Output.Directory
+	c.Policy.Protocol.RequireApprovedLiveContract = true
+	c.Policy.Parsing.Enabled = true
+	c.Secrets.Format = "text"
 	return c
 }
 func derivedReportDir(domain string) string {
@@ -166,7 +188,7 @@ func Validate(c Config) []Diagnostic {
 		}
 	}
 	if c.Output.SecretsFile {
-		add("INFO", "secret-recovery modules available: 0; secrets output will not be created")
+		add("INFO", "live secret-recovery modules available: 0; offline fixture classification is available")
 	}
 	if c.Workflow.Provider != "" && c.Workflow.Provider != "mock" && c.Workflow.Provider != "live" {
 		add("ERROR", "workflow.provider must be mock or live")
@@ -182,6 +204,12 @@ func Validate(c Config) []Diagnostic {
 		if net.ParseIP(h) == nil && strings.ContainsAny(h, "/\\") {
 			add("ERROR", "invalid DNS server")
 		}
+	}
+	if c.Policy.LiveCollection {
+		add("ERROR", "live policy collection is unavailable: no approved live protocol contract")
+	}
+	if c.Secrets.Format != "" && c.Secrets.Format != "text" && c.Secrets.Format != "json" {
+		add("ERROR", "secrets.format must be text or json")
 	}
 	return d
 }

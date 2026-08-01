@@ -1,0 +1,24 @@
+name: synthetic-policy-document
+synthetic: true
+sanitized: true
+transport:
+  scheme: https
+  host: HOST_MP_001
+  port: 443
+request:
+  method: CCM_POST
+  route: /ccm_system/request
+  contenttype: application/octet-stream
+response:
+  status: 200
+  content_type: application/xml
+identity:
+  clientidpresent: true
+  source: synthetic
+contract:
+  verification_state: fixture_only
+  read_only_assumption: unverified
+sanitization:
+  secretsremoved: true
+  identifiersreplaced: true
+  certificatesremoved: true

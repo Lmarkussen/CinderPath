@@ -40,6 +40,17 @@ Capability states distinguish `available`, `unavailable`, `unknown`, `requires_v
 
 Authentication validation may cause account lockout or security alerts. Use only with explicit authorization and carefully selected identities.
 
+## Offline policy protocol foundation
+
+Policy research is fixture-driven. `internal/policy` provides provenance-aware
+contracts, sanitized fixture import, deterministic comparison, bounded offline
+XML parsing, secret classification, loopback-only replay, existing-client
+metadata import, and deliberate secure secret output. No live policy transport
+exists and normal CLI input cannot produce `approved_live`. Fixture-derived
+conclusions state that live validation was not performed. Protected SCCM values
+are classified but not decrypted. Plaintext is excluded from ordinary
+persistence and reports.
+
 ## Current architecture
 
 ```text

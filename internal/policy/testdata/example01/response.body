@@ -1,0 +1,6 @@
+<Policy PolicyID="POL_SYNTHETIC_001" PolicyType="CredentialPolicy" PolicyCategory="Credential" PolicyVersion="1">
+  <Setting Name="AccountName" Value="LAB\sccm-naa"/>
+  <Setting Name="Password" Value="SyntheticPassword123!"/>
+  <Setting Name="ProtectedValue" Value="&lt;PolicySecret Version='1'&gt;SYNTHETIC_BLOB&lt;/PolicySecret&gt;"/>
+  <Setting Name="StartupScript" Value="Write-Output synthetic"/>
+</Policy>

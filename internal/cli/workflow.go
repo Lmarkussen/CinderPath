@@ -17,6 +17,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/identity"
+	"github.com/Lmarkussen/CinderPath/internal/policy"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -27,6 +28,8 @@ type workflowFlags struct {
 	targets, includeCIDRs, excludeHosts, excludeCIDRs                                                                                          []string
 	force, nonInteractive, dryRun, saveConfig, forceConfig, ackLockout                                                                         bool
 	configOutput                                                                                                                               string
+	showSecrets, hideSecrets                                                                                                                   bool
+	secretsOutput, secretsFormat                                                                                                               string
 }
 
 func (s *state) bindWorkflowFlags(f interface {
@@ -214,6 +217,10 @@ func (s *state) runCommand() *cobra.Command {
 	f.StringVar(&s.workflow.configOutput, "config-output", "", "saved configuration path")
 	f.BoolVar(&s.workflow.forceConfig, "force-config", false, "overwrite saved configuration")
 	f.BoolVar(&s.workflow.ackLockout, "acknowledge-lockout-risk", false, "acknowledge authentication lockout risk")
+	f.BoolVar(&s.workflow.showSecrets, "show-secrets", false, "deliberately display confirmed fixture plaintext")
+	f.BoolVar(&s.workflow.hideSecrets, "hide-secrets", false, "suppress plaintext terminal output")
+	f.StringVar(&s.workflow.secretsOutput, "secrets-output", "", "dedicated secure secrets output")
+	f.StringVar(&s.workflow.secretsFormat, "secrets-format", "", "text or json")
 	return c
 }
 func (s *state) executeWorkflow(cmd *cobra.Command) error {
@@ -283,9 +290,41 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 			fmt.Fprintf(s.stderr, "authentication validation blocked or failed: %v; continuing safe stages\n", authErr)
 		}
 	}
+	fixtureCandidates := []policy.Candidate{}
+	for _, dir := range c.Policy.Fixtures.Directories {
+		f, contract, fixtureErr := policy.ImportDirectory(dir)
+		if fixtureErr != nil {
+			fmt.Fprintf(s.stderr, "offline policy fixture %s: %v; continuing\n", filepath.Base(dir), fixtureErr)
+			continue
+		}
+		_ = policy.SaveContract(s.contractRoot(), contract)
+		parsed, candidates, parseErr := policy.ParsePolicy(ctx, f.ResponseBody)
+		if parseErr != nil {
+			fmt.Fprintf(s.stderr, "offline policy parse %s: %v; continuing\n", f.ID, parseErr)
+			continue
+		}
+		for i := range candidates {
+			candidates[i].SourceFixture = f.ID
+		}
+		fixtureCandidates = append(fixtureCandidates, candidates...)
+		fmt.Fprintf(s.stdout, "\nOffline policy fixture parsed: %s policy=%s candidates=%d\n", f.ID, parsed.PolicyID, len(candidates))
+	}
+	secretPath := valueOr(s.workflow.secretsOutput, c.Secrets.OutputFile)
+	if c.Profile == config.ProfileSafe {
+		secretPath = ""
+	}
+	secretFormat := valueOr(s.workflow.secretsFormat, c.Secrets.Format)
+	secretCount := 0
+	if len(fixtureCandidates) > 0 {
+		var secretErr error
+		secretCount, secretErr = policy.OutputSecrets(s.stdout, fixtureCandidates, policy.SecretOptions{Show: s.workflow.showSecrets, Hide: s.workflow.hideSecrets, Interactive: isTerminalWriter(s.stdout), Profile: string(c.Profile), Path: secretPath, Format: secretFormat})
+		if secretErr != nil {
+			fmt.Fprintf(s.stderr, "dedicated secret output failed: %v\n", secretErr)
+		}
+	}
 	assess, ae := s.application.Assess(ctx, []string{"run"})
 	rep, re := s.application.Report(ctx, []string{"run"})
-	fmt.Fprintf(s.stdout, "\nCinderPath run complete\n\nProject: %s\nProfile: %s\nRun ID: %s\nAssets: %d\nCompleted modules: %d\nBlocked modules: %d\nNot implemented: %d\nSecret-recovery modules available: 0\nSecrets recovered: 0\nAttack paths: %d\nHTML: %s\nJSON: %s\n", c.Project.Name, c.Profile, disc.Run.ID, disc.Assets, disc.ModuleSummary.Executed, disc.ModuleSummary.Skipped, plan.NotImplemented, assess.AttackPaths, rep.ReportPaths.HTML, rep.ReportPaths.JSON)
+	fmt.Fprintf(s.stdout, "\nCinderPath run complete\n\nProject: %s\nProfile: %s\nRun ID: %s\nAssets: %d\nCompleted modules: %d\nBlocked modules: %d\nNot implemented: %d\nOffline fixture secret outputs: %d\nProtected secrets decrypted: 0\nLive policy requests sent: 0\nAttack paths: %d\nHTML: %s\nJSON: %s\n", c.Project.Name, c.Profile, disc.Run.ID, disc.Assets, disc.ModuleSummary.Executed, disc.ModuleSummary.Skipped, plan.NotImplemented, secretCount, assess.AttackPaths, rep.ReportPaths.HTML, rep.ReportPaths.JSON)
 	if ae != nil {
 		return ae
 	}

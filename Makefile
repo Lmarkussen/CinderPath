@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry
+.PHONY: build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test policy-offline-test fuzz-policy
 
 build:
 	mkdir -p bin
@@ -61,3 +61,15 @@ run-mock: build
 
 run-dry: build
 	$(BINARY) run --domain lab.local --profile safe --provider mock --dry-run
+
+protocol-fixtures:
+	go test ./internal/policy -run 'TestImport|TestSanitize'
+
+protocol-test:
+	go test ./internal/policy
+
+policy-offline-test:
+	go test ./internal/policy -run 'TestImportParse|TestParser|TestContract'
+
+fuzz-policy:
+	go test ./internal/policy -run '^$$' -fuzz FuzzPolicyParser -fuzztime=2s

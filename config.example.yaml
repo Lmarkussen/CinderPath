@@ -50,6 +50,22 @@ output:
   json: true
   secrets_file: false
 
+# Offline fixture analysis only. Live policy collection is deliberately blocked.
+policy:
+  live_collection: false
+  fixtures:
+    enabled: false
+    directories: []
+  protocol:
+    require_approved_live_contract: true
+  parsing:
+    enabled: true
+secrets:
+  enabled: false
+  show_in_terminal: false
+  output_file: reports/lab_local/secrets.txt
+  format: text
+
 scope:
   max_expanded_targets: 4096
 
