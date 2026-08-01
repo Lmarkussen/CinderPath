@@ -51,6 +51,14 @@ conclusions state that live validation was not performed. Protected SCCM values
 are classified but not decrypted. Plaintext is excluded from ordinary
 persistence and reports.
 
+Schema v3 adds metadata-only protocol, fixture, observation, replay, assignment,
+document, parsed-policy, candidate, client-identity, sanitization, and workflow
+tables. Unified fixture analysis writes redacted records, conservative findings,
+and scoped capabilities. Reports expose structured policy research and workflow
+history without raw bodies or plaintext. `protocol inspect-binary` and the
+loopback-only `serve-fixtures` command support lab research; neither establishes
+live protocol validity.
+
 ## Current architecture
 
 ```text

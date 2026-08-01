@@ -122,6 +122,22 @@ enabled. Ordinary reports, logs, progress, and contract metadata receive no
 plaintext. Protected values are identified but not decrypted; offline
 credentials are always labeled unvalidated.
 
+Schema v3 persists redacted contract, fixture, assignment, policy-document,
+candidate, and workflow-stage intelligence. HTML and JSON reports include a
+dedicated offline policy section and safety banner; raw bodies and plaintext are
+excluded. Binary inspection reports observed encodings/magic separately from
+heuristic length candidates:
+
+```bash
+# Synthetic/authorized-lab examples only.
+cinderpath protocol inspect-binary captures/raw-example/request.body
+cinderpath protocol serve-fixtures --directory testdata/policy-captures/example01 --listen 127.0.0.1:0 --strict
+```
+
+See [`docs/WINDOWS_POLICY_CAPTURE.md`](docs/WINDOWS_POLICY_CAPTURE.md) before
+preparing lab material. Raw captures must remain encrypted, access-controlled,
+and outside source control. Local replay is not live SCCM validation.
+
 ## Architecture
 
 ```text

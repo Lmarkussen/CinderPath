@@ -131,3 +131,13 @@ func FuzzPolicyParser(f *testing.F) {
 		_, _, _ = ParsePolicy(context.Background(), b)
 	})
 }
+func FuzzBinaryInspection(f *testing.F) {
+	f.Add([]byte("<?xml synthetic?>"))
+	f.Add([]byte{0x1f, 0x8b, 0, 0})
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if len(b) > MaxFixtureBytes {
+			return
+		}
+		_, _ = InspectBinary(b)
+	})
+}

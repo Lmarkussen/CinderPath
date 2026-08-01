@@ -306,6 +306,9 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 		for i := range candidates {
 			candidates[i].SourceFixture = f.ID
 		}
+		if persistErr := s.application.PersistPolicyFixture(ctx, disc.Run.ID, f, contract, parsed, candidates); persistErr != nil {
+			fmt.Fprintf(s.stderr, "persist offline policy fixture %s: %v; continuing\n", f.ID, persistErr)
+		}
 		fixtureCandidates = append(fixtureCandidates, candidates...)
 		fmt.Fprintf(s.stdout, "\nOffline policy fixture parsed: %s policy=%s candidates=%d\n", f.ID, parsed.PolicyID, len(candidates))
 	}
@@ -323,6 +326,7 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 		}
 	}
 	assess, ae := s.application.Assess(ctx, []string{"run"})
+	_ = s.application.PersistWorkflowPlan(context.WithoutCancel(ctx), disc.Run.ID, plan, false)
 	rep, re := s.application.Report(ctx, []string{"run"})
 	fmt.Fprintf(s.stdout, "\nCinderPath run complete\n\nProject: %s\nProfile: %s\nRun ID: %s\nAssets: %d\nCompleted modules: %d\nBlocked modules: %d\nNot implemented: %d\nOffline fixture secret outputs: %d\nProtected secrets decrypted: 0\nLive policy requests sent: 0\nAttack paths: %d\nHTML: %s\nJSON: %s\n", c.Project.Name, c.Profile, disc.Run.ID, disc.Assets, disc.ModuleSummary.Executed, disc.ModuleSummary.Skipped, plan.NotImplemented, secretCount, assess.AttackPaths, rep.ReportPaths.HTML, rep.ReportPaths.JSON)
 	if ae != nil {

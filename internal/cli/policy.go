@@ -119,7 +119,50 @@ func (s *state) protocolCommand() *cobra.Command {
 	sanitize.Flags().StringVar(&out, "output", "", "new sanitized fixture directory")
 	_ = sanitize.MarkFlagRequired("input")
 	_ = sanitize.MarkFlagRequired("output")
-	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize)
+	inspect := &cobra.Command{Use: "inspect-binary FILE", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
+		b, e := os.ReadFile(a[0])
+		if e != nil {
+			return e
+		}
+		x, e := policy.InspectBinary(b)
+		if e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "Binary framing analysis\n\nSize: %d bytes\nSHA-256: %s\nEntropy: %.2f\nPrintable ratio: %.2f\nObserved:\n", x.Size, x.SHA256, x.Entropy, x.PrintableRatio)
+		for _, o := range x.Observed {
+			fmt.Fprintf(s.stdout, "  %s at offset %d (%s)\n", o.Description, o.Offset, o.Kind)
+		}
+		fmt.Fprintln(s.stdout, "Heuristic:")
+		for _, o := range x.Heuristic {
+			fmt.Fprintf(s.stdout, "  %s at offset %d\n", o.Description, o.Offset)
+		}
+		fmt.Fprintln(s.stdout, "Unknown:")
+		for _, u := range x.Unknown {
+			fmt.Fprintf(s.stdout, "  %s\n", u)
+		}
+		return nil
+	}}
+	var listen string
+	var strict, once bool
+	serve := &cobra.Command{Use: "serve-fixtures", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		f, _, e := policy.ImportDirectory(dir)
+		if e != nil {
+			return e
+		}
+		endpoint, e := policy.ServeFixture(cmd.Context(), f, listen, strict, once)
+		if e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "Loopback fixture server only.\nNo live SCCM target will be contacted.\nEndpoint: %s\n", endpoint)
+		<-cmd.Context().Done()
+		return nil
+	}}
+	serve.Flags().StringVar(&dir, "directory", "", "exact fixture directory")
+	serve.Flags().StringVar(&listen, "listen", "127.0.0.1:0", "loopback listen address")
+	serve.Flags().BoolVar(&strict, "strict", false, "require exact fixture request body")
+	serve.Flags().BoolVar(&once, "once", false, "stop after one matching response")
+	_ = serve.MarkFlagRequired("directory")
+	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, inspect, serve)
 	return root
 }
 
