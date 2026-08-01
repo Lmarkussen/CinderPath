@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: build test vet fmt fmt-check check run clean
+.PHONY: build test vet fmt fmt-check check run clean race integration install-local
 
 build:
 	mkdir -p bin
@@ -38,3 +38,14 @@ run:
 clean:
 	rm -f $(BINARY) coverage.out
 	rmdir bin 2>/dev/null || true
+
+race:
+	go test -race ./...
+
+integration:
+	go test -tags=integration ./...
+
+install-local: build
+	mkdir -p $(HOME)/.local/bin
+	cp $(BINARY) $(HOME)/.local/bin/cinderpath
+	@case ":$$PATH:" in *":$(HOME)/.local/bin:"*) ;; *) printf '%s\n' 'Add $(HOME)/.local/bin to PATH to run cinderpath.' ;; esac

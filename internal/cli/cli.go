@@ -12,6 +12,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
+	"github.com/Lmarkussen/CinderPath/internal/identity"
 	"github.com/Lmarkussen/CinderPath/internal/logging"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
@@ -27,6 +28,7 @@ type state struct {
 	application                               *app.Application
 	stdout, stderr                            io.Writer
 	discover                                  discoverFlags
+	identity                                  identity.Input
 }
 
 type discoverFlags struct {
@@ -55,8 +57,86 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
 	f.StringVar(&s.profile, "profile", string(d.Profile), "assessment profile: safe, standard, aggressive")
-	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand())
+	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand(), s.identityCommand(), s.capabilitiesCommand())
 	return root
+}
+func (s *state) identityCommand() *cobra.Command {
+	c := &cobra.Command{Use: "identity", Short: "Inspect local identity references without authenticating"}
+	inspect := &cobra.Command{Use: "inspect", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
+		defer cancel()
+		out, err := s.application.InspectIdentity(ctx, s.identity)
+		if err != nil {
+			return err
+		}
+		printIdentity(s.stdout, out.Identity)
+		fmt.Fprintf(s.stdout, "\nRemote authentication attempted: no\nRemote authentication validated: no\nDatabase: %s\n", out.DatabasePath)
+		if len(out.Capabilities) > 0 {
+			fmt.Fprintln(s.stdout, "\nPotential capabilities:")
+			printCapabilities(s.stdout, out.Capabilities)
+		}
+		return nil
+	}}
+	f := inspect.Flags()
+	f.StringVar(&s.identity.User, "identity-user", "", "username, DOMAIN\\user, or UPN")
+	f.StringVar(&s.identity.Domain, "identity-domain", "", "identity domain")
+	f.StringVar(&s.identity.Kind, "identity-kind", "", "normalized identity kind")
+	f.StringVar(&s.identity.PasswordEnv, "password-env", "", "environment variable containing a password")
+	f.StringVar(&s.identity.PasswordFile, "password-file", "", "bounded password file reference")
+	f.StringVar(&s.identity.NTLMHashEnv, "ntlm-hash-env", "", "environment variable containing an NTLM hash")
+	f.StringVar(&s.identity.NTLMHashFile, "ntlm-hash-file", "", "bounded NTLM hash file reference")
+	f.StringVar(&s.identity.KerberosCache, "kerberos-cache", "", "Kerberos cache path (existence only)")
+	f.StringVar(&s.identity.Certificate, "certificate", "", "public PEM or DER certificate")
+	f.StringVar(&s.identity.PrivateKey, "private-key", "", "private-key path reference (not read)")
+	f.StringVar(&s.identity.SCCMClientCert, "sccm-client-cert", "", "SCCM client public certificate")
+	f.StringVar(&s.identity.SCCMClientKey, "sccm-client-key", "", "SCCM client private-key reference (not read)")
+	f.StringVar(&s.identity.MachineAccount, "machine-account", "", "machine-account name ending in $")
+	f.BoolVar(&s.identity.CurrentProcess, "current-process-identity", false, "describe the current process identity")
+	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		out, err := s.application.ListIdentities(cmd.Context())
+		if err != nil {
+			return err
+		}
+		for _, id := range out.Identities {
+			printIdentity(s.stdout, id)
+			fmt.Fprintln(s.stdout)
+		}
+		return nil
+	}}
+	c.AddCommand(inspect, list)
+	return c
+}
+func (s *state) capabilitiesCommand() *cobra.Command {
+	return &cobra.Command{Use: "capabilities", Short: "Plan future authentication capabilities from stored passive evidence", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		out, err := s.application.PlanCapabilities(cmd.Context())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(s.stdout, "No remote authentication was attempted during this phase.")
+		printCapabilities(s.stdout, out.Capabilities)
+		return nil
+	}}
+}
+func printIdentity(w io.Writer, id models.Credential) {
+	name := id.Principal
+	if name == "" {
+		name = id.Username
+		if id.Domain != "" {
+			name = id.Domain + "\\" + name
+		}
+	}
+	if name == "" {
+		name = id.MachineName
+	}
+	if name == "" {
+		name = string(id.Kind)
+	}
+	fmt.Fprintf(w, "Identity: %s\nKind: %s\nReference: %s\nReference available: %t\nMetadata validated locally: %t\nValidation: %s\n", name, id.Kind, id.RedactedReference, id.Validated, id.Validated, id.ValidationReason)
+}
+func printCapabilities(w io.Writer, caps []models.Capability) {
+	for _, c := range caps {
+		fmt.Fprintf(w, "  %s\n    State: %s\n    Endpoint: %s\n    Reason: %s\n    Blocked by current safety profile: %t\n", c.Name, c.State, c.RelatedEndpoint, c.Reason, c.SafetyBlocked)
+	}
 }
 
 func (s *state) configure(cmd *cobra.Command) error {

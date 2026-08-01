@@ -13,6 +13,10 @@ This document is the implementation handover for the next Codex session. It desc
 
 CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and attack-path correlation platform. It now has a safe mock pipeline and an explicit-scope, read-only live discovery pipeline with conservative SCCM management-point and distribution-point HTTP endpoint validation. It does not perform SCCM authentication, content or policy retrieval, secret recovery, messaging, registration, or abuse.
 
+It also has local SCCM identity and authentication-capability modeling. `identity inspect` normalizes logical identities, validates only local references, and parses bounded public PEM/DER certificates. `capabilities` correlates those references with persisted anonymous SCCM route challenges. Identity fingerprints exclude secret values and reference locations. File references are persisted and reported as type plus basename; environment-variable names may be retained. Remote authentication attempted and validated remain false.
+
+Capability states distinguish `available`, `unavailable`, `unknown`, `requires_validation`, and `blocked_by_safety`. Negotiate/NTLM advertisements, Kerberos-cache existence, and client-auth certificate metadata indicate only potential applicability. Passive evidence older than `staleness.evidence_days` downgrades dependent potential capabilities. Certificate metadata records expired, future, and near-expiry state using the configured warning threshold.
+
 ## Current architecture
 
 ```text
@@ -106,6 +110,10 @@ reports/cinderpath-report.html
 ```
 
 The HTML report is portable with embedded CSS. Reports distinguish mock data, live observations, user input, inferred conclusions, and confirmed conclusions. Evidence previews are bounded.
+
+### `cinderpath identity` and `cinderpath capabilities`
+
+`identity inspect` accepts domain/user, machine, current-process, password/hash environment or file references, Kerberos cache references, and public-certificate/private-key path references. It never accepts plaintext secret CLI values and never reads private keys or ticket contents. `identity list` shows redacted stored models. `capabilities` performs only local/passive planning and prominently states that no remote authentication was attempted.
 
 ### Global flags
 
@@ -600,20 +608,12 @@ go run ./cmd/cinderpath discover \
 
 ## Recommended next task
 
-Implement **passive temporal/staleness analysis and a documented version-evidence adapter**, without adding new routes or authentication.
-
-Suggested scope:
-
-1. Track observation age and distinguish current, stale, and superseded topology claims without deleting evidence.
-2. Add an adapter only for a documented, bounded SCCM protocol field that directly conveys product version; retain `unknown` otherwise.
-3. Improve multi-site and load-balanced identity presentation without weakening strong-match requirements.
-4. Publish a versioned machine-readable report schema for topology consumers.
-5. Keep schema-v1 asset fingerprints and the passive network boundary unchanged.
+Design a separately reviewed, opt-in authentication-validation phase. It should require explicit scope and identity selection, enforce method allowlists, attempt budgets and lockout safeguards, isolate credential material, retain the no-ambient-credentials transport defaults, and produce clear audit evidence. No authenticated operation should be added until that design is approved.
 
 Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`, token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration, certificate enrollment, machine identity creation, Network Access Account/task-sequence recovery, package or DP enumeration/download, PXE collection, NTLM/Kerberos authentication, relay, deployments, execution, SQL, and SMB authentication.
 
-Suggested commit message:
+Suggested commit message for the completed phase:
 
 ```text
-Add passive SCCM evidence staleness analysis
+Add SCCM identity and capability modeling
 ```

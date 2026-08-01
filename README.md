@@ -12,6 +12,26 @@ This release provides the original mock pipeline plus an **explicit, safe, read-
 
 The `safe` profile is the default and the only functionally meaningful profile. `standard` and `aggressive` reserve names for future policy definitions; in this release they still execute only safe modules.
 
+## Identity and authentication-capability modeling
+
+CinderPath can normalize locally available identity references and correlate them with already-collected SCCM authentication challenges. This phase is passive with respect to targets: it sends no credentials or authorization headers and performs no NTLM, Negotiate, Kerberos, Basic, Digest, or client-certificate authentication.
+
+```bash
+export CINDERPATH_PASSWORD='placeholder-only'
+cinderpath identity inspect --identity-kind username_password_reference \
+  --identity-domain LAB --identity-user alice --password-env CINDERPATH_PASSWORD
+cinderpath identity list
+cinderpath capabilities
+```
+
+Supported kinds are `anonymous`, `domain_user`, `machine_account`, `current_process`, `username_password_reference`, `ntlm_hash_reference`, `kerberos_cache_reference`, `certificate_reference`, `sccm_client_identity_reference`, and `unknown`. IDs describe the logical identity and do not depend on secret values or reference locations.
+
+Passwords and hashes are accepted only through environment or bounded-file references. Kerberos caches and private keys are checked for local existence only; ticket and private-key contents are not parsed. Persisted and reported file references contain only the basename. Public PEM and DER certificates are bounded and parsed for subject, issuer, validity, names, usages, algorithms, SHA-256 fingerprint, and client-auth EKU. PFX/PKCS#12 and certificate stores are unsupported.
+
+Endpoint challenges are normalized as `anonymous`, `negotiate`, `ntlm`, `kerberos`, `basic`, `digest`, `client_certificate`, or `unknown`. An advertised scheme is not proof it can be used. Capability states are `available`, `unavailable`, `unknown`, `requires_validation`, and `blocked_by_safety`; “potentially available” always means future applicability, never successful authentication. Reports explicitly state that no remote authentication was attempted.
+
+Passive staleness uses stored timestamps only. Asset, evidence, and certificate-warning thresholds are configured under `staleness`; stale inputs downgrade planned capabilities to `requires_validation` and do not create vulnerabilities.
+
 ## Architecture
 
 ```text
@@ -63,7 +83,7 @@ make build
 ./bin/cinderpath report
 ```
 
-The Makefile keeps output project-local at `bin/cinderpath`. `make test`, `make vet`, and `make fmt` run the corresponding Go tools; `make check` verifies formatting, vets, tests, and builds. `make run` performs network-free mock discovery. `make clean` removes generated binaries and coverage output, never databases or reports. `VERSION`, `COMMIT`, and `BUILD_DATE` can override the safe automatic metadata defaults.
+The Makefile keeps output project-local at `bin/cinderpath`. `make test`, `make vet`, and `make fmt` run the corresponding Go tools; `make check` verifies formatting, vets, tests, and builds. `make race` runs race-enabled tests, `make integration` runs integration-tagged tests, and `make install-local` installs to `~/.local/bin/cinderpath` without root (and prints PATH guidance when needed). `make run` performs network-free mock discovery. `make clean` removes generated binaries and coverage output, never databases or reports. `VERSION`, `COMMIT`, and `BUILD_DATE` can override the safe automatic metadata defaults.
 
 The same mock workflow can be run without building:
 
@@ -287,7 +307,7 @@ go build -ldflags "-X github.com/Lmarkussen/CinderPath/internal/version.Version=
 
 ## Planned capabilities
 
-Future work may add passive observation-staleness analysis, documented protocol-version adapters, richer DNS discovery, evidence encryption, machine-readable schemas, and more general graph correlation. Active or intrusive SCCM operations require separate design, authorization controls, availability safeguards, and tests; they remain intentionally absent.
+The recommended next phase is a separately reviewed, opt-in authentication-validation design with explicit target scope, method allowlists, credential isolation, attempt budgets, lockout safeguards, and audit evidence. Policy retrieval, registration, account creation, certificate enrollment, content access, SCCM messaging, relay, SQL/SMB authentication, execution, and all state-changing operations remain deferred.
 
 ## Known limitations
 

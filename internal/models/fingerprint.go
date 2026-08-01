@@ -55,7 +55,15 @@ func (a *Asset) Prepare(now time.Time) {
 }
 
 func (c *Credential) Prepare() {
-	fp := StableFingerprint(c.Domain, c.Username, string(c.Type), c.Source)
+	var fp string
+	if c.Kind == "" {
+		// Preserve the schema-v1 fingerprint for legacy discovery credentials.
+		fp = StableFingerprint(c.Domain, c.Username, string(c.Type), c.Source)
+	} else {
+		// Identity references are keyed only by logical identity. Secret values and
+		// reference locations intentionally cannot rotate the ID.
+		fp = StableFingerprint(c.Domain, c.Username, c.Principal, c.MachineName, string(c.Kind))
+	}
 	c.ID = StableID("cred", fp)
 }
 

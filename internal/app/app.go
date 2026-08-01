@@ -13,6 +13,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
+	"github.com/Lmarkussen/CinderPath/internal/identity"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/modules"
 	"github.com/Lmarkussen/CinderPath/internal/modules/mock"
@@ -46,6 +47,62 @@ type DiscoverySummary struct {
 type DiscoverOptions struct {
 	Provider string
 	Live     live.Options
+}
+type IdentityOutcome struct {
+	Identity     models.Credential
+	Identities   []models.Credential
+	Capabilities []models.Capability
+	Requirements []identity.AuthRequirement
+	DatabasePath string
+}
+
+func (a *Application) InspectIdentity(ctx context.Context, in identity.Input) (IdentityOutcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return IdentityOutcome{}, err
+	}
+	defer store.Close()
+	id, err := identity.Parse(in, time.Now().UTC(), a.Config.Staleness.CertificateWarningDays)
+	if err != nil {
+		return IdentityOutcome{}, err
+	}
+	if _, err = store.UpsertCredential(ctx, &id); err != nil {
+		return IdentityOutcome{}, err
+	}
+	evidence, _ := store.ListEvidence(ctx)
+	req := identity.Requirements(evidence, time.Now().UTC(), a.Config.Staleness.EvidenceDays)
+	ids, _ := store.ListCredentials(ctx)
+	caps := identity.Plan(ids, req)
+	for i := range caps {
+		if _, err = store.UpsertCapability(ctx, &caps[i]); err != nil {
+			return IdentityOutcome{}, err
+		}
+	}
+	return IdentityOutcome{Identity: id, Identities: ids, Capabilities: caps, Requirements: req, DatabasePath: store.Path()}, nil
+}
+func (a *Application) ListIdentities(ctx context.Context) (IdentityOutcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return IdentityOutcome{}, err
+	}
+	defer store.Close()
+	ids, err := store.ListCredentials(ctx)
+	return IdentityOutcome{Identities: ids, DatabasePath: store.Path()}, err
+}
+func (a *Application) PlanCapabilities(ctx context.Context) (IdentityOutcome, error) {
+	store, err := database.Open(ctx, a.Config.DBPath)
+	if err != nil {
+		return IdentityOutcome{}, err
+	}
+	defer store.Close()
+	ids, _ := store.ListCredentials(ctx)
+	evidence, _ := store.ListEvidence(ctx)
+	req := identity.Requirements(evidence, time.Now().UTC(), a.Config.Staleness.EvidenceDays)
+	caps := identity.Plan(ids, req)
+	for i := range caps {
+		_, _ = store.UpsertCapability(ctx, &caps[i])
+	}
+	return IdentityOutcome{Identities: ids, Capabilities: caps, Requirements: req, DatabasePath: store.Path()}, nil
 }
 
 func (a *Application) Discover(ctx context.Context, args []string) (Outcome, error) {

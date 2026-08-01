@@ -31,6 +31,12 @@ type Config struct {
 	Scope       ScopeConfig     `yaml:"scope"`
 	Discovery   DiscoveryConfig `yaml:"discovery"`
 	LDAP        LDAPConfig      `yaml:"ldap"`
+	Staleness   StalenessConfig `yaml:"staleness"`
+}
+type StalenessConfig struct {
+	AssetDays              int `yaml:"asset_days"`
+	EvidenceDays           int `yaml:"evidence_days"`
+	CertificateWarningDays int `yaml:"certificate_warning_days"`
 }
 
 type ScopeConfig struct {
@@ -65,6 +71,7 @@ func Defaults() Config {
 		Scope:     ScopeConfig{MaxExpandedTargets: 4096},
 		Discovery: DiscoveryConfig{Ports: "53,80,88,135,389,443,445,636,1433,3268,3269,8530,8531,10123", ConnectTimeout: "2s", HostTimeout: "30s", Concurrency: 32, HTTPMaxBodyBytes: 32768, HTTPMaxRedirects: 3, UserAgent: "CinderPath-safe-discovery/dev"},
 		LDAP:      LDAPConfig{PageSize: 500, MaxEntries: 10000, SearchTimeout: "30s"},
+		Staleness: StalenessConfig{AssetDays: 30, EvidenceDays: 30, CertificateWarningDays: 30},
 	}
 }
 
@@ -103,6 +110,9 @@ func Load(path string, cli Overrides) (Config, error) {
 	}
 	if cfg.LDAP.PageSize <= 0 || cfg.LDAP.MaxEntries <= 0 {
 		return cfg, errors.New("LDAP page size and maximum entries must be greater than zero")
+	}
+	if cfg.Staleness.AssetDays <= 0 || cfg.Staleness.EvidenceDays <= 0 || cfg.Staleness.CertificateWarningDays <= 0 {
+		return cfg, errors.New("staleness thresholds must be greater than zero")
 	}
 	switch cfg.Profile {
 	case ProfileSafe, ProfileStandard, ProfileAggressive:

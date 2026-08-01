@@ -76,4 +76,4 @@ Live smoke tests must use explicitly authorized targets; prefer loopback fixture
 
 ## Next task
 
-The recommended next implementation is passive temporal/staleness analysis and a version-evidence adapter for documented protocol-specific fields. Policy retrieval, content-location requests, package access, authentication, registration, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).
+The recommended next implementation is a separately reviewed, explicitly enabled authentication-validation design with strict scope, method allowlists, attempt budgets, lockout protections, and audit evidence. Policy retrieval, content-location requests, package access, registration, account creation, certificate enrollment, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).

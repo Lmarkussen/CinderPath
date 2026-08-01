@@ -63,28 +63,83 @@ const (
 	CredentialCertificate      CredentialType = "certificate"
 	CredentialCurrentProcess   CredentialType = "current_process"
 	CredentialAnonymous        CredentialType = "anonymous"
+	CredentialDomainUser       CredentialType = "domain_user"
+	CredentialPasswordRef      CredentialType = "username_password_reference"
+	CredentialNTLMHashRef      CredentialType = "ntlm_hash_reference"
+	CredentialKerberosCacheRef CredentialType = "kerberos_cache_reference"
+	CredentialCertificateRef   CredentialType = "certificate_reference"
+	CredentialSCCMClientRef    CredentialType = "sccm_client_identity_reference"
+	CredentialUnknown          CredentialType = "unknown"
 )
 
 type Credential struct {
-	ID              string            `json:"id"`
-	Username        string            `json:"username"`
-	Domain          string            `json:"domain,omitempty"`
-	Type            CredentialType    `json:"type"`
-	Source          string            `json:"source"`
-	HasSecret       bool              `json:"has_secret"`
-	SecretReference string            `json:"-"`
-	Properties      map[string]string `json:"properties,omitempty"`
+	ID                     string               `json:"id"`
+	Username               string               `json:"username"`
+	Domain                 string               `json:"domain,omitempty"`
+	Principal              string               `json:"principal,omitempty"`
+	MachineName            string               `json:"machine_name,omitempty"`
+	Type                   CredentialType       `json:"type"`
+	Kind                   CredentialType       `json:"kind,omitempty"`
+	Source                 string               `json:"source"`
+	HasSecret              bool                 `json:"has_secret"`
+	SecretReference        string               `json:"-"`
+	ReferenceType          string               `json:"reference_type,omitempty"`
+	RedactedReference      string               `json:"redacted_reference,omitempty"`
+	CertificateReference   string               `json:"certificate_reference,omitempty"`
+	KerberosCacheReference string               `json:"kerberos_cache_reference,omitempty"`
+	Confidence             Confidence           `json:"confidence,omitempty"`
+	Validated              bool                 `json:"validated"`
+	ValidationReason       string               `json:"validation_reason,omitempty"`
+	Certificate            *CertificateMetadata `json:"certificate,omitempty"`
+	Properties             map[string]string    `json:"properties,omitempty"`
 }
 
+type CertificateMetadata struct {
+	Subject            string    `json:"subject"`
+	Issuer             string    `json:"issuer"`
+	SerialNumber       string    `json:"serial_number"`
+	NotBefore          time.Time `json:"not_before"`
+	NotAfter           time.Time `json:"not_after"`
+	DNSNames           []string  `json:"dns_names,omitempty"`
+	IPAddresses        []string  `json:"ip_addresses,omitempty"`
+	EmailAddresses     []string  `json:"email_addresses,omitempty"`
+	ExtendedKeyUsage   []string  `json:"extended_key_usage,omitempty"`
+	KeyUsage           []string  `json:"key_usage,omitempty"`
+	PublicKeyAlgorithm string    `json:"public_key_algorithm"`
+	SignatureAlgorithm string    `json:"signature_algorithm"`
+	SHA256Fingerprint  string    `json:"sha256_fingerprint"`
+	Expired            bool      `json:"expired"`
+	NotYetValid        bool      `json:"not_yet_valid"`
+	HasClientAuthEKU   bool      `json:"has_client_auth_eku"`
+	NearExpiry         bool      `json:"near_expiry"`
+}
+
+type CapabilityState string
+
+const (
+	CapabilityAvailable          CapabilityState = "available"
+	CapabilityUnavailable        CapabilityState = "unavailable"
+	CapabilityUnknown            CapabilityState = "unknown"
+	CapabilityBlockedBySafety    CapabilityState = "blocked_by_safety"
+	CapabilityRequiresValidation CapabilityState = "requires_validation"
+)
+
 type Capability struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Available    bool     `json:"available"`
-	Reason       string   `json:"reason,omitempty"`
-	Source       string   `json:"source"`
-	CredentialID string   `json:"credential_id,omitempty"`
-	AssetID      string   `json:"asset_id,omitempty"`
-	EvidenceIDs  []string `json:"evidence_ids,omitempty"`
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	Available       bool            `json:"available"`
+	State           CapabilityState `json:"state,omitempty"`
+	Reason          string          `json:"reason,omitempty"`
+	Source          string          `json:"source"`
+	CredentialID    string          `json:"credential_id,omitempty"`
+	AssetID         string          `json:"asset_id,omitempty"`
+	EvidenceIDs     []string        `json:"evidence_ids,omitempty"`
+	RequiredInputs  []string        `json:"required_inputs,omitempty"`
+	AvailableInputs []string        `json:"available_inputs,omitempty"`
+	MissingInputs   []string        `json:"missing_inputs,omitempty"`
+	RelatedEndpoint string          `json:"related_endpoint,omitempty"`
+	SafetyBlocked   bool            `json:"safety_blocked"`
+	Stale           bool            `json:"stale"`
 }
 
 type Sensitivity string
