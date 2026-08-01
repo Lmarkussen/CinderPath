@@ -164,6 +164,9 @@ func (s *Store) ListRuns(ctx context.Context) ([]models.Run, error) {
 	}
 	return out, rows.Err()
 }
+func (s *Store) GetRun(ctx context.Context, id string) (*models.Run, error) {
+	return scanRun(s.db.QueryRowContext(ctx, `SELECT id,command,profile,started_at,finished_at,status,version,arguments,summary FROM runs WHERE id=?`, id))
+}
 
 type scanner interface{ Scan(...any) error }
 

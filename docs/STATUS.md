@@ -59,6 +59,29 @@ history without raw bodies or plaintext. `protocol inspect-binary` and the
 loopback-only `serve-fixtures` command support lab research; neither establishes
 live protocol validity.
 
+### Completed offline research phase
+
+Implemented now:
+
+- durable planner decisions for every implemented, blocked, disabled, and
+  future module, with normalized reason/state and explicit safety properties;
+- standalone `run --dry-run` records plus `runs list|show`, with no observations,
+  authentication budget use, fixture reads, secret output, or network traffic;
+- deterministic bounded `protocol inspect-binary` observations for text
+  encodings, embedded identifiers/paths, MIME, compression/archive indicators,
+  padding, entropy, repeated blocks, binary GUIDs, and candidate lengths;
+- `metadata_only`, `text_regions`, and `structured_known` sanitization modes,
+  range manifests, mode-0600 replacement maps, and auditable body review;
+- fingerprinted `protocol bundle export|inspect|import` with traversal,
+  member-type/count/size/total-size, fingerprint, and atomic-import safeguards;
+- loopback-resolved fixture serving with strict matching, bounded requests,
+  allowlisted response headers, idle/cancellation handling, `--once`, and JSON;
+- passive `lab capture-plan`; and bounded deterministic policy inventories.
+
+Local replay, manual review, bundle import, and fixture analysis never validate
+a live target or set `approved_live`. Ordinary reports remain redacted and
+state that zero live SCCM policy requests were sent.
+
 ## Current architecture
 
 ```text
@@ -166,10 +189,10 @@ The HTML report is portable with embedded CSS. Reports distinguish mock data, li
 --log-level debug|info|warn|error
 --no-color
 --timeout DURATION
---profile safe|standard|aggressive
+--profile safe|standard|aggressive|yolo
 ```
 
-Configuration precedence is explicit CLI flag, environment variable, YAML file, then default. `safe` is the only functionally meaningful profile. `standard` and `aggressive` remain placeholders and still execute only safe modules.
+Configuration precedence is explicit CLI flag, environment variable, YAML file, then default. Profiles select workflow defaults and deliberate secret-display policy, while hard safety gates remain authoritative. Unavailable aggressive/yolo modules are recorded as blocked or not implemented rather than executed.
 
 ## Mock behavior
 
@@ -278,7 +301,7 @@ run_completed
 
 ## Database and deterministic fingerprints
 
-The database uses schema version 2. Migration 1 is unchanged; migration 2 adds durable authentication-attempt history. Existing model records remain JSON-backed.
+The database uses schema version 3. Migration 2 adds durable authentication-attempt history; migration 3 adds offline protocol, policy, sanitization, workflow-stage, and module-decision records. Existing model records remain JSON-backed.
 
 Persisted record types:
 
@@ -632,6 +655,17 @@ go run ./cmd/cinderpath discover \
 
 ## Known limitations
 
+- Research bundles are fingerprinted but are not cryptographically signed.
+- `structured_known` currently supports bounded XML-like bodies plus documented
+  metadata/header structures; opaque binary regions remain untouched.
+- Text replacement requires identical encoded byte length and fails closed.
+- Binary GUID, length, entropy, repeated-block, hostname, and checksum-like
+  observations remain heuristics, not learned protocol fields.
+- Live policy collection remains blocked. It still needs authorized captures
+  from an already registered lab client, exact framing and identity prerequisites,
+  cross-version repeatability, demonstrated read-only behavior, and independent
+  protocol and safety review.
+
 - Live discovery is explicit-target only; there is no broad AD/DNS enumeration.
 - SCCM route validation is restricted to standard HTTP/HTTPS ports 80/443 and five exact routes; custom SCCM ports and CMG paths are not inspected.
 - DP identity remains high- or medium-confidence inference because only exact virtual-directory-root `HEAD` behavior is observed.
@@ -646,11 +680,16 @@ go run ./cmd/cinderpath discover \
 - Attack-path correlation remains an in-memory breadth-first traversal designed around the mock graph.
 - Live discovery does not currently generate real attack paths.
 - There is no TUI, event-stream CLI, general credential-provider abstraction, evidence encryption, or distributed execution.
-- `standard` and `aggressive` are placeholders.
+- Profiles do not override module safety gates or enable blocked live policy behavior.
 
 ## Recommended next task
 
-Harden the guarded validator with OS-backed secret providers, explicit CA/trust-bundle configuration, and operator-supplied lockout-policy metadata. Preserve exact route selection and do not add policy, content, registration, messaging, account mutation, or broader authentication methods.
+Collect multiple authorized-lab captures from already registered clients, run
+the complete sanitizer/review/leakage workflow, and compare bounded observations
+across supported SCCM versions. Use that evidence to expand positively
+identified structured parsers and add bundle signing. Preserve the live policy
+block and do not add registration, content requests, protected-secret
+decryption, identity generation, or state changes.
 
 Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`, token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration, certificate enrollment, machine identity creation, Network Access Account/task-sequence recovery, package or DP enumeration/download, PXE collection, NTLM/Kerberos authentication, relay, deployments, execution, SQL, and SMB authentication.
 

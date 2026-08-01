@@ -2,6 +2,16 @@
 
 This guide is for synthetic research or an explicitly authorized, isolated SCCM lab. CinderPath does not register clients, trigger policy retrieval, start packet capture, or contact a management point.
 
+Generate a passive workspace first:
+
+```bash
+cinderpath lab capture-plan --output capture-plan
+```
+
+It creates restricted templates, review instructions, safe offline commands,
+synthetic sanitizer sentinels, and ignore rules. It performs no collection or
+network activity.
+
 ## Preconditions
 
 - Use a disposable Windows 11 or Windows Server VM with a snapshot.
@@ -32,7 +42,26 @@ These commands inventory local state. They do not prove that a source contains t
 9. Search for real identifiers, credentials, tokens, certificates, hostnames, and sentinel values.
 10. Import only the reviewed sanitized fixture.
 11. Run local replay and offline analysis.
+12. Record body review, run a final leakage scan, inspect the bundle, and only
+    then share the reviewed bundle through the authorized channel.
+
+```bash
+# Synthetic or explicitly authorized isolated-lab paths only.
+cinderpath protocol inspect-binary captures/raw-example/request.body
+cinderpath protocol sanitize --input captures/raw-example --output captures/sanitized-example --binary-mode metadata_only
+cinderpath protocol review-sanitization --directory captures/sanitized-example \
+  --approve-body request.body --approve-body response.body --reviewer-reference LAB_REVIEW_001
+cinderpath protocol bundle export --contract CONTRACT_ID \
+  --directory captures/sanitized-example --output sanitized-policy-bundle.tar.gz
+cinderpath protocol bundle inspect --input sanitized-policy-bundle.tar.gz
+```
+
+`metadata_only` never changes opaque bodies. `text_regions` applies only
+same-byte-length replacements in detected ASCII/UTF-8/UTF-16 regions.
+`structured_known` modifies only supported parsed structures. Review records
+inspection, not sanitization, and cannot override leakage detection or approve
+live collection.
 
 Captures can contain credentials, cookies, certificates, client identifiers, machine/user SIDs, hostnames, and customer data. Never upload raw captures to a public repository. A sanitizer cannot replace manual review of an unknown binary protocol. Only synthetic or reviewed sanitized fixtures belong in `testdata`.
 
-Current CinderPath sanitization is conservative and does not claim opaque binary bodies are safe. Live policy support still requires an independently reviewed exact contract, identity prerequisites, framing rules, and read-only safety approval.
+Current CinderPath sanitization is conservative and does not claim opaque binary bodies are safe. Bundles are fingerprinted but not signed. Live policy support still requires independently reviewed authorized captures, an exact reproducible contract, identity prerequisites, framing/version rules, demonstrated read-only behavior, and separate safety approval.

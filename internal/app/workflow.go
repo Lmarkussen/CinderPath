@@ -1,10 +1,16 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/config"
+	"github.com/Lmarkussen/CinderPath/internal/database"
+	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/version"
 )
 
 type StageDecision struct {
@@ -21,6 +27,15 @@ type WorkflowPlan struct {
 	Stages         []StageDecision
 	NotImplemented int
 	Outputs        []string
+	Modules        []ModuleDecision
+}
+type ModuleDecision struct {
+	ModuleName, Category                                                              string
+	Implemented, Selected                                                             bool
+	DecisionState, ReasonCode, DecisionReason                                         string
+	Requirements                                                                      []string
+	NetworkBoundary                                                                   string
+	MayContactNetwork, MayAuthenticate, MayDownload, MayExtractSecrets, MayAlterState bool
 }
 
 type ModuleRegistration struct {
@@ -38,7 +53,7 @@ type ModuleRegistration struct {
 }
 
 func FutureModuleRegistry() []ModuleRegistration {
-	names := []string{"policy_access", "policy_retrieval", "policy_secret_extraction", "dp_content_metadata", "dp_content_download", "dp_artifact_inspection", "pxe_metadata", "pxe_material_collection", "task_sequence_parsing", "naa_recovery", "local_client_inspection", "live_attack_path_correlation"}
+	names := []string{"live_policy_collection", "policy_protected_secret_decryption", "policy_access", "policy_retrieval", "policy_secret_extraction", "dp_content_metadata", "dp_content_download", "dp_artifact_inspection", "pxe_metadata", "pxe_material_collection", "task_sequence_parsing", "naa_recovery", "local_client_inspection", "live_attack_path_correlation"}
 	out := make([]ModuleRegistration, 0, len(names))
 	for _, name := range names {
 		r := ModuleRegistration{Name: name, Category: "future", Implemented: false, SafetyLevel: "unavailable", Profiles: []config.Profile{config.ProfileAggressive, config.ProfileYolo}}
@@ -92,13 +107,95 @@ func BuildWorkflowPlan(c config.Config, dry bool) WorkflowPlan {
 	}
 	if c.Profile == config.ProfileAggressive || c.Profile == config.ProfileYolo {
 		for _, m := range FutureModuleRegistry() {
+			if m.Name == "live_policy_collection" {
+				add(m.Name, "blocked", "no approved live protocol contract")
+				continue
+			}
 			add(m.Name, "not implemented", "registered future module")
 			p.NotImplemented++
 		}
 	}
 	add("reporting", "ready", "")
+	for _, s := range p.Stages {
+		name := strings.ReplaceAll(s.Name, " ", "_")
+		state := strings.ReplaceAll(s.Status, " ", "_")
+		selected := state == "ready" || state == "planned"
+		implemented := state != "not_implemented" && name != "live_policy_collection"
+		category := "workflow"
+		if !implemented {
+			category = "future"
+			selected = false
+		}
+		boundary := "none"
+		mayNet := false
+		if name == "discovery" && p.Provider == "live" {
+			boundary = "live_target"
+			mayNet = true
+		} else if strings.Contains(name, "replay") {
+			boundary = "loopback_only"
+		} else if strings.Contains(name, "fixture") || strings.Contains(name, "policy_") {
+			boundary = "local_files_only"
+		}
+		code := "planner_" + state
+		if s.Reason == "" {
+			code = "planner_default"
+		}
+		p.Modules = append(p.Modules, ModuleDecision{name, category, implemented, selected, state, code, s.Reason, nil, boundary, mayNet, false, false, name == "policy_secret_classification", false})
+	}
+	for _, m := range FutureModuleRegistry() {
+		found := false
+		for _, x := range p.Modules {
+			if x.ModuleName == m.Name {
+				found = true
+			}
+		}
+		if !found {
+			state := "not_implemented"
+			reason := "registered future module is unavailable"
+			if m.Name == "live_policy_collection" {
+				state = "blocked"
+				reason = "no approved live protocol contract"
+			}
+			p.Modules = append(p.Modules, ModuleDecision{m.Name, m.Category, false, false, state, "future_module_unavailable", reason, m.Requirements, func() string {
+				if m.Name == "live_policy_collection" {
+					return "live_target"
+				}
+				return "none"
+			}(), false, m.MayAuthenticate, m.MayDownload, m.MayExtractSecrets, m.StateChanging})
+		}
+	}
 	p.Outputs = []string{c.Output.Directory + "/cinderpath-report.html", c.Output.Directory + "/cinderpath-report.json"}
 	return p
+}
+
+func (a *Application) PersistDryRun(ctx context.Context, plan WorkflowPlan, args []string) (models.Run, error) {
+	persistCtx := context.WithoutCancel(ctx)
+	store, e := database.Open(persistCtx, a.Config.DBPath)
+	if e != nil {
+		return models.Run{}, e
+	}
+	defer store.Close()
+	r, e := store.CreateRun(persistCtx, "run dry-run", string(plan.Profile), version.Current().Version, args)
+	if e != nil {
+		return models.Run{}, e
+	}
+	status := models.RunCompleted
+	if ctx.Err() != nil {
+		status = models.RunCancelled
+	}
+	if e = a.persistPlan(ctx, store, r.ID, plan, true); e != nil {
+		status = models.RunCompletedWithErrors
+	}
+	summary := map[string]any{"dry_run": true, "project": plan.Project, "provider": plan.Provider, "scope_estimate": plan.Scope, "effective_profile": plan.Profile, "stage_count": len(plan.Stages), "module_decision_count": len(plan.Modules), "authentication_budget_consumed": 0, "target_observations": 0, "live_policy_requests": 0}
+	if e != nil {
+		summary["planning_error"] = "plan_persistence_failed"
+	}
+	_ = store.FinishRun(persistCtx, r.ID, status, summary)
+	now := time.Now().UTC()
+	r.FinishedAt = &now
+	r.Status = status
+	r.Summary = summary
+	return *r, e
 }
 func PrintWorkflowPlan(w io.Writer, p WorkflowPlan) {
 	fmt.Fprintln(w, "CinderPath execution plan")

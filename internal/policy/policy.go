@@ -103,7 +103,8 @@ type Metadata struct {
 		ReadOnlyAssumption string            `yaml:"read_only_assumption"`
 	} `yaml:"contract" json:"contract"`
 	Sanitization struct {
-		SecretsRemoved, IdentifiersReplaced, CertificatesRemoved bool `yaml:",omitempty"`
+		SecretsRemoved, IdentifiersReplaced, CertificatesRemoved   bool `yaml:",omitempty"`
+		BodySanitized, ManualReviewRequired, ManualReviewCompleted bool `yaml:",omitempty"`
 	} `yaml:"sanitization" json:"sanitization"`
 }
 type Fixture struct {
@@ -171,7 +172,10 @@ func ImportDirectory(dir string) (Fixture, Contract, error) {
 		return Fixture{}, Contract{}, e
 	}
 	if !m.Synthetic && !m.Sanitized {
-		return Fixture{}, Contract{}, errors.New("fixture must be synthetic or sanitized")
+		manifest, me := LoadSanitizationManifest(clean)
+		if me != nil || !manifest.ManualReviewCompleted {
+			return Fixture{}, Contract{}, errors.New("fixture must be synthetic, sanitized, or completely reviewed")
+		}
 	}
 	if m.Request.Method == "" || m.Request.Route == "" || !strings.HasPrefix(m.Request.Route, "/") {
 		return Fixture{}, Contract{}, errors.New("fixture requires an exact relative method and route")
@@ -636,83 +640,8 @@ var sidRE = regexp.MustCompile(`S-1-[0-9-]{6,}`)
 var ipv4RE = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
 
 func Sanitize(input, output string) error {
-	if filepath.Clean(input) == filepath.Clean(output) {
-		return errors.New("sanitization output must differ from source")
-	}
-	mb, e := safeRead(input, "metadata.yaml", true)
-	if e != nil {
-		return e
-	}
-	var m Metadata
-	if e = yaml.Unmarshal(mb, &m); e != nil {
-		return e
-	}
-	req, e := safeRead(input, "request.body", true)
-	if e != nil {
-		return e
-	}
-	resp, e := safeRead(input, "response.body", true)
-	if e != nil {
-		return e
-	}
-	sanitizeHeaders := func(name string) ([]byte, error) {
-		b, e := safeRead(input, name, false)
-		if e != nil {
-			return nil, e
-		}
-		var out strings.Builder
-		s := bufio.NewScanner(bytes.NewReader(b))
-		for s.Scan() {
-			line := s.Text()
-			i := strings.IndexByte(line, ':')
-			if i < 1 {
-				return nil, errors.New("unclassified fixture header")
-			}
-			k := http.CanonicalHeaderKey(strings.TrimSpace(line[:i]))
-			if forbiddenHeader(k) || strings.Contains(strings.ToLower(k), "token") || strings.Contains(strings.ToLower(k), "certificate") {
-				continue
-			}
-			fmt.Fprintf(&out, "%s: %s\n", k, strings.TrimSpace(line[i+1:]))
-		}
-		return []byte(out.String()), s.Err()
-	}
-	reqH, e := sanitizeHeaders("request.headers")
-	if e != nil {
-		return e
-	}
-	respH, e := sanitizeHeaders("response.headers")
-	if e != nil {
-		return e
-	}
-	repl := func(b []byte) []byte {
-		s := string(b)
-		s = guidRE.ReplaceAllString(s, "GUID_CLIENT_001")
-		s = sidRE.ReplaceAllString(s, "SID_MACHINE_001")
-		s = ipv4RE.ReplaceAllString(s, "IP_001")
-		return []byte(s)
-	}
-	req = repl(req)
-	resp = repl(resp)
-	m.Sanitized = true
-	m.Synthetic = false
-	m.Sanitization.SecretsRemoved = true
-	m.Sanitization.IdentifiersReplaced = true
-	m.Sanitization.CertificatesRemoved = true
-	m.Transport.Host = "HOST_MP_001"
-	m.Contract.VerificationState = FixtureOnly
-	sourceSum := sha256.Sum256(append(append(mb, req...), resp...))
-	sourceID := "sha256:" + hex.EncodeToString(sourceSum[:])
-	mb, _ = yaml.Marshal(m)
-	files := map[string][]byte{"metadata.yaml": mb, "request.body": req, "response.body": resp, "request.headers": reqH, "response.headers": respH, "sanitization-manifest.json": []byte(fmt.Sprintf("{\"source_fingerprint\":%q,\"contract_state\":%q,\"authorization_removed\":true}\n", sourceID, FixtureOnly))}
-	if e = os.MkdirAll(output, 0700); e != nil {
-		return e
-	}
-	for n, b := range files {
-		if e = atomicWrite(filepath.Join(output, n), b, 0600, false); e != nil {
-			return e
-		}
-	}
-	return nil
+	_, err := SanitizeDirectory(SanitizeOptions{Input: input, Output: output, BinaryMode: BinaryMetadataOnly})
+	return err
 }
 
 type ClientIdentity struct {

@@ -8,7 +8,25 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test policy-offline-test fuzz-policy fuzz-protocol
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test policy-offline-test fuzz-policy fuzz-protocol docs-check
+
+help:
+	@printf '%s\n' \
+	  'CinderPath targets (tests are offline; servers use loopback only):' \
+	  '  build                 build bin/cinderpath' \
+	  '  check                 formatting, vet, unit tests, and build' \
+	  '  race                  race-enabled unit tests' \
+	  '  integration           integration-tag tests (fixtures skip when absent)' \
+	  '  protocol-test         all offline protocol package tests' \
+	  '  protocol-report-test  policy persistence and redacted report tests' \
+	  '  protocol-bundle-test  real bundle export/inspect/import tests' \
+	  '  policy-offline-test   offline assignment/policy/classifier tests' \
+	  '  fuzz-policy           bounded offline policy fuzz smoke tests' \
+	  '  fuzz-protocol         bounded offline protocol fuzz smoke tests' \
+	  '  docs-check            high-value CLI/docs/Makefile consistency tests' \
+	  '  run-mock              isolated network-free mock workflow' \
+	  '  run-dry               persist a network-free dry-run plan' \
+	  'No target performs live SCCM policy requests or live authentication.'
 
 build:
 	mkdir -p bin
@@ -69,16 +87,26 @@ protocol-test:
 	go test ./internal/policy
 
 policy-offline-test:
-	go test ./internal/policy -run 'TestImportParse|TestParser|TestContract'
+	go test ./internal/policy -run 'TestImportParse|TestParser|TestContract|TestSanitization|TestBinary|TestCapture'
 
 protocol-report-test:
-	go test ./internal/report ./internal/database
+	go test ./internal/report ./internal/database ./internal/app -run 'Test.*Policy|TestDryRun|TestReport'
 
 protocol-bundle-test:
-	go test ./internal/policy -run 'TestBundle'
+	go test ./internal/policy -run '^TestBundle'
 
 fuzz-policy:
-	go test ./internal/policy -run '^$$' -fuzz FuzzPolicyParser -fuzztime=2s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzPolicyParser$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzAssignmentParser$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzCandidateClassifier$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzFixtureMetadataParser$$' -fuzztime=1s
 
 fuzz-protocol:
-	go test ./internal/policy -run '^$$' -fuzz FuzzBinaryInspection -fuzztime=2s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzBinaryInspection$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzBinaryTextRegionDetector$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzReplacementPlanner$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzBundleManifestParser$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzBundleArchiveValidator$$' -fuzztime=1s
+
+docs-check:
+	go test ./internal/buildtool -run '^TestDocumentationConsistency$$'

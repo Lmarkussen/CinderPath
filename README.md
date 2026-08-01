@@ -6,6 +6,14 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 ## Current status
 
+The offline SCCM protocol-research subsystem now includes durable workflow
+module decisions and standalone dry-run histories, bounded binary inspection,
+three explicit sanitization modes, auditable body-review records, sanitized
+research bundles, a complete loopback fixture-server lifecycle, passive lab
+capture-plan generation, and filtered policy inventories. These facilities are
+implemented for synthetic fixtures and explicitly authorized lab captures.
+They do not validate a live target or approve a live protocol contract.
+
 ## Recommended operator workflow
 
 Routine assessments use a generated configuration and the unified runner:
@@ -101,7 +109,11 @@ policy XML offline.
 
 ```bash
 # All paths and values are synthetic examples for authorized research.
-cinderpath protocol sanitize --input captures/raw-example --output testdata/policy-captures/example01
+cinderpath lab capture-plan --output capture-plan
+cinderpath protocol inspect-binary captures/raw-example/request.body
+cinderpath protocol sanitize --input captures/raw-example --output captures/sanitized-example --binary-mode metadata_only
+cinderpath protocol review-sanitization --directory captures/sanitized-example \
+  --approve-body request.body --approve-body response.body --reviewer-reference LAB_REVIEW_001
 cinderpath protocol import --directory testdata/policy-captures/example01
 cinderpath protocol analyze --directory testdata/policy-captures/example01
 cinderpath protocol replay contract_placeholder --directory testdata/policy-captures/example01 --endpoint http://127.0.0.1:8080
@@ -133,6 +145,44 @@ heuristic length candidates:
 cinderpath protocol inspect-binary captures/raw-example/request.body
 cinderpath protocol serve-fixtures --directory testdata/policy-captures/example01 --listen 127.0.0.1:0 --strict
 ```
+
+`inspect-binary` emits deterministic bounded observations for ASCII, UTF-8,
+UTF-16LE/BE, BOMs, XML, URLs/routes, UNC paths, hostname-like strings,
+GUID/SID-like values, MIME/multipart, compression/archive magic, padding,
+repeated blocks, entropy, and candidate lengths. Heuristics are labeled as
+such and never asserted to be protocol fields or SCCM roles.
+
+Sanitization defaults to `metadata_only`, which leaves opaque bodies unchanged
+and requires review. `text_regions` permits only operator-supplied,
+length-preserving replacements while preserving offsets and encoding.
+`structured_known` touches only positively identified supported structures and
+flags unsupported regions. Mode-`0600` replacement maps are never copied into
+fixtures or bundles. Review records attest to inspection; they do not sanitize
+bytes, override leakage detection, or promote contracts.
+
+```bash
+# Synthetic or explicitly authorized-lab examples only.
+cinderpath protocol bundle export --contract CONTRACT_ID \
+  --directory captures/sanitized-example --output sanitized-policy-bundle.tar.gz
+cinderpath protocol bundle inspect --input sanitized-policy-bundle.tar.gz
+cinderpath protocol bundle import --input sanitized-policy-bundle.tar.gz
+cinderpath policy fixtures --format table
+cinderpath policy assignments --run-id RUN_ID --format json
+cinderpath policy documents --fixture-id FIXTURE_ID
+cinderpath policy candidates --policy-id POLICY_ID
+cinderpath runs list --dry-run
+cinderpath runs show RUN_ID
+```
+
+Bundle export requires explicit fixture directories and completed review where
+needed. Import validates paths, regular-file members, counts, sizes, totals, and
+SHA-256 fingerprints before atomic extraction. Imported trust remains
+fixture-only/captured-unverified and can never become `approved_live`. Bundles
+are fingerprinted but are not yet cryptographically signed.
+
+Dry-runs persist configuration/profile summaries, scope estimates, stages, and
+all module decisions while creating no target observations, authentication
+attempts, fixture body reads, secret output, or network activity.
 
 See [`docs/WINDOWS_POLICY_CAPTURE.md`](docs/WINDOWS_POLICY_CAPTURE.md) before
 preparing lab material. Raw captures must remain encrypted, access-controlled,
@@ -189,7 +239,11 @@ make build
 ./bin/cinderpath report
 ```
 
-The Makefile keeps output project-local at `bin/cinderpath`. `make test`, `make vet`, and `make fmt` run the corresponding Go tools; `make check` verifies formatting, vets, tests, and builds. `make race` runs race-enabled tests, `make integration` runs integration-tagged tests, and `make install-local` installs to `~/.local/bin/cinderpath` without root (and prints PATH guidance when needed). `make run` performs network-free mock discovery. `make clean` removes generated binaries and coverage output, never databases or reports. `VERSION`, `COMMIT`, and `BUILD_DATE` can override the safe automatic metadata defaults.
+The Makefile keeps output project-local at `bin/cinderpath`. `make help` lists
+the supported targets and safety properties. Focused offline targets include
+`protocol-test`, `protocol-report-test`, `protocol-bundle-test`,
+`policy-offline-test`, `fuzz-policy`, `fuzz-protocol`, and `docs-check`.
+No target performs live SCCM policy traffic or live authentication.
 
 The same mock workflow can be run without building:
 
@@ -417,12 +471,22 @@ The recommended next phase is authentication-provider hardening: OS-backed secre
 
 ## Known limitations
 
+* Live policy collection, SCCM registration, client identity generation,
+  protected-secret decryption, content requests/download, and state-changing
+  operations remain blocked or unimplemented.
+* Binary inspection and sanitizer classifications are conservative research
+  aids; unknown binary structures still require manual lab review.
+* Bundle signatures are not implemented. SHA-256 fingerprints provide
+  integrity checking, while authenticity must be established out of band.
+
 * Live discovery only accepts explicit targets; it does not perform broad AD/DNS enumeration automatically.
 * SMB, SQL, LDAP probe ports, and TCP 10123 are reachability-only unless the explicit LDAP modules are enabled.
 * LDAP currently uses simple bind, explicit anonymous bind, LDAPS, or STARTTLS; current-process Kerberos/SASL providers are future work.
 * Role inference is intentionally conservative and cannot confirm an SCCM role from ports or hostnames alone.
 * `standard` and `aggressive` do not enable additional behavior.
-* SQLite schema version 2 adds durable authentication-attempt history; passive model records remain JSON-backed and preserve schema-v1 fingerprints.
+* SQLite schema version 3 includes durable authentication history plus offline
+  protocol/policy, sanitization, workflow-stage, and module-decision records;
+  passive model records remain JSON-backed and preserve schema-v1 fingerprints.
 * Correlation is in-memory and cannot independently resolve stale, load-balanced, or reassigned identities.
 * SCCM HTTP validation is limited to standard ports 80/443 and the five exact routes above; custom ports, CMG paths, policy endpoints, package/content paths, and authenticated behavior are not tested.
 * A DP conclusion remains a high- or medium-confidence inference because this phase uses only virtual-directory-root `HEAD` responses.

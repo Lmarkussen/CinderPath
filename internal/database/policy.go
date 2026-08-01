@@ -120,3 +120,21 @@ func (s *Store) ListWorkflowStages(ctx context.Context) ([]WorkflowRecord, error
 	}
 	return out, rows.Err()
 }
+func (s *Store) ListWorkflowModuleDecisions(ctx context.Context) ([]WorkflowRecord, error) {
+	rows, e := s.db.QueryContext(ctx, `SELECT id,run_id,module_name,state,data FROM workflow_module_decisions ORDER BY run_id,module_name`)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	var out []WorkflowRecord
+	for rows.Next() {
+		var r WorkflowRecord
+		var raw string
+		if e = rows.Scan(&r.ID, &r.RunID, &r.Name, &r.State, &raw); e != nil {
+			return nil, e
+		}
+		_ = json.Unmarshal([]byte(raw), &r.Data)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/policy"
+	"github.com/Lmarkussen/CinderPath/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -113,14 +117,59 @@ func (s *state) protocolCommand() *cobra.Command {
 	replay.Flags().StringVar(&fixtureDir, "directory", "", "fixture directory")
 	_ = replay.MarkFlagRequired("endpoint")
 	_ = replay.MarkFlagRequired("directory")
-	var in, out string
-	sanitize := &cobra.Command{Use: "sanitize", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { return policy.Sanitize(in, out) }}
+	var in, out, binaryMode, replacementMap string
+	var replacementLiterals []string
+	sanitize := &cobra.Command{Use: "sanitize", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		repls := []policy.Replacement{}
+		if replacementMap != "" {
+			x, e := policy.LoadReplacementMap(replacementMap)
+			if e != nil {
+				return e
+			}
+			repls = append(repls, x...)
+		}
+		for _, v := range replacementLiterals {
+			i := strings.IndexByte(v, '=')
+			if i < 1 {
+				return errors.New("replacement literal must be ORIGINAL=REPLACEMENT")
+			}
+			repls = append(repls, policy.Replacement{Original: v[:i], Replacement: v[i+1:], Category: "operator_literal"})
+		}
+		m, e := policy.SanitizeDirectory(policy.SanitizeOptions{Input: in, Output: out, BinaryMode: policy.BinaryMode(binaryMode), Replacements: repls})
+		if e == nil {
+			if db, openErr := database.Open(context.Background(), s.cfg.DBPath); openErr == nil {
+				raw, _ := json.Marshal(m)
+				var data map[string]any
+				_ = json.Unmarshal(raw, &data)
+				_ = db.UpsertPolicyRecord(context.Background(), "sanitization_manifests", database.PolicyRecord{ID: m.ManifestID, Fingerprint: m.OutputFingerprint, Data: data})
+				_ = db.Close()
+			}
+			fmt.Fprintf(s.stdout, "Sanitization manifest: %s\nBinary mode: %s\nBodies sanitized: %d\nBodies untouched: %d\nManual review required: %t\n", m.ManifestID, m.BinaryMode, m.BodiesSanitized, m.BodiesUntouched, m.ManualReviewRequired)
+		}
+		return e
+	}}
 	sanitize.Flags().StringVar(&in, "input", "", "source capture directory")
 	sanitize.Flags().StringVar(&out, "output", "", "new sanitized fixture directory")
+	sanitize.Flags().StringVar(&binaryMode, "binary-mode", string(policy.BinaryMetadataOnly), "metadata_only, text_regions, or structured_known")
+	sanitize.Flags().StringArrayVar(&replacementLiterals, "replace-literal", nil, "length-preserving ORIGINAL=REPLACEMENT")
+	sanitize.Flags().StringVar(&replacementMap, "replacement-map", "", "mode-0600 YAML replacement map")
 	_ = sanitize.MarkFlagRequired("input")
 	_ = sanitize.MarkFlagRequired("output")
+	var inspectFormat string
+	var maxBytes int64
 	inspect := &cobra.Command{Use: "inspect-binary FILE", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
-		b, e := os.ReadFile(a[0])
+		if maxBytes < 1 || maxBytes > 64<<20 {
+			return errors.New("max-bytes must be between 1 and 67108864")
+		}
+		f, e := os.Open(a[0])
+		if e != nil {
+			return e
+		}
+		defer f.Close()
+		b, e := io.ReadAll(io.LimitReader(f, maxBytes+1))
+		if int64(len(b)) > maxBytes {
+			return errors.New("binary input exceeds --max-bytes")
+		}
 		if e != nil {
 			return e
 		}
@@ -128,13 +177,17 @@ func (s *state) protocolCommand() *cobra.Command {
 		if e != nil {
 			return e
 		}
-		fmt.Fprintf(s.stdout, "Binary framing analysis\n\nSize: %d bytes\nSHA-256: %s\nEntropy: %.2f\nPrintable ratio: %.2f\nObserved:\n", x.Size, x.SHA256, x.Entropy, x.PrintableRatio)
-		for _, o := range x.Observed {
-			fmt.Fprintf(s.stdout, "  %s at offset %d (%s)\n", o.Description, o.Offset, o.Kind)
+		if inspectFormat == "json" {
+			enc := json.NewEncoder(s.stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(x)
 		}
-		fmt.Fprintln(s.stdout, "Heuristic:")
-		for _, o := range x.Heuristic {
-			fmt.Fprintf(s.stdout, "  %s at offset %d\n", o.Description, o.Offset)
+		if inspectFormat != "table" && inspectFormat != "text" {
+			return errors.New("format must be table, text, or json")
+		}
+		fmt.Fprintf(s.stdout, "Binary framing analysis\n\nSize: %d bytes\nSHA-256: %s\nEntropy: %.2f\nPrintable ratio: %.2f\nObservations:\n", x.Size, x.SHA256, x.Entropy, x.PrintableRatio)
+		for _, o := range x.Observations {
+			fmt.Fprintf(s.stdout, "  %-9s offset=%d length=%d encoding=%s confidence=%.2f %s\n", o.Classification, o.Offset, o.Length, o.Encoding, o.Confidence, o.Description)
 		}
 		fmt.Fprintln(s.stdout, "Unknown:")
 		for _, u := range x.Unknown {
@@ -142,18 +195,28 @@ func (s *state) protocolCommand() *cobra.Command {
 		}
 		return nil
 	}}
-	var listen string
+	inspect.Flags().StringVar(&inspectFormat, "format", "table", "table or json")
+	inspect.Flags().Int64Var(&maxBytes, "max-bytes", policy.MaxBinaryBytes, "maximum bytes to inspect")
+	var listen, serveFormat string
+	var requestTimeout, idleTimeout time.Duration
 	var strict, once bool
 	serve := &cobra.Command{Use: "serve-fixtures", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		f, _, e := policy.ImportDirectory(dir)
 		if e != nil {
 			return e
 		}
-		endpoint, e := policy.ServeFixture(cmd.Context(), f, listen, strict, once)
+		endpoint, done, e := policy.ServeFixture(cmd.Context(), f, policy.ServerOptions{Listen: listen, Strict: strict, Once: once, RequestTimeout: requestTimeout, IdleTimeout: idleTimeout})
 		if e != nil {
 			return e
 		}
-		fmt.Fprintf(s.stdout, "Loopback fixture server only.\nNo live SCCM target will be contacted.\nEndpoint: %s\n", endpoint)
+		if serveFormat == "json" {
+			_ = json.NewEncoder(s.stdout).Encode(map[string]any{"endpoint": endpoint, "loopback_only": true, "fixture_id": f.ID})
+		} else {
+			fmt.Fprintf(s.stdout, "Loopback fixture server only.\nNo live SCCM target will be contacted.\nEndpoint: %s\n", endpoint)
+		}
+		if once {
+			return <-done
+		}
 		<-cmd.Context().Done()
 		return nil
 	}}
@@ -161,8 +224,79 @@ func (s *state) protocolCommand() *cobra.Command {
 	serve.Flags().StringVar(&listen, "listen", "127.0.0.1:0", "loopback listen address")
 	serve.Flags().BoolVar(&strict, "strict", false, "require exact fixture request body")
 	serve.Flags().BoolVar(&once, "once", false, "stop after one matching response")
+	serve.Flags().DurationVar(&requestTimeout, "request-timeout", 10*time.Second, "bounded request timeout")
+	serve.Flags().DurationVar(&idleTimeout, "idle-timeout", 30*time.Second, "idle connection timeout")
+	serve.Flags().StringVar(&serveFormat, "format", "table", "table or json startup output")
 	_ = serve.MarkFlagRequired("directory")
-	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, inspect, serve)
+	var reviewDir, reviewRef string
+	var approveBodies []string
+	review := &cobra.Command{Use: "review-sanitization", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		m, e := policy.ReviewSanitization(reviewDir, approveBodies, reviewRef)
+		if e == nil {
+			if db, openErr := database.Open(context.Background(), s.cfg.DBPath); openErr == nil {
+				raw, _ := json.Marshal(m)
+				var data map[string]any
+				_ = json.Unmarshal(raw, &data)
+				_ = db.UpsertPolicyRecord(context.Background(), "sanitization_manifests", database.PolicyRecord{ID: m.ManifestID, Fingerprint: m.OutputFingerprint, Data: data})
+				_ = db.Close()
+			}
+			fmt.Fprintf(s.stdout, "Review recorded: %s\nManual review complete: %t\nLive contract promotion: no\n", m.ManifestID, m.ManualReviewCompleted)
+		}
+		return e
+	}}
+	review.Flags().StringVar(&reviewDir, "directory", "", "sanitized fixture directory")
+	review.Flags().StringArrayVar(&approveBodies, "approve-body", nil, "body filename to record as reviewed")
+	review.Flags().StringVar(&reviewRef, "reviewer-reference", "", "bounded operator-selected review reference")
+	_ = review.MarkFlagRequired("directory")
+	_ = review.MarkFlagRequired("reviewer-reference")
+	bundle := s.bundleCommand()
+	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, review, inspect, serve, bundle)
+	return root
+}
+
+func (s *state) bundleCommand() *cobra.Command {
+	root := &cobra.Command{Use: "bundle", Short: "Export, inspect, and import sanitized offline research bundles"}
+	var contractID, input, output string
+	var dirs []string
+	ex := &cobra.Command{Use: "export", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		c, e := policy.LoadContract(s.contractRoot(), contractID)
+		if e != nil {
+			return e
+		}
+		m, e := policy.ExportBundle(policy.BundleExportOptions{Contract: c, FixtureDirectories: dirs, Output: output, ToolVersion: version.Current().Version})
+		if e == nil {
+			fmt.Fprintf(s.stdout, "Exported offline bundle: %s\nFixtures: %d\nLive execution: blocked\n", m.BundleID, len(m.FixtureIDs))
+		}
+		return e
+	}}
+	ex.Flags().StringVar(&contractID, "contract", "", "fixture-only contract ID")
+	ex.Flags().StringArrayVar(&dirs, "directory", nil, "reviewed fixture directory (repeatable)")
+	ex.Flags().StringVar(&output, "output", "", "new .tar.gz output")
+	_ = ex.MarkFlagRequired("contract")
+	_ = ex.MarkFlagRequired("directory")
+	_ = ex.MarkFlagRequired("output")
+	inspect := &cobra.Command{Use: "inspect", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		i, e := policy.InspectBundle(input)
+		if e != nil {
+			return e
+		}
+		b, _ := json.MarshalIndent(i, "", "  ")
+		fmt.Fprintln(s.stdout, string(b))
+		fmt.Fprintln(s.stdout, "Live execution: blocked")
+		return nil
+	}}
+	inspect.Flags().StringVar(&input, "input", "", "bundle archive")
+	_ = inspect.MarkFlagRequired("input")
+	imp := &cobra.Command{Use: "import", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		i, e := policy.ImportBundle(input, filepath.Join(filepath.Dir(s.cfg.DBPath), ".cinderpath", "bundles"))
+		if e == nil {
+			fmt.Fprintf(s.stdout, "Imported offline bundle: %s\nTrust: fixture_only or captured_unverified\nLive execution: blocked\n", i.Manifest.BundleID)
+		}
+		return e
+	}}
+	imp.Flags().StringVar(&input, "input", "", "bundle archive")
+	_ = imp.MarkFlagRequired("input")
+	root.AddCommand(ex, inspect, imp)
 	return root
 }
 
@@ -239,8 +373,79 @@ func (s *state) policyCommand() *cobra.Command {
 	secrets.Flags().BoolVar(&hide, "hide-secrets", false, "suppress plaintext terminal output")
 	secrets.Flags().StringVar(&out, "secrets-output", "", "dedicated secure output file")
 	secrets.Flags().StringVar(&format, "secrets-format", "text", "text or json")
+	for _, spec := range []struct{ name, table string }{{"fixtures", "protocol_fixtures"}, {"assignments", "policy_assignments"}, {"documents", "policy_documents"}, {"candidates", "policy_candidates"}} {
+		root.AddCommand(s.policyInventoryCommand(spec.name, spec.table))
+	}
 	root.AddCommand(parse, secrets)
 	return root
+}
+func (s *state) policyInventoryCommand(name, table string) *cobra.Command {
+	var runID, fixtureID, policyID, contractID, state, format string
+	var limit int
+	c := &cobra.Command{Use: name, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		db, e := database.Open(cmd.Context(), s.cfg.DBPath)
+		if e != nil {
+			return e
+		}
+		defer db.Close()
+		rows, e := db.ListPolicyRecords(cmd.Context(), table)
+		if e != nil {
+			return e
+		}
+		filtered := make([]database.PolicyRecord, 0)
+		match := func(v any, want string) bool { return want == "" || fmt.Sprint(v) == want }
+		for _, r := range rows {
+			if runID != "" && r.RunID != runID {
+				continue
+			}
+			if !match(r.Data["fixture_id"], fixtureID) && r.ID != fixtureID {
+				continue
+			}
+			if !match(r.Data["policy_id"], policyID) {
+				continue
+			}
+			if !match(r.Data["contract_id"], contractID) {
+				continue
+			}
+			if !match(r.Data["state"], state) {
+				continue
+			}
+			filtered = append(filtered, r)
+			if len(filtered) >= limit {
+				break
+			}
+		}
+		if format == "json" {
+			enc := json.NewEncoder(s.stdout)
+			enc.SetIndent("", "  ")
+			if e = enc.Encode(filtered); e != nil {
+				return e
+			}
+		} else if format == "table" {
+			for _, r := range filtered {
+				fmt.Fprintf(s.stdout, "%s run=%s fixture=%v policy=%v state=%v source=offline_fixture\n", r.ID, r.RunID, r.Data["fixture_id"], r.Data["policy_id"], r.Data["state"])
+			}
+			fmt.Fprintln(s.stdout, "Live target validation: not performed")
+		} else {
+			return errors.New("format must be table or json")
+		}
+		return nil
+	}}
+	f := c.Flags()
+	f.StringVar(&runID, "run-id", "", "filter by run ID")
+	f.StringVar(&fixtureID, "fixture-id", "", "filter by fixture ID")
+	f.StringVar(&policyID, "policy-id", "", "filter by policy ID")
+	f.StringVar(&contractID, "contract-id", "", "filter by contract ID")
+	f.StringVar(&state, "state", "", "filter by state")
+	f.StringVar(&format, "format", "table", "table or json")
+	f.IntVar(&limit, "limit", 500, "maximum records (1-5000)")
+	c.PreRunE = func(*cobra.Command, []string) error {
+		if limit < 1 || limit > 5000 {
+			return errors.New("limit must be between 1 and 5000")
+		}
+		return nil
+	}
+	return c
 }
 func isTerminalWriter(w any) bool {
 	f, ok := w.(*os.File)

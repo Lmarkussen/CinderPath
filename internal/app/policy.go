@@ -115,7 +115,11 @@ func (a *Application) PersistWorkflowPlan(ctx context.Context, runID string, pla
 		return e
 	}
 	defer store.Close()
+	return a.persistPlan(ctx, store, runID, plan, dry)
+}
+func (a *Application) persistPlan(ctx context.Context, store *database.Store, runID string, plan WorkflowPlan, dry bool) error {
 	now := time.Now().UTC()
+	var first error
 	for _, s := range plan.Stages {
 		id := "stage_" + hex.EncodeToString(sha256Bytes([]byte(runID + s.Name))[:10])
 		state := s.Status
@@ -123,7 +127,26 @@ func (a *Application) PersistWorkflowPlan(ctx context.Context, runID string, pla
 			state = "planned"
 		}
 		data := map[string]any{"planned_state": state, "final_state": state, "reason": s.Reason, "profile": string(plan.Profile), "dry_run": dry, "network_activity": "none_for_fixture_stages", "authentication": "none", "secret_handling": "redacted_metadata_only"}
-		_ = store.SaveWorkflowStage(ctx, database.WorkflowRecord{ID: id, RunID: runID, Name: s.Name, State: state, StartedAt: &now, FinishedAt: &now, Data: data})
+		if e := store.SaveWorkflowStage(context.WithoutCancel(ctx), database.WorkflowRecord{ID: id, RunID: runID, Name: s.Name, State: state, StartedAt: &now, FinishedAt: &now, Data: data}); e != nil && first == nil {
+			first = e
+		}
 	}
-	return nil
+	for _, m := range plan.Modules {
+		state := m.DecisionState
+		if dry && m.Selected && state == "ready" {
+			state = "selected"
+		} else if !dry && m.Selected && state == "ready" {
+			state = "completed"
+		}
+		id := "decision_" + hex.EncodeToString(sha256Bytes([]byte(runID + m.ModuleName))[:10])
+		data := map[string]any{"category": m.Category, "implemented": m.Implemented, "selected": m.Selected, "decision_state": state, "reason_code": m.ReasonCode, "reason": m.DecisionReason, "profile": string(plan.Profile), "requirements": m.Requirements, "network_boundary": m.NetworkBoundary, "may_contact_network": m.MayContactNetwork, "may_authenticate": m.MayAuthenticate, "may_download": m.MayDownload, "may_extract_secrets": m.MayExtractSecrets, "may_alter_state": m.MayAlterState, "dry_run": dry}
+		if !m.Implemented && (state == "completed" || state == "completed_with_errors") {
+			state = "not_implemented"
+			data["decision_state"] = state
+		}
+		if e := store.SaveWorkflowModuleDecision(context.WithoutCancel(ctx), database.WorkflowRecord{ID: id, RunID: runID, Name: m.ModuleName, State: state, Data: data}); e != nil && first == nil {
+			first = e
+		}
+	}
+	return first
 }

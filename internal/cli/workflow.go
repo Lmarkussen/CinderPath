@@ -251,7 +251,15 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 	plan := app.BuildWorkflowPlan(c, s.workflow.dryRun)
 	app.PrintWorkflowPlan(s.stdout, plan)
 	if s.workflow.dryRun {
-		return nil
+		s.cfg = c
+		s.application.Config = c
+		ctx, cancel := context.WithTimeout(cmd.Context(), c.Timeout)
+		defer cancel()
+		r, e := s.application.PersistDryRun(ctx, plan, []string{"run", "--dry-run"})
+		if e == nil {
+			fmt.Fprintf(s.stdout, "\nDry-run persisted\nRun ID: %s\nTarget observations: 0\nAuthentication budget consumed: 0\nLive policy requests sent: 0\n", r.ID)
+		}
+		return e
 	}
 	s.cfg = c
 	s.application.Config = c

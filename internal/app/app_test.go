@@ -2,16 +2,19 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
+	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/progress"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 )
@@ -55,6 +58,46 @@ func TestMockWorkflowIsDeduplicated(t *testing.T) {
 	paths, _ := store.ListAttackPaths(ctx)
 	if len(assets) != 8 || len(findings) != 4 || len(paths) != 1 {
 		t.Fatalf("stored assets=%d findings=%d paths=%d", len(assets), len(findings), len(paths))
+	}
+}
+
+func TestDryRunPersistsRunStagesAndAllModuleDecisions(t *testing.T) {
+	c := config.Defaults()
+	c.DBPath = filepath.Join(t.TempDir(), "dry.db")
+	c.Project.Name = "lab.local"
+	c.Profile = config.ProfileAggressive
+	a := &Application{Config: c, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	p := BuildWorkflowPlan(c, true)
+	r, err := a.PersistDryRun(context.Background(), p, []string{"run", "--dry-run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Summary["dry_run"] != true || r.Summary["target_observations"] != 0 {
+		t.Fatalf("bad dry summary: %#v", r.Summary)
+	}
+	s, err := database.Open(context.Background(), c.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	stages, _ := s.ListWorkflowStages(context.Background())
+	decisions, _ := s.ListWorkflowModuleDecisions(context.Background())
+	if len(stages) != len(p.Stages) || len(decisions) != len(p.Modules) {
+		t.Fatalf("history mismatch stages=%d/%d decisions=%d/%d", len(stages), len(p.Stages), len(decisions), len(p.Modules))
+	}
+	for _, d := range decisions {
+		if d.Data["implemented"] == false && (d.State == "completed" || d.State == "completed_with_errors") {
+			t.Fatalf("future module completed: %#v", d)
+		}
+		if strings.Contains(fmt.Sprint(d.Data["reason"]), "SyntheticPassword") {
+			t.Fatal("secret in decision")
+		}
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	r2, err := a.PersistDryRun(cancelled, p, []string{"run", "--dry-run"})
+	if err != nil || r2.Status != models.RunCancelled || r2.ID == r.ID {
+		t.Fatalf("cancelled dry-run history not preserved: %#v %v", r2, err)
 	}
 }
 

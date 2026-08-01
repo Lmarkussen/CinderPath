@@ -60,6 +60,9 @@ policy:
     require_approved_live_contract: true
   parsing:
     enabled: true
+# Binary sanitization and research bundles are explicit CLI workflows. The safe
+# default is metadata_only: opaque bodies remain unchanged and require review.
+# No configuration key can set a protocol contract to approved_live.
 secrets:
   enabled: false
   show_in_terminal: false
