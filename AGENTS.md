@@ -76,4 +76,4 @@ Live smoke tests must use explicitly authorized targets; prefer loopback fixture
 
 ## Next task
 
-The exact recommended next implementation is read-only SCCM endpoint version and topology correlation from existing LDAP, certificate, DNS, and validated-route evidence. Policy retrieval, content-location requests, package access, authentication, registration, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).
+The recommended next implementation is passive temporal/staleness analysis and a version-evidence adapter for documented protocol-specific fields. Policy retrieval, content-location requests, package access, authentication, registration, messaging, secret recovery, relay, and all state-changing behavior remain deferred. Scope is recorded in [`docs/STATUS.md`](docs/STATUS.md#recommended-next-task).

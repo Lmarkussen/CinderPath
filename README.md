@@ -6,7 +6,7 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 ## Current status
 
-This release provides the original mock pipeline plus an **explicit, safe, read-only live discovery provider**. Live mode normalizes user scope, performs DNS queries, attempts bounded TCP connections, collects bounded HTTP/TLS metadata, optionally performs bounded LDAP RootDSE and SCCM directory searches, and validates a fixed allowlist of SCCM management-point and distribution-point HTTP routes. It does not register clients, retrieve policy, recover credentials, request content locations, download packages, authenticate to SCCM/SMB/SQL, enumerate shares or DP content, execute code, relay authentication, create deployments, or modify a target.
+This release provides the original mock pipeline plus an **explicit, safe, read-only live discovery provider**. Live mode normalizes user scope, performs DNS queries, attempts bounded TCP connections, collects bounded HTTP/TLS metadata, optionally performs bounded LDAP RootDSE and SCCM directory searches, validates a fixed allowlist of SCCM management-point and distribution-point HTTP routes, and passively correlates stored topology evidence. It does not register clients, retrieve policy, recover credentials, request content locations, download packages, authenticate to SCCM/SMB/SQL, enumerate shares or DP content, execute code, relay authentication, create deployments, or modify a target.
 
 `discover` defaults to `--provider mock`. CinderPath never silently changes to live mode or contacts network systems without `--provider live`.
 
@@ -56,12 +56,14 @@ Key packages:
 Requirements: Go 1.25 or newer. SQLite is provided by a pure-Go driver; a system SQLite library and CGO are not required.
 
 ```bash
-go build -o cinderpath ./cmd/cinderpath
-./cinderpath version
-./cinderpath discover
-./cinderpath assess
-./cinderpath report
+make build
+./bin/cinderpath version
+./bin/cinderpath discover
+./bin/cinderpath assess
+./bin/cinderpath report
 ```
+
+The Makefile keeps output project-local at `bin/cinderpath`. `make test`, `make vet`, and `make fmt` run the corresponding Go tools; `make check` verifies formatting, vets, tests, and builds. `make run` performs network-free mock discovery. `make clean` removes generated binaries and coverage output, never databases or reports. `VERSION`, `COMMIT`, and `BUILD_DATE` can override the safe automatic metadata defaults.
 
 The same mock workflow can be run without building:
 
@@ -147,6 +149,13 @@ sccm01.lab.local
 5. **Optional LDAP:** validates only the explicitly selected bind, reads a fixed RootDSE attribute list, and performs paged, size-limited searches for SCCM-related service connection points and objects.
 6. **SCCM HTTP route validation:** only already-profiled HTTP/HTTPS origins on ports 80/443 receive the fixed anonymous allowlist below. The route collector performs the network requests; separate MP and DP modules classify stored evidence without more traffic.
 7. **Role inference:** combines protocol validation, LDAP references, SCCM route correlation, user hints, generic HTTP metadata, ports, and hostname patterns in that precedence order. Hostname-only conclusions remain low confidence.
+8. **Passive topology correlation:** reads persisted DNS, LDAP, TLS, role-hint, MP-list, and validated-route evidence without sending requests.
+
+### Passive SCCM topology correlation
+
+Exact normalized FQDNs, unique short-name matches, explicit DNS answers, IP identities, and certificate aliases support correlation. A named asset and an IP-only asset receive `same_logical_host` only when an explicit DNS answer uniquely joins that pair. Multiple names sharing an address remain distinct and receive conflict annotations. LDAP and MP-list references never expand scope.
+
+Reports show canonical identity, aliases, addresses, roles and confidence, site codes, protocol validation, LDAP/TLS/MP-list references, conflicts, unresolved references, and version evidence. Conflicts are evidence or informational findings—not vulnerabilities—and explain sources, values, confidence, relevance, and what remains unverified. Product versions require reliable protocol-specific fields; IIS/Windows headers, generic HTTP metadata, certificate dates, and hostname patterns are excluded. Without reliable evidence, reports state `SCCM version: unknown`.
 
 ### Read-only SCCM HTTP validation
 
@@ -278,7 +287,7 @@ go build -ldflags "-X github.com/Lmarkussen/CinderPath/internal/version.Version=
 
 ## Planned capabilities
 
-Future work may add read-only version/topology correlation from already collected route, LDAP, DNS, and certificate evidence, richer DNS discovery, authenticated LDAP mechanisms beyond simple reference binds, evidence encryption, machine-readable schemas, and more general graph correlation. Active or intrusive SCCM operations require separate design, authorization controls, availability safeguards, and tests; they remain intentionally absent.
+Future work may add passive observation-staleness analysis, documented protocol-version adapters, richer DNS discovery, evidence encryption, machine-readable schemas, and more general graph correlation. Active or intrusive SCCM operations require separate design, authorization controls, availability safeguards, and tests; they remain intentionally absent.
 
 ## Known limitations
 
@@ -287,9 +296,9 @@ Future work may add read-only version/topology correlation from already collecte
 * LDAP currently uses simple bind, explicit anonymous bind, LDAPS, or STARTTLS; current-process Kerberos/SASL providers are future work.
 * Role inference is intentionally conservative and cannot confirm an SCCM role from ports or hostnames alone.
 * `standard` and `aggressive` do not enable additional behavior.
-* SQLite migration history currently contains only schema version 1.
-* Correlation uses an in-memory breadth-first traversal suitable for the small mock graph.
+* SQLite migration history currently contains only schema version 1; passive correlation uses existing JSON records and preserves fingerprints.
+* Correlation is in-memory and cannot independently resolve stale, load-balanced, or reassigned identities.
 * SCCM HTTP validation is limited to standard ports 80/443 and the five exact routes above; custom ports, CMG paths, policy endpoints, package/content paths, and authenticated behavior are not tested.
 * A DP conclusion remains a high- or medium-confidence inference because this phase uses only virtual-directory-root `HEAD` responses.
-* MP-list parsing is intentionally conservative and may reject undocumented or vendor-modified response structures.
+* MP-list parsing is intentionally conservative and may reject undocumented or vendor-modified response structures. Current evidence normally leaves SCCM version unknown.
 * There is no TUI, general credential-provider abstraction, evidence encryption, or distributed execution.

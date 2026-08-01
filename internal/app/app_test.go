@@ -113,7 +113,7 @@ func TestRepeatedLoopbackLiveDiscoveryDeduplicates(t *testing.T) {
 	if len(assets) != 1 {
 		t.Fatalf("assets=%d", len(assets))
 	}
-	if len(evidence) != 4 {
+	if len(evidence) != 5 {
 		t.Fatalf("evidence=%d", len(evidence))
 	}
 }

@@ -14,5 +14,6 @@ func All(opts Options) []modules.Module {
 		&sccmManagementPointModule{opts: opts},
 		&sccmDistributionPointModule{opts: opts},
 		&roleModule{opts: opts},
+		&correlationModule{opts: opts},
 	}
 }

@@ -157,6 +157,12 @@ const (
 	RelationshipPossibleManagementPoint   RelationshipType = "possible_management_point"
 	RelationshipPossibleDistributionPoint RelationshipType = "possible_distribution_point"
 	RelationshipPossibleSiteServer        RelationshipType = "possible_site_server"
+	RelationshipSameLogicalHost           RelationshipType = "same_logical_host"
+	RelationshipCertificateNamesHost      RelationshipType = "certificate_names_host"
+	RelationshipMPListReferencesHost      RelationshipType = "mp_list_references_host"
+	RelationshipValidatedManagementPoint  RelationshipType = "validated_as_management_point"
+	RelationshipLikelyDistributionPoint   RelationshipType = "likely_distribution_point"
+	RelationshipIdentityConflict          RelationshipType = "identity_conflict"
 )
 
 type Relationship struct {
@@ -190,6 +196,19 @@ type AttackPath struct {
 	Steps       []AttackPathStep `json:"steps"`
 	EvidenceIDs []string         `json:"evidence_ids,omitempty"`
 	Fingerprint string           `json:"fingerprint"`
+}
+
+// SCCMVersionObservation is a normalized, passive product-version conclusion.
+// Reliable is true only when protocol-specific evidence directly supplies Value.
+type SCCMVersionObservation struct {
+	Product            string     `json:"product"`
+	Value              string     `json:"value"`
+	State              string     `json:"state"`
+	Reliable           bool       `json:"reliable"`
+	Confidence         Confidence `json:"confidence"`
+	SourceField        string     `json:"source_field,omitempty"`
+	SupportingEvidence []string   `json:"supporting_evidence"`
+	Unverified         string     `json:"what_remains_unverified"`
 }
 
 type RunStatus string

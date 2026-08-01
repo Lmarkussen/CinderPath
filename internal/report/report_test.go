@@ -74,3 +74,45 @@ func TestSCCMEndpointValidationReportsAccessStates(t *testing.T) {
 		t.Fatal("report contains forbidden cookie or authorization material")
 	}
 }
+
+func TestSCCMTopologyReportRendersExplicitUnknownVersion(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := database.Open(ctx, filepath.Join(dir, "topology.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	asset := models.Asset{Kind: models.AssetUnknown, FQDN: "mp01.lab.local", Hostname: "mp01", Properties: map[string]string{"observation_origin": "live"}, Source: "test", Confidence: models.ConfidenceHigh}
+	asset.Prepare(time.Now())
+	if _, err := store.UpsertAsset(ctx, &asset); err != nil {
+		t.Fatal(err)
+	}
+	e := models.Evidence{Type: "sccm_topology_correlation", Title: "topology", Summary: "fixture", SourceModule: "live.sccm.correlate", AssetID: asset.ID, Sensitivity: models.SensitivityInternal, Data: map[string]any{"canonical_host_identity": "mp01.lab.local", "aliases": []string{"mp01", "mp01.lab.local"}, "resolved_addresses": []string{"192.0.2.10"}, "sccm_roles": []string{"management_point"}, "site_codes": []string{"LAB"}, "role_confidence": "high", "protocol_validated": true, "ldap_references": []string{"mp01.lab.local"}, "tls_names": []string{"mp01.lab.local"}, "mp_list_references": []string{"mp01.lab.local"}, "identity_conflicts": []map[string]any{}, "version": models.SCCMVersionObservation{Product: "Microsoft Configuration Manager", Value: "unknown", State: "unknown", Reliable: false, Confidence: models.ConfidenceLow, SupportingEvidence: []string{}, Unverified: "No reliable protocol-specific SCCM product version field was collected."}}}
+	e.Prepare(time.Now())
+	if _, err := store.UpsertEvidence(ctx, &e); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := Generate(ctx, store, filepath.Join(dir, "reports"), store.Path(), "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(paths.JSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got JSONReport
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SCCMTopology) != 1 || got.SCCMTopology[0].Version.Value != "unknown" || got.SCCMTopology[0].Version.Reliable {
+		t.Fatalf("topology=%+v", got.SCCMTopology)
+	}
+	html, err := os.ReadFile(paths.HTML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(html), "SCCM version:</strong> unknown") {
+		t.Fatal("HTML does not explicitly render unknown SCCM version")
+	}
+}

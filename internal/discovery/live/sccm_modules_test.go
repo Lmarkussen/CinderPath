@@ -46,7 +46,7 @@ func TestLiveSCCMModuleOrderMetadataAndNoProfileSkip(t *testing.T) {
 			t.Fatalf("metadata=%+v", metadata)
 		}
 	}
-	want := []string{"live.scope.normalize", "live.dns.resolve", "live.network.probe", "live.http.profile", "live.ldap.rootdse", "live.ldap.sccm_directory", "live.sccm.http_routes", "live.sccm.management_point", "live.sccm.distribution_point", "live.roles.infer"}
+	want := []string{"live.scope.normalize", "live.dns.resolve", "live.network.probe", "live.http.profile", "live.ldap.rootdse", "live.ldap.sccm_directory", "live.sccm.http_routes", "live.sccm.management_point", "live.sccm.distribution_point", "live.roles.infer", "live.sccm.correlate"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("module order=%v", names)
 	}

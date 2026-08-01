@@ -63,6 +63,24 @@ type JSONReport struct {
 	Evidence         []models.Evidence        `json:"evidence"`
 	Discovery        DiscoverySummary         `json:"discovery"`
 	SCCMEndpoints    []SCCMEndpointValidation `json:"sccm_endpoint_validation"`
+	SCCMTopology     []SCCMTopologyHost       `json:"sccm_topology"`
+}
+
+type SCCMTopologyHost struct {
+	AssetID              string                        `json:"asset_id"`
+	CanonicalIdentity    string                        `json:"canonical_host_identity"`
+	Aliases              []string                      `json:"aliases"`
+	ResolvedAddresses    []string                      `json:"resolved_addresses"`
+	Roles                []string                      `json:"sccm_roles"`
+	SiteCodes            []string                      `json:"site_codes"`
+	RoleConfidence       string                        `json:"role_confidence"`
+	ProtocolValidated    bool                          `json:"protocol_validated"`
+	LDAPReferences       []string                      `json:"ldap_references"`
+	TLSNames             []string                      `json:"tls_names"`
+	MPListReferences     []string                      `json:"mp_list_references"`
+	IdentityConflicts    []map[string]any              `json:"identity_conflicts"`
+	UnresolvedReferences []map[string]any              `json:"unresolved_references"`
+	Version              models.SCCMVersionObservation `json:"version"`
 }
 
 type SCCMEndpointValidation struct {
@@ -156,7 +174,7 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 		confirmed = confirmed || endpoint.ConfirmedConclusion
 		inferred = inferred || endpoint.InferredRole != ""
 	}
-	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints)}
+	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints), SCCMTopology: buildSCCMTopology(evidence)}
 	jp := filepath.Join(outputDir, "cinderpath-report.json")
 	hp := filepath.Join(outputDir, "cinderpath-report.html")
 	b, err := json.MarshalIndent(r, "", "  ")
@@ -176,6 +194,36 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 		return Paths{}, fmt.Errorf("render HTML report: %w", err)
 	}
 	return Paths{JSON: jp, HTML: hp}, nil
+}
+
+func buildSCCMTopology(evidence []models.Evidence) []SCCMTopologyHost {
+	var unresolved []map[string]any
+	for _, e := range evidence {
+		if e.Type == "unresolved_directory_reference" || e.Type == "unmatched_mp_list_reference" {
+			unresolved = append(unresolved, e.Data)
+		}
+	}
+	var out []SCCMTopologyHost
+	for _, e := range evidence {
+		if e.Type != "sccm_topology_correlation" {
+			continue
+		}
+		v := models.SCCMVersionObservation{Product: "Microsoft Configuration Manager", Value: "unknown", State: "unknown", Confidence: models.ConfidenceLow, SupportingEvidence: []string{}, Unverified: "No reliable protocol-specific SCCM product version field was collected."}
+		if raw, ok := e.Data["version"]; ok {
+			if b, err := json.Marshal(raw); err == nil {
+				_ = json.Unmarshal(b, &v)
+			}
+		}
+		conflicts := []map[string]any{}
+		if raw, ok := e.Data["identity_conflicts"]; ok {
+			if b, err := json.Marshal(raw); err == nil {
+				_ = json.Unmarshal(b, &conflicts)
+			}
+		}
+		out = append(out, SCCMTopologyHost{AssetID: e.AssetID, CanonicalIdentity: fmt.Sprint(e.Data["canonical_host_identity"]), Aliases: anyStrings(e.Data["aliases"]), ResolvedAddresses: anyStrings(e.Data["resolved_addresses"]), Roles: anyStrings(e.Data["sccm_roles"]), SiteCodes: anyStrings(e.Data["site_codes"]), RoleConfidence: fmt.Sprint(e.Data["role_confidence"]), ProtocolValidated: reportBool(e.Data["protocol_validated"]), LDAPReferences: anyStrings(e.Data["ldap_references"]), TLSNames: anyStrings(e.Data["tls_names"]), MPListReferences: anyStrings(e.Data["mp_list_references"]), IdentityConflicts: conflicts, UnresolvedReferences: unresolved, Version: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CanonicalIdentity < out[j].CanonicalIdentity })
+	return nonNil(out)
 }
 
 func buildSCCMEndpointValidations(evidence []models.Evidence) []SCCMEndpointValidation {
@@ -371,6 +419,7 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{"
 <section><h2>Run metadata</h2>{{with .Report.Metadata.LatestRun}}<table><tr><th>Run ID</th><td><code>{{.ID}}</code></td></tr><tr><th>Command</th><td>{{.Command}}</td></tr><tr><th>Profile</th><td>{{.Profile}}</td></tr><tr><th>Status</th><td>{{.Status}}</td></tr><tr><th>Started</th><td>{{.StartedAt}}</td></tr></table>{{end}}</section>
 <section><h2>Discovery summary</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.Discovery.InputScope}}</div>Scoped targets</div><div class="card"><div class="metric">{{.Report.Discovery.DNSResolved}}</div>DNS resolved</div><div class="card"><div class="metric">{{.Report.Discovery.ReachableSystems}}</div>Reachable systems</div><div class="card"><div class="metric">{{.Report.Discovery.OpenServicePorts}}</div>Open ports</div><div class="card"><div class="metric">{{.Report.Discovery.HTTPEndpoints}}</div>HTTP endpoints</div><div class="card"><div class="metric">{{.Report.Discovery.SCCMDirectoryObjects}}</div>SCCM directory objects</div></div><details><summary>Scope and exclusions</summary><p><strong>Scope:</strong> {{range .Report.Discovery.InputScope}}<code>{{.}} </code>{{end}}</p><p><strong>Excluded:</strong> {{range .Report.Discovery.Exclusions}}<code>{{.}} </code>{{end}}</p></details><h3>Inferred roles</h3><table><tr><th>Role</th><th>Count</th></tr>{{range $role,$count := .Report.Discovery.InferredRoles}}<tr><td>{{$role}}</td><td>{{$count}}</td></tr>{{end}}</table></section>
 <section><h2>Assets and topology</h2><div class="grid">{{range .SortedAssetKinds}}<div class="card"><strong>{{.}}</strong><div class="metric">{{index $.Report.Summary.AssetsByType .}}</div></div>{{end}}</div><table><tr><th>From</th><th>Relationship</th><th>To</th><th>Confidence</th></tr>{{range .Report.Relationships}}<tr><td><code>{{.FromID}}</code></td><td>{{.Type}}</td><td><code>{{.ToID}}</code></td><td>{{.Confidence}}</td></tr>{{end}}</table></section>
+<section><h2>SCCM topology correlation</h2><p class="muted">Passive correlation only; uncertain identities remain distinct. Product versions require reliable protocol-specific evidence.</p>{{range .Report.SCCMTopology}}<article class="card"><h3>{{.CanonicalIdentity}}</h3><p><strong>SCCM version:</strong> {{.Version.Value}} · <strong>Roles:</strong> {{range .Roles}}<code>{{.}} </code>{{else}}none{{end}} · Confidence: {{.RoleConfidence}} · Protocol validated: {{.ProtocolValidated}}</p><p><strong>Aliases:</strong> {{range .Aliases}}<code>{{.}} </code>{{else}}none{{end}}<br><strong>Addresses:</strong> {{range .ResolvedAddresses}}<code>{{.}} </code>{{else}}none{{end}}<br><strong>Site codes:</strong> {{range .SiteCodes}}<code>{{.}} </code>{{else}}none{{end}}</p><details><summary>Directory, certificate, and MP-list references</summary><p>LDAP: {{range .LDAPReferences}}<code>{{.}} </code>{{else}}none{{end}}<br>TLS: {{range .TLSNames}}<code>{{.}} </code>{{else}}none{{end}}<br>MP list: {{range .MPListReferences}}<code>{{.}} </code>{{else}}none{{end}}</p></details>{{range .IdentityConflicts}}<p class="sev-informational"><strong>Identity conflict:</strong> {{index . "type"}} — {{index . "why_it_matters"}} <span class="muted">{{index . "what_remains_unverified"}}</span></p>{{end}}<p class="muted">{{.Version.Unverified}}</p></article>{{else}}<p class="muted">No passive SCCM topology correlation is stored.</p>{{end}}</section>
 <section><h2>Capabilities</h2><table><tr><th>Name</th><th>Available</th><th>Reason</th><th>Source</th></tr>{{range .Report.Capabilities}}<tr><td>{{.Name}}</td><td>{{.Available}}</td><td>{{.Reason}}</td><td>{{.Source}}</td></tr>{{end}}</table></section>
 <section><h2>SCCM endpoint validation</h2><p class="muted">All requests were anonymous and read-only. Authentication requested is distinct from authentication attempted or authenticated. Distribution-point HEAD responses never establish usable content access.</p><table><tr><th>Host / origin</th><th>Route</th><th>Status</th><th>Access state</th><th>Parser / classification</th><th>Conclusion</th></tr>{{range .Report.SCCMEndpoints}}<tr><td><code>{{.Host}}</code><br>{{.Origin}}</td><td><code>{{.Method}} {{.Route}}</code><br>Auth schemes: {{range .AuthenticationSchemes}}<code>{{.}} </code>{{else}}none{{end}}</td><td>{{.StatusCode}}</td><td>Transport reachable: {{.TransportReachable}}<br>HTTP response: {{.HTTPResponseReceived}}<br>Anonymous request: {{.AnonymousRequest}}<br>Authentication required: {{.AuthenticationRequested}}<br>Authentication attempted: {{.AuthenticationAttempted}}<br>Authenticated: {{.Authenticated}}<br>Usable read access: {{.UsableReadAccess}}<br>Protocol validated: {{.ProtocolValidated}}</td><td>Parser: {{.ParserResult}}<br>Classification: {{.Classification}}<br>Confidence: {{.Confidence}}<br>Role: {{if .InferredRole}}{{.InferredRole}}{{else}}none{{end}}</td><td>{{if .ConfirmedConclusion}}validated protocol conclusion{{else}}unconfirmed{{end}}<br><span class="muted">{{.WhatRemainsUnverified}}</span><br>Evidence: {{range .SupportingEvidence}}<code>{{.}} </code>{{end}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No SCCM endpoint-validation observations are stored.</td></tr>{{end}}</table></section>
 <section><h2>Findings by severity</h2>{{range .SeverityOrder}}{{$items := $.FindingsFor .}}{{if $items}}<h3 class="sev-{{.}}">{{upper (printf "%s" .)}} ({{len $items}})</h3>{{range $items}}<article class="card"><strong>{{.Title}}</strong><p>{{.Summary}}</p><p class="muted">Confidence: {{.Confidence}} · Rule: {{.RuleID}} · Evidence: {{range .EvidenceIDs}}<code>{{.}} </code>{{end}}</p><details><summary>Details and remediation</summary><p>{{.Description}}</p><p><strong>Remediation:</strong> {{.Remediation}}</p></details></article>{{end}}{{end}}{{end}}</section>

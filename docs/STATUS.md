@@ -167,6 +167,7 @@ live.sccm.http_routes
 live.sccm.management_point
 live.sccm.distribution_point
 live.roles.infer
+live.sccm.correlate
 ```
 
 All current live modules are marked `safe`.
@@ -253,6 +254,16 @@ Fingerprint identities:
 - Attack path: start/end nodes plus ordered relationship edges.
 
 Upserts preserve asset `FirstSeen`, update `LastSeen`, merge addresses/roles/properties, preserve finding creation time, and merge finding evidence/tags. Repeated identical mock and live runs do not duplicate stable assets, evidence, findings, or relationships. Run and module-execution history intentionally grows.
+
+Passive correlation requires no migration and does not alter schema-v1 asset fingerprints. It adds deterministic JSON-backed evidence and relationships over existing asset IDs.
+
+## Passive SCCM topology correlation
+
+`live.sccm.correlate` is the final live stage and performs no network activity. It correlates normalized FQDN, short-name, IP, DNS/CNAME, LDAP host reference, TLS certificate name, MP-list reference/site-code, validated-route, inferred-role, and user-hint observations already in the store.
+
+A `same_logical_host` relationship requires a unique explicit DNS join between one named and one IP-only asset. Multiple named assets sharing an address remain distinct. LDAP and MP-list references match only existing assets and never expand scope. Certificate mismatches, shared addresses, conflicting site codes, validated MPs absent from collected LDAP, unresolved LDAP references, and unmatched MP-list references retain source IDs, values, confidence, assessment relevance, and what remains unverified. They are evidence or informational discovery findings, not vulnerabilities.
+
+JSON and HTML topology output includes canonical identity, aliases, addresses, SCCM roles, site codes, role confidence, protocol-validation state, LDAP/TLS/MP-list references, conflicts, unresolved references, and normalized version evidence. Only a documented protocol-specific field can establish a product version. IIS/Windows headers, generic HTTP fields, certificate dates, and hostname patterns are excluded; current reports explicitly show `SCCM version: unknown` when no reliable field exists.
 
 ## Scope normalization and exclusions
 
@@ -589,20 +600,20 @@ go run ./cmd/cinderpath discover \
 
 ## Recommended next task
 
-Implement **read-only SCCM version and topology correlation using already collected evidence**, without adding new routes or authentication.
+Implement **passive temporal/staleness analysis and a documented version-evidence adapter**, without adding new routes or authentication.
 
 Suggested scope:
 
-1. Correlate validated MP/likely DP origins with LDAP service bindings, DNS canonical names, IP addresses, and TLS certificate names.
-2. Add explicit conflict evidence when LDAP, DNS, certificate, and route conclusions disagree.
-3. Derive SCCM version only from a documented, bounded field already present in a validated MP response; otherwise record `version_unverified`.
-4. Improve report grouping by host/origin and show stale or materially conflicting observations without hiding either state.
-5. Keep schema-v1 asset fingerprints unchanged and add local-only fixtures for every new parser/correlation rule.
+1. Track observation age and distinguish current, stale, and superseded topology claims without deleting evidence.
+2. Add an adapter only for a documented, bounded SCCM protocol field that directly conveys product version; retain `unknown` otherwise.
+3. Improve multi-site and load-balanced identity presentation without weakening strong-match requirements.
+4. Publish a versioned machine-readable report schema for topology consumers.
+5. Keep schema-v1 asset fingerprints and the passive network boundary unchanged.
 
 Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`, token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration, certificate enrollment, machine identity creation, Network Access Account/task-sequence recovery, package or DP enumeration/download, PXE collection, NTLM/Kerberos authentication, relay, deployments, execution, SQL, and SMB authentication.
 
 Suggested commit message:
 
 ```text
-Correlate SCCM endpoint topology evidence
+Add passive SCCM evidence staleness analysis
 ```
