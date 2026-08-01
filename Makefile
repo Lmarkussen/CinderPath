@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration sequence-test parser-test matrix-test analysis-replay-test capture-fuzz sequence-fuzz parser-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -29,6 +29,14 @@ help:
 	  '  fuzz-policy           bounded offline policy fuzz smoke tests' \
 	  '  fuzz-protocol         bounded offline protocol fuzz smoke tests' \
 	  '  fuzz-protocol-research bounded signing/research fuzz smoke tests' \
+	  '  capture-test          bounded HAR/PCAP/normalized import tests' \
+	  '  capture-integration   offline capture CLI and persistence tests' \
+	  '  sequence-test         deterministic partial-order tests' \
+	  '  parser-test           structural observation/candidate tests' \
+	  '  matrix-test           controlled-matrix validation tests' \
+	  '  analysis-replay-test deterministic offline re-analysis tests' \
+	  '  protocol-offline-check all capture research tests (no network)' \
+	  '  capture-fuzz/sequence-fuzz/parser-fuzz bounded offline fuzz smoke tests' \
 	  '  docs-check            high-value CLI/docs/Makefile consistency tests' \
 	  '  run-mock              isolated network-free mock workflow' \
 	  '  run-dry               persist a network-free dry-run plan' \
@@ -138,6 +146,35 @@ fuzz-protocol-research:
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzSequenceParser$$' -fuzztime=1s
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzDossierGeneratorInputs$$' -fuzztime=1s
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzExpectedAnalysisManifest$$' -fuzztime=1s
+
+capture-test:
+	go test ./internal/capture -run 'TestHAR|TestPCAP'
+
+capture-integration:
+	go test ./internal/capture ./internal/database -run 'Test.*Import|TestSchemaV5'
+
+sequence-test:
+	go test ./internal/capture -run 'Test.*Deterministic|Test.*Sequence'
+
+parser-test:
+	go test ./internal/capture -run 'TestBinary|TestMatrixAndCandidate'
+
+matrix-test:
+	go test ./internal/capture -run 'TestMatrix'
+
+analysis-replay-test:
+	go test ./internal/capture -run 'TestHARImportRedactsAndDeterministic'
+
+protocol-offline-check: capture-test capture-integration sequence-test parser-test matrix-test analysis-replay-test
+
+capture-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzHAR$$' -fuzztime=1s
+
+sequence-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzHAR$$' -fuzztime=1s
+
+parser-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzBinaryObservations$$' -fuzztime=1s
 
 docs-check:
 	go test ./internal/buildtool -run '^TestDocumentationConsistency$$'

@@ -1,6 +1,6 @@
 package database
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 var schemaV1 = []string{
 	`CREATE TABLE runs (id TEXT PRIMARY KEY, command TEXT NOT NULL, profile TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, version TEXT NOT NULL, arguments TEXT NOT NULL, summary TEXT NOT NULL)`,
@@ -54,4 +54,13 @@ var schemaV4 = []string{
 	`CREATE TABLE trusted_research_keys (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 	`CREATE TABLE safety_reviews (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 	`CREATE TABLE expected_analysis_results (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+}
+var schemaV5 = []string{
+	`CREATE TABLE capture_sources (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_exchanges (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_sequences (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_observations (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_parser_candidates (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_matrices (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_ambiguities (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 }

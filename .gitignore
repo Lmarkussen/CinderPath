@@ -7,3 +7,10 @@
 /demo/
 *.test
 coverage.out
+*.pcap
+*.pcapng
+*.etl
+captures/
+research-corpora/
+!testdata/synthetic-captures/
+!testdata/synthetic-captures/**

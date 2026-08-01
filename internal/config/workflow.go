@@ -83,6 +83,28 @@ type PolicyConfig struct {
 		DeriveCandidateContract bool   `yaml:"derive_candidate_contract" json:"derive_candidate_contract"`
 		GenerateDossier         bool   `yaml:"generate_dossier" json:"generate_dossier"`
 	} `yaml:"research" json:"research"`
+	Capture struct {
+		AcceptedFormats         []string `yaml:"accepted_formats" json:"accepted_formats"`
+		MaxCaptureBytes         int64    `yaml:"max_capture_bytes" json:"max_capture_bytes"`
+		MaxPacketCount          int      `yaml:"max_packet_count" json:"max_packet_count"`
+		MaxStreamCount          int      `yaml:"max_stream_count" json:"max_stream_count"`
+		MaxPerStreamBytes       int64    `yaml:"max_per_stream_bytes" json:"max_per_stream_bytes"`
+		MaxReassembledBodyBytes int64    `yaml:"max_reassembled_body_bytes" json:"max_reassembled_body_bytes"`
+		MaxDecompressedBytes    int64    `yaml:"max_decompressed_bytes" json:"max_decompressed_bytes"`
+		MaxCompressionRatio     float64  `yaml:"max_compression_ratio" json:"max_compression_ratio"`
+		MaxXMLDepth             int      `yaml:"max_xml_depth" json:"max_xml_depth"`
+		MaxJSONDepth            int      `yaml:"max_json_depth" json:"max_json_depth"`
+		MaxMultipartMembers     int      `yaml:"max_multipart_members" json:"max_multipart_members"`
+		MaxFieldCount           int      `yaml:"max_field_count" json:"max_field_count"`
+		MaxObservedStringLength int      `yaml:"max_observed_string_length" json:"max_observed_string_length"`
+		AllowedRedactedHeaders  []string `yaml:"allowed_redacted_headers" json:"allowed_redacted_headers"`
+		IgnoredHeaders          []string `yaml:"ignored_headers" json:"ignored_headers"`
+		SequenceTimingTolerance string   `yaml:"sequence_timing_tolerance" json:"sequence_timing_tolerance"`
+		MinimumSamples          int      `yaml:"minimum_samples" json:"minimum_samples"`
+		MinimumRepetitions      int      `yaml:"minimum_repetitions" json:"minimum_repetitions"`
+		SignaturePolicy         string   `yaml:"signature_policy" json:"signature_policy"`
+		AlgorithmVersion        string   `yaml:"algorithm_version" json:"algorithm_version"`
+	} `yaml:"capture" json:"capture"`
 }
 type SecretsConfig struct {
 	Enabled        bool   `yaml:"enabled" json:"enabled"`

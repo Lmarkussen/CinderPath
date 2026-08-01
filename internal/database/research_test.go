@@ -32,7 +32,7 @@ func TestSchemaV4MigratesV3AndPreservesData(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if e = s.db.QueryRow("PRAGMA user_version").Scan(&version); e != nil || version != 4 {
+	if e = s.db.QueryRow("PRAGMA user_version").Scan(&version); e != nil || version != schemaVersion {
 		t.Fatalf("version=%d %v", version, e)
 	}
 	if _, e = s.GetRun(context.Background(), "run_old"); e != nil {
