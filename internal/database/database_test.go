@@ -35,7 +35,7 @@ func TestSchemaV2AuthenticationAttemptHistoryPersists(t *testing.T) {
 		t.Fatalf("history %#v %v", got, err)
 	}
 	var version int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 3 {
+	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != 4 {
 		t.Fatalf("schema=%d %v", version, err)
 	}
 }

@@ -333,6 +333,27 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 			fmt.Fprintf(s.stderr, "dedicated secret output failed: %v\n", secretErr)
 		}
 	}
+	if c.Policy.Research.Enabled {
+		analysis, researchErr := policy.AnalyzeResearchSet(c.Policy.Research.ResearchSet, "")
+		if researchErr != nil {
+			fmt.Fprintf(s.stderr, "offline protocol research: %v; continuing\n", researchErr)
+		} else {
+			var candidate *policy.CandidateContract
+			if c.Policy.Research.DeriveCandidateContract {
+				candidatePath := filepath.Join(c.Output.Directory, "candidate-contract.yaml")
+				if derived, de := policy.DeriveCandidateContract(c.Policy.Research.ResearchSet, candidatePath, false); de != nil {
+					fmt.Fprintf(s.stderr, "candidate contract derivation: %v; continuing\n", de)
+				} else {
+					candidate = &derived
+					if c.Policy.Research.GenerateDossier {
+						_ = policy.CreateDossier(derived, analysis, filepath.Join(c.Output.Directory, "protocol-contract-dossier"), false)
+					}
+				}
+			}
+			_ = s.application.PersistResearchAnalysis(context.WithoutCancel(ctx), disc.Run.ID, analysis.ResearchSet, analysis, candidate)
+			fmt.Fprintf(s.stdout, "\nOffline protocol research analyzed: properties=%d correlations=%d sequences=%d\nCandidate contract live execution: blocked\n", len(analysis.Comparisons), len(analysis.Correlations), len(analysis.Sequences))
+		}
+	}
 	assess, ae := s.application.Assess(ctx, []string{"run"})
 	_ = s.application.PersistWorkflowPlan(context.WithoutCancel(ctx), disc.Run.ID, plan, false)
 	rep, re := s.application.Report(ctx, []string{"run"})

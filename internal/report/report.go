@@ -75,6 +75,7 @@ type JSONReport struct {
 	Temporal                        temporal.Result                `json:"temporal_correlation"`
 	Workflow                        WorkflowResearch               `json:"workflow"`
 	PolicyResearch                  PolicyResearch                 `json:"policy_research"`
+	ProtocolResearch                ProtocolResearch               `json:"protocol_research"`
 }
 
 type WorkflowResearch struct {
@@ -97,10 +98,16 @@ type PolicyResearch struct {
 		Reason    string `json:"reason"`
 	} `json:"live_collection"`
 }
+type ProtocolResearch struct {
+	ResearchSets, Variables, Comparisons, Correlations, Sequences, CandidateContracts, SafetyReviews, BundleSignatures, ExpectedResults []database.ResearchRecord
+	LiveCollectionBlocked                                                                                                               bool   `json:"live_collection_blocked"`
+	Banner                                                                                                                              string `json:"banner"`
+}
 type policyStore interface {
 	ListPolicyRecords(context.Context, string) ([]database.PolicyRecord, error)
 	ListWorkflowStages(context.Context) ([]database.WorkflowRecord, error)
 	ListWorkflowModuleDecisions(context.Context) ([]database.WorkflowRecord, error)
+	ListResearchRecords(context.Context, string) ([]database.ResearchRecord, error)
 }
 
 type SCCMTopologyHost struct {
@@ -231,6 +238,7 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 	pr := PolicyResearch{SchemaVersion: 1}
 	pr.LiveCollection.Reason = "no approved live protocol contract"
 	wr := WorkflowResearch{Stages: []database.WorkflowRecord{}, Modules: []database.WorkflowRecord{}}
+	rr := ProtocolResearch{LiveCollectionBlocked: true, Banner: "This report contains offline protocol research. A candidate protocol contract is not approval for live SCCM execution. No live SCCM policy request was sent."}
 	if ps, ok := store.(policyStore); ok {
 		pr.Contracts, _ = ps.ListPolicyRecords(ctx, "protocol_contracts")
 		pr.Fixtures, _ = ps.ListPolicyRecords(ctx, "protocol_fixtures")
@@ -243,8 +251,17 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 		pr.Sanitization, _ = ps.ListPolicyRecords(ctx, "sanitization_manifests")
 		wr.Stages, _ = ps.ListWorkflowStages(ctx)
 		wr.Modules, _ = ps.ListWorkflowModuleDecisions(ctx)
+		rr.ResearchSets, _ = ps.ListResearchRecords(ctx, "research_sets")
+		rr.Variables, _ = ps.ListResearchRecords(ctx, "research_variables")
+		rr.Comparisons, _ = ps.ListResearchRecords(ctx, "cross_fixture_observations")
+		rr.Correlations, _ = ps.ListResearchRecords(ctx, "field_correlations")
+		rr.Sequences, _ = ps.ListResearchRecords(ctx, "request_sequences")
+		rr.CandidateContracts, _ = ps.ListResearchRecords(ctx, "candidate_contracts")
+		rr.SafetyReviews, _ = ps.ListResearchRecords(ctx, "safety_reviews")
+		rr.BundleSignatures, _ = ps.ListResearchRecords(ctx, "bundle_signatures")
+		rr.ExpectedResults, _ = ps.ListResearchRecords(ctx, "expected_analysis_results")
 	}
-	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Identities: nonNil(credentials), NoRemoteAuthenticationStatement: statement, Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints), SCCMTopology: buildSCCMTopology(evidence), AuthenticationAttempts: nonNil(attempts), Temporal: temporalResult, Workflow: wr, PolicyResearch: pr}
+	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Identities: nonNil(credentials), NoRemoteAuthenticationStatement: statement, Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints), SCCMTopology: buildSCCMTopology(evidence), AuthenticationAttempts: nonNil(attempts), Temporal: temporalResult, Workflow: wr, PolicyResearch: pr, ProtocolResearch: rr}
 	jp := filepath.Join(outputDir, "cinderpath-report.json")
 	hp := filepath.Join(outputDir, "cinderpath-report.html")
 	b, err := json.MarshalIndent(r, "", "  ")
@@ -490,6 +507,7 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{"
 <section><h2>Policy protocol research</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.PolicyResearch.Contracts}}</div>Contracts</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Fixtures}}</div>Fixtures</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Assignments}}</div>Assignments</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Documents}}</div>Documents</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Candidates}}</div>Redacted candidates</div></div><p><strong>Live execution:</strong> blocked — {{.Report.PolicyResearch.LiveCollection.Reason}}</p><h3>Contracts</h3><table><tr><th>ID</th><th>Name</th><th>State</th><th>Observed route</th></tr>{{range .Report.PolicyResearch.Contracts}}<tr><td><code>{{.ID}}</code></td><td>{{index .Data "name"}}</td><td>{{index .Data "verification_state"}}</td><td>{{index (index .Data "method") "value"}} {{index (index .Data "path") "value"}}</td></tr>{{end}}</table><h3>Fixture inventory</h3><table><tr><th>ID</th><th>Name</th><th>Type</th><th>Sizes</th></tr>{{range .Report.PolicyResearch.Fixtures}}<tr><td><code>{{.ID}}</code></td><td>{{index .Data "name"}}</td><td>synthetic={{index .Data "synthetic"}} sanitized={{index .Data "sanitized"}}</td><td>{{index .Data "request_size"}} / {{index .Data "response_size"}}</td></tr>{{end}}</table><h3>Policy documents</h3><table><tr><th>Policy</th><th>Type/version</th><th>Parser</th><th>Candidate counts</th></tr>{{range .Report.PolicyResearch.Documents}}<tr><td>{{index .Data "policy_id"}}</td><td>{{index .Data "policy_type"}} / {{index .Data "policy_version"}}</td><td>{{index .Data "parser_status"}}</td><td>protected={{index .Data "protected_value_count"}} candidate={{index .Data "plaintext_candidate_count"}} confirmed={{index .Data "confirmed_plaintext_count"}}</td></tr>{{end}}</table><h3>Secret candidates (redacted)</h3><table><tr><th>Category/state</th><th>Preview</th><th>Source</th><th>Confidence</th></tr>{{range .Report.PolicyResearch.Candidates}}<tr><td>{{index .Data "category"}} / {{index .Data "state"}}</td><td>{{index .Data "redacted_preview"}}</td><td>{{index .Data "policy_id"}} · {{index .Data "field"}}</td><td>{{index .Data "confidence"}}</td></tr>{{end}}</table></section>{{end}}
 {{if .Report.Workflow.Stages}}<section><h2>Unified workflow stages</h2><table><tr><th>Run</th><th>Stage</th><th>State</th><th>Reason</th></tr>{{range .Report.Workflow.Stages}}<tr><td><code>{{.RunID}}</code></td><td>{{.Name}}</td><td>{{.State}}</td><td>{{index .Data "reason"}}</td></tr>{{end}}</table></section>{{end}}
 {{if .Report.Workflow.Modules}}<section><h2>Workflow module decisions</h2><p>Planning and offline fixture activity do not imply live validation. Live SCCM policy requests: 0.</p><table><tr><th>Run</th><th>Module</th><th>State</th><th>Boundary</th><th>Reason</th></tr>{{range .Report.Workflow.Modules}}<tr><td><code>{{.RunID}}</code></td><td>{{.Name}}</td><td>{{.State}}</td><td>{{index .Data "network_boundary"}}</td><td>{{index .Data "reason"}}</td></tr>{{end}}</table></section>{{end}}
+{{if .Report.ProtocolResearch.ResearchSets}}<div class="banner">{{.Report.ProtocolResearch.Banner}}</div><section><h2>Offline protocol contract research</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.ProtocolResearch.ResearchSets}}</div>Research sets</div><div class="card"><div class="metric">{{len .Report.ProtocolResearch.Comparisons}}</div>Compared properties</div><div class="card"><div class="metric">{{len .Report.ProtocolResearch.Correlations}}</div>Correlation candidates</div><div class="card"><div class="metric">{{len .Report.ProtocolResearch.CandidateContracts}}</div>Candidate contracts</div></div><p>Candidate contracts are research evidence only. Live collection remains blocked.</p></section>{{end}}
 <section><h2>Executive summary</h2><div class="grid"><div class="card"><div class="metric">{{.Report.Summary.AssetCount}}</div>Assets</div><div class="card"><div class="metric">{{.Report.Summary.FindingCount}}</div>Findings</div><div class="card"><div class="metric">{{.Report.Summary.AttackPathCount}}</div>Attack paths</div></div></section>
 <section><h2>Run metadata</h2>{{with .Report.Metadata.LatestRun}}<table><tr><th>Run ID</th><td><code>{{.ID}}</code></td></tr><tr><th>Command</th><td>{{.Command}}</td></tr><tr><th>Profile</th><td>{{.Profile}}</td></tr><tr><th>Status</th><td>{{.Status}}</td></tr><tr><th>Started</th><td>{{.StartedAt}}</td></tr></table>{{end}}</section>
 <section><h2>Discovery summary</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.Discovery.InputScope}}</div>Scoped targets</div><div class="card"><div class="metric">{{.Report.Discovery.DNSResolved}}</div>DNS resolved</div><div class="card"><div class="metric">{{.Report.Discovery.ReachableSystems}}</div>Reachable systems</div><div class="card"><div class="metric">{{.Report.Discovery.OpenServicePorts}}</div>Open ports</div><div class="card"><div class="metric">{{.Report.Discovery.HTTPEndpoints}}</div>HTTP endpoints</div><div class="card"><div class="metric">{{.Report.Discovery.SCCMDirectoryObjects}}</div>SCCM directory objects</div></div><details><summary>Scope and exclusions</summary><p><strong>Scope:</strong> {{range .Report.Discovery.InputScope}}<code>{{.}} </code>{{end}}</p><p><strong>Excluded:</strong> {{range .Report.Discovery.Exclusions}}<code>{{.}} </code>{{end}}</p></details><h3>Inferred roles</h3><table><tr><th>Role</th><th>Count</th></tr>{{range $role,$count := .Report.Discovery.InferredRoles}}<tr><td>{{$role}}</td><td>{{$count}}</td></tr>{{end}}</table></section>

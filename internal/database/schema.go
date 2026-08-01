@@ -1,6 +1,6 @@
 package database
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 var schemaV1 = []string{
 	`CREATE TABLE runs (id TEXT PRIMARY KEY, command TEXT NOT NULL, profile TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, version TEXT NOT NULL, arguments TEXT NOT NULL, summary TEXT NOT NULL)`,
@@ -39,4 +39,19 @@ var schemaV3 = []string{
 	`CREATE INDEX idx_workflow_stages_run ON workflow_stage_executions(run_id)`,
 	`CREATE TABLE workflow_module_decisions (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, module_name TEXT NOT NULL, state TEXT NOT NULL, data TEXT NOT NULL, FOREIGN KEY(run_id) REFERENCES runs(id))`,
 	`CREATE INDEX idx_workflow_modules_run ON workflow_module_decisions(run_id)`,
+}
+var schemaV4 = []string{
+	`CREATE TABLE research_sets (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE research_set_members (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE research_variables (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE cross_fixture_observations (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE field_correlations (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE request_sequences (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE candidate_contracts (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE contract_derivations (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE contract_dossiers (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE bundle_signatures (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE trusted_research_keys (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE safety_reviews (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE expected_analysis_results (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', research_set_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 }

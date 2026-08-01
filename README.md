@@ -14,6 +14,12 @@ capture-plan generation, and filtered policy inventories. These facilities are
 implemented for synthetic fixtures and explicitly authorized lab captures.
 They do not validate a live target or approve a live protocol contract.
 
+Optional Ed25519-signed bundles, multi-capture research sets, redacted
+comparison/correlation, candidate contracts, safety reviews, expected offline
+results, and contract dossiers are implemented. Signatures and candidate
+contracts have no live-execution or automatic trust effect. See
+[`docs/PROTOCOL_RESEARCH.md`](docs/PROTOCOL_RESEARCH.md).
+
 ## Recommended operator workflow
 
 Routine assessments use a generated configuration and the unified runner:
@@ -121,7 +127,7 @@ cinderpath policy secrets --directory testdata/policy-captures/example01 --show-
 ```
 
 Contract states are `unknown`, `fixture_only`, `captured_unverified`,
-`verified_local_replay`, `approved_live`, and `rejected`. Normal commands cannot
+`verified_local_replay`, `candidate_contract`, `approved_live`, and `rejected`. Normal commands cannot
 create `approved_live`; current contracts are local-replay-only. Existing SCCM
 client metadata may be imported with `client-identity import --metadata FILE`,
 but this neither registers nor validates a client.
@@ -134,7 +140,7 @@ enabled. Ordinary reports, logs, progress, and contract metadata receive no
 plaintext. Protected values are identified but not decrypted; offline
 credentials are always labeled unvalidated.
 
-Schema v3 persists redacted contract, fixture, assignment, policy-document,
+Schema v4 persists redacted contract, fixture, assignment, policy-document,
 candidate, and workflow-stage intelligence. HTML and JSON reports include a
 dedicated offline policy section and safety banner; raw bodies and plaintext are
 excluded. Binary inspection reports observed encodings/magic separately from
@@ -178,7 +184,7 @@ Bundle export requires explicit fixture directories and completed review where
 needed. Import validates paths, regular-file members, counts, sizes, totals, and
 SHA-256 fingerprints before atomic extraction. Imported trust remains
 fixture-only/captured-unverified and can never become `approved_live`. Bundles
-are fingerprinted but are not yet cryptographically signed.
+are fingerprinted and may optionally be Ed25519-signed without changing trust.
 
 Dry-runs persist configuration/profile summaries, scope estimates, stages, and
 all module decisions while creating no target observations, authentication
@@ -476,16 +482,17 @@ The recommended next phase is authentication-provider hardening: OS-backed secre
   operations remain blocked or unimplemented.
 * Binary inspection and sanitizer classifications are conservative research
   aids; unknown binary structures still require manual lab review.
-* Bundle signatures are not implemented. SHA-256 fingerprints provide
-  integrity checking, while authenticity must be established out of band.
+* Research signatures provide integrity and key provenance, not capture
+  authenticity, sanitization completeness, safety approval, or live support.
 
 * Live discovery only accepts explicit targets; it does not perform broad AD/DNS enumeration automatically.
 * SMB, SQL, LDAP probe ports, and TCP 10123 are reachability-only unless the explicit LDAP modules are enabled.
 * LDAP currently uses simple bind, explicit anonymous bind, LDAPS, or STARTTLS; current-process Kerberos/SASL providers are future work.
 * Role inference is intentionally conservative and cannot confirm an SCCM role from ports or hostnames alone.
 * `standard` and `aggressive` do not enable additional behavior.
-* SQLite schema version 3 includes durable authentication history plus offline
-  protocol/policy, sanitization, workflow-stage, and module-decision records;
+* SQLite schema version 4 includes durable authentication history plus offline
+  protocol/policy, sanitization, workflow, signing, research-set, comparison,
+  candidate-contract, dossier, review, and expected-result records;
   passive model records remain JSON-backed and preserve schema-v1 fingerprints.
 * Correlation is in-memory and cannot independently resolve stale, load-balanced, or reassigned identities.
 * SCCM HTTP validation is limited to standard ports 80/443 and the five exact routes above; custom ports, CMG paths, policy endpoints, package/content paths, and authenticated behavior are not tested.

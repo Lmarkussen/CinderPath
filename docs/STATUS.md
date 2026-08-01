@@ -42,6 +42,12 @@ Authentication validation may cause account lockout or security alerts. Use only
 
 ## Offline policy protocol foundation
 
+Schema v4 adds offline research sets, bundle signature state, experimental
+variables, cross-capture observations, correlations, sequence models,
+candidate-contract derivations, dossiers, safety reviews, and expected analysis
+results. Ed25519 signatures cover a canonical member manifest but have no trust
+or live-execution effect. See [`PROTOCOL_RESEARCH.md`](PROTOCOL_RESEARCH.md).
+
 Policy research is fixture-driven. `internal/policy` provides provenance-aware
 contracts, sanitized fixture import, deterministic comparison, bounded offline
 XML parsing, secret classification, loopback-only replay, existing-client
@@ -301,7 +307,7 @@ run_completed
 
 ## Database and deterministic fingerprints
 
-The database uses schema version 3. Migration 2 adds durable authentication-attempt history; migration 3 adds offline protocol, policy, sanitization, workflow-stage, and module-decision records. Existing model records remain JSON-backed.
+The database uses schema version 4. Migration 2 adds durable authentication-attempt history; migration 3 adds offline protocol, policy, sanitization, workflow-stage, and module-decision records; migration 4 adds redacted protocol-research history. Existing model records remain JSON-backed.
 
 Persisted record types:
 
@@ -655,7 +661,8 @@ go run ./cmd/cinderpath discover \
 
 ## Known limitations
 
-- Research bundles are fingerprinted but are not cryptographically signed.
+- Research bundles may be Ed25519-signed, but signer recognition is local
+  metadata and never establishes capture authenticity or live approval.
 - `structured_known` currently supports bounded XML-like bodies plus documented
   metadata/header structures; opaque binary regions remain untouched.
 - Text replacement requires identical encoded byte length and fails closed.
@@ -684,10 +691,10 @@ go run ./cmd/cinderpath discover \
 
 ## Recommended next task
 
-Collect multiple authorized-lab captures from already registered clients, run
-the complete sanitizer/review/leakage workflow, and compare bounded observations
-across supported SCCM versions. Use that evidence to expand positively
-identified structured parsers and add bundle signing. Preserve the live policy
+Collect a controlled matrix of authorized-lab captures from already registered
+clients, run the complete sanitizer/review/signing/leakage workflow, and compare
+bounded observations across supported SCCM versions. Use that evidence to expand positively
+identified structured and request-sequence parsers. Preserve the live policy
 block and do not add registration, content requests, protected-secret
 decryption, identity generation, or state changes.
 

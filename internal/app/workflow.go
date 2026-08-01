@@ -105,6 +105,17 @@ func BuildWorkflowPlan(c config.Config, dry bool) WorkflowPlan {
 	} else {
 		add("policy fixture import", "not applicable", "no fixture directories configured")
 	}
+	if c.Policy.Research.Enabled {
+		for _, n := range []string{"protocol bundle verification", "protocol research set validation", "protocol cross capture analysis", "protocol field correlation", "protocol sequence analysis", "protocol expected result validation"} {
+			add(n, "ready", "offline research only")
+		}
+		if c.Policy.Research.DeriveCandidateContract {
+			add("protocol candidate contract derivation", "ready", "candidate_contract only; live execution blocked")
+		}
+		if c.Policy.Research.GenerateDossier {
+			add("protocol contract dossier generation", "ready", "redacted offline evidence")
+		}
+	}
 	if c.Profile == config.ProfileAggressive || c.Profile == config.ProfileYolo {
 		for _, m := range FutureModuleRegistry() {
 			if m.Name == "live_policy_collection" {

@@ -131,3 +131,91 @@ func FuzzFixtureServerRequestMatcher(f *testing.F) {
 		}
 	})
 }
+func FuzzCanonicalSigningManifest(f *testing.F) {
+	f.Add("bundle_x", "key_x")
+	f.Fuzz(func(t *testing.T, bundle, key string) {
+		if len(bundle)+len(key) > 4096 {
+			return
+		}
+		m := BundleManifest{SchemaVersion: 1, BundleID: bundle, MemberFingerprints: map[string]string{}}
+		_, _, _ = canonicalSigning(m, map[string][]byte{}, key)
+	})
+}
+func FuzzSignatureEnvelopeParser(f *testing.F) {
+	f.Add([]byte("version: 1\nalgorithm: ed25519\n"))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if len(b) > 1<<20 {
+			return
+		}
+		var x SignatureEnvelope
+		_ = yaml.Unmarshal(b, &x)
+	})
+}
+func FuzzResearchSetParser(f *testing.F) {
+	f.Add([]byte("schema_version: 1\nname: fuzz\n"))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if len(b) > 1<<20 {
+			return
+		}
+		var x ResearchSet
+		_ = yaml.Unmarshal(b, &x)
+	})
+}
+func FuzzComparisonPlanner(f *testing.F) {
+	f.Add("route", "a", "b")
+	f.Fuzz(func(t *testing.T, k, a, b string) {
+		if len(k)+len(a)+len(b) > 1<<16 {
+			return
+		}
+		_ = compareCaptures([]captureProperties{{label: "a", props: map[string]string{k: a}, present: map[string]bool{k: true}}, {label: "b", props: map[string]string{k: b}, present: map[string]bool{k: true}}}, ResearchSet{})
+	})
+}
+func FuzzCorrelationEngine(f *testing.F) {
+	f.Add("property", "variable")
+	f.Fuzz(func(t *testing.T, p, v string) {
+		if len(p)+len(v) > 1<<16 {
+			return
+		}
+		_ = correlate([]PropertyComparison{{Property: p, Classification: "variable_unexplained"}}, ResearchSet{}, nil)
+	})
+}
+func FuzzCandidateContractSerializer(f *testing.F) {
+	f.Add("candidate", "unknown")
+	f.Fuzz(func(t *testing.T, n, u string) {
+		if len(n)+len(u) > 1<<16 {
+			return
+		}
+		_, _ = yaml.Marshal(CandidateContract{Name: n, Unknown: []string{u}, LiveExecutionAllowed: false})
+	})
+}
+func FuzzExpectedAnalysisManifest(f *testing.F) {
+	f.Add("name", "sha256:00")
+	f.Fuzz(func(t *testing.T, k, v string) {
+		if len(k)+len(v) > 1<<16 {
+			return
+		}
+		_, _ = yaml.Marshal(BundleManifest{ExpectedAnalysisFingerprints: map[string]string{k: v}})
+	})
+}
+func FuzzSequenceParser(f *testing.F) {
+	f.Add([]byte("- index: 0\n  method: GET\n"))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if len(b) > 1<<20 {
+			return
+		}
+		var x []SequenceStep
+		_ = yaml.Unmarshal(b, &x)
+	})
+}
+func FuzzDossierGeneratorInputs(f *testing.F) {
+	f.Add("candidate", "unknown")
+	f.Fuzz(func(t *testing.T, id, u string) {
+		if len(id)+len(u) > 1<<16 {
+			return
+		}
+		_, _ = yaml.Marshal(struct {
+			Contract CandidateContract
+			Analysis ResearchAnalysis
+		}{CandidateContract{ID: id, Unknown: []string{u}}, ResearchAnalysis{}})
+	})
+}

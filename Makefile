@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test policy-offline-test fuzz-policy fuzz-protocol docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research docs-check
 
 help:
 	@printf '%s\n' \
@@ -20,9 +20,15 @@ help:
 	  '  protocol-test         all offline protocol package tests' \
 	  '  protocol-report-test  policy persistence and redacted report tests' \
 	  '  protocol-bundle-test  real bundle export/inspect/import tests' \
+	  '  protocol-signing-test Ed25519 key/signature/verification tests' \
+	  '  protocol-research-test multi-capture comparison/correlation tests' \
+	  '  protocol-contract-test candidate contract and safety-review tests' \
+	  '  protocol-dossier-test redacted atomic dossier tests' \
+	  '  protocol-expected-results-test signed offline expected-result tests' \
 	  '  policy-offline-test   offline assignment/policy/classifier tests' \
 	  '  fuzz-policy           bounded offline policy fuzz smoke tests' \
 	  '  fuzz-protocol         bounded offline protocol fuzz smoke tests' \
+	  '  fuzz-protocol-research bounded signing/research fuzz smoke tests' \
 	  '  docs-check            high-value CLI/docs/Makefile consistency tests' \
 	  '  run-mock              isolated network-free mock workflow' \
 	  '  run-dry               persist a network-free dry-run plan' \
@@ -95,6 +101,21 @@ protocol-report-test:
 protocol-bundle-test:
 	go test ./internal/policy -run '^TestBundle'
 
+protocol-signing-test:
+	go test ./internal/policy -run '^TestSigning|^TestSignature'
+
+protocol-research-test:
+	go test ./internal/policy -run '^TestResearchSet'
+
+protocol-contract-test:
+	go test ./internal/policy -run '^TestResearchSetComparisonCandidate|^TestSafetyReview'
+
+protocol-dossier-test:
+	go test ./internal/policy -run '^TestResearchSetComparisonCandidateAndDossier$$'
+
+protocol-expected-results-test:
+	go test ./internal/policy -run '^TestSigningKeySignVerifyAndExpectedResults$$'
+
 fuzz-policy:
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzPolicyParser$$' -fuzztime=1s
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzAssignmentParser$$' -fuzztime=1s
@@ -107,6 +128,16 @@ fuzz-protocol:
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzReplacementPlanner$$' -fuzztime=1s
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzBundleManifestParser$$' -fuzztime=1s
 	go test ./internal/policy -run '^$$' -fuzz '^FuzzBundleArchiveValidator$$' -fuzztime=1s
+
+fuzz-protocol-research:
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzCanonicalSigningManifest$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzSignatureEnvelopeParser$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzResearchSetParser$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzComparisonPlanner$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzCandidateContractSerializer$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzSequenceParser$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzDossierGeneratorInputs$$' -fuzztime=1s
+	go test ./internal/policy -run '^$$' -fuzz '^FuzzExpectedAnalysisManifest$$' -fuzztime=1s
 
 docs-check:
 	go test ./internal/buildtool -run '^TestDocumentationConsistency$$'

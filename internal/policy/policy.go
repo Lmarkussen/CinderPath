@@ -31,12 +31,13 @@ const MaxFixtureBytes = 4 << 20
 type VerificationState string
 
 const (
-	Unknown             VerificationState = "unknown"
-	FixtureOnly         VerificationState = "fixture_only"
-	CapturedUnverified  VerificationState = "captured_unverified"
-	VerifiedLocalReplay VerificationState = "verified_local_replay"
-	ApprovedLive        VerificationState = "approved_live"
-	Rejected            VerificationState = "rejected"
+	Unknown                VerificationState = "unknown"
+	FixtureOnly            VerificationState = "fixture_only"
+	CapturedUnverified     VerificationState = "captured_unverified"
+	VerifiedLocalReplay    VerificationState = "verified_local_replay"
+	CandidateContractState VerificationState = "candidate_contract"
+	ApprovedLive           VerificationState = "approved_live"
+	Rejected               VerificationState = "rejected"
 )
 
 type Provenance string
@@ -587,9 +588,6 @@ func atomicWrite(path string, b []byte, mode os.FileMode, replace bool) error {
 	}
 	if e != nil {
 		return e
-	}
-	if replace {
-		_ = os.Remove(path)
 	}
 	if e = os.Rename(tmp, path); e != nil {
 		return e

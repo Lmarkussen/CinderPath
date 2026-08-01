@@ -250,7 +250,7 @@ func (s *state) protocolCommand() *cobra.Command {
 	_ = review.MarkFlagRequired("directory")
 	_ = review.MarkFlagRequired("reviewer-reference")
 	bundle := s.bundleCommand()
-	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, review, inspect, serve, bundle)
+	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, review, inspect, serve, bundle, s.signingKeyCommand(), s.researchSetCommand(), s.contractResearchCommand(), s.researchViewCommand("correlations"), s.researchViewCommand("sequences"))
 	return root
 }
 
@@ -296,7 +296,43 @@ func (s *state) bundleCommand() *cobra.Command {
 	}}
 	imp.Flags().StringVar(&input, "input", "", "bundle archive")
 	_ = imp.MarkFlagRequired("input")
-	root.AddCommand(ex, inspect, imp)
+	var key, trusted string
+	sign := &cobra.Command{Use: "sign", Short: "Sign an eligible offline bundle; signatures do not elevate trust", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		env, e := policy.SignBundle(input, key, output)
+		if e == nil {
+			if info, ie := policy.InspectBundle(output); ie == nil {
+				_ = s.application.PersistBundleSignature(cmd.Context(), info.Manifest.BundleID, policy.SignatureVerification{State: "signature_valid", SignerKeyID: env.KeyID, Integrity: "all members verified", TrustEffect: "none", ContractPromotion: "none"})
+			}
+			fmt.Fprintf(s.stdout, "Signed offline research bundle\nSigner key ID: %s\nTrust effect: none\nContract promotion: none\n", env.KeyID)
+		}
+		return e
+	}}
+	sign.Flags().StringVar(&input, "input", "", "eligible unsigned bundle")
+	sign.Flags().StringVar(&key, "key", "", "versioned Ed25519 private-key file")
+	sign.Flags().StringVar(&output, "output", "", "new signed bundle")
+	_ = sign.MarkFlagRequired("input")
+	_ = sign.MarkFlagRequired("key")
+	_ = sign.MarkFlagRequired("output")
+	verify := &cobra.Command{Use: "verify", Short: "Verify bundle integrity and signature without elevating protocol trust", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		v, e := policy.VerifyBundle(input, trusted)
+		if info, ie := policy.InspectBundle(input); ie == nil {
+			_ = s.application.PersistBundleSignature(cmd.Context(), info.Manifest.BundleID, v)
+		}
+		fmt.Fprintf(s.stdout, "Bundle signature: %s\nSigner key ID: %s\nIntegrity: %s\nKnown signer: %t\nTrust effect: none\nContract promotion: none\n", v.State, v.SignerKeyID, v.Integrity, v.SignerKnown)
+		return e
+	}}
+	verify.Flags().StringVar(&input, "input", "", "signed or unsigned bundle")
+	verify.Flags().StringVar(&trusted, "trusted-keys", "", "optional directory of public research keys")
+	_ = verify.MarkFlagRequired("input")
+	test := &cobra.Command{Use: "test", Short: "Run signed expected offline analysis with zero live traffic", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		r, e := policy.TestBundleExpected(input, trusted)
+		fmt.Fprintf(s.stdout, "Bundle test\n\nSignature: %s\nMembers: %s\nExpected analysis: %s\nParser version: %s\nLive traffic: none\n", r.Signature, r.Members, r.ExpectedAnalysis, r.ParserVersion)
+		return e
+	}}
+	test.Flags().StringVar(&input, "input", "", "signed research bundle")
+	test.Flags().StringVar(&trusted, "trusted-keys", "", "optional trusted public-key directory")
+	_ = test.MarkFlagRequired("input")
+	root.AddCommand(ex, inspect, imp, sign, verify, test)
 	return root
 }
 

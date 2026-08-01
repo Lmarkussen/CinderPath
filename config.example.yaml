@@ -60,6 +60,13 @@ policy:
     require_approved_live_contract: true
   parsing:
     enabled: true
+  research:
+    enabled: false
+    research_set: ""
+    verify_signatures: true
+    require_known_signer: false
+    derive_candidate_contract: false
+    generate_dossier: false
 # Binary sanitization and research bundles are explicit CLI workflows. The safe
 # default is metadata_only: opaque bodies remain unchanged and require review.
 # No configuration key can set a protocol contract to approved_live.

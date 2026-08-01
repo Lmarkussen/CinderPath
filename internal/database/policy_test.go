@@ -29,7 +29,7 @@ func TestSchemaV3PolicyPersistenceRedacted(t *testing.T) {
 		t.Fatal("empty")
 	}
 	var version int
-	if e = s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); e != nil || version != 3 {
+	if e = s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); e != nil || version != 4 {
 		t.Fatalf("schema=%d %v", version, e)
 	}
 }

@@ -162,15 +162,19 @@ func writeBundle(path string, members map[string][]byte) error {
 	return atomicWrite(path, buf.Bytes(), 0600, false)
 }
 func InspectBundle(path string) (BundleInfo, error) {
+	i, _, e := readBundleMembers(path)
+	return i, e
+}
+func readBundleMembers(path string) (BundleInfo, map[string][]byte, error) {
 	f, e := os.Open(path)
 	if e != nil {
-		return BundleInfo{}, e
+		return BundleInfo{}, nil, e
 	}
 	defer f.Close()
 	lr := io.LimitReader(f, MaxBundleBytes+1)
 	gz, e := gzip.NewReader(lr)
 	if e != nil {
-		return BundleInfo{}, e
+		return BundleInfo{}, nil, e
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
@@ -182,44 +186,44 @@ func InspectBundle(path string) (BundleInfo, error) {
 			break
 		}
 		if e != nil {
-			return BundleInfo{}, e
+			return BundleInfo{}, nil, e
 		}
 		n := filepath.ToSlash(h.Name)
 		if h.Typeflag != tar.TypeReg || h.Size < 0 || h.Size > MaxBundleMemberBytes || unsafeMember(n) {
-			return BundleInfo{}, errors.New("unsafe or oversized bundle member")
+			return BundleInfo{}, nil, errors.New("unsafe or oversized bundle member")
 		}
 		if _, ok := data[n]; ok {
-			return BundleInfo{}, errors.New("duplicate bundle member")
+			return BundleInfo{}, nil, errors.New("duplicate bundle member")
 		}
 		total += h.Size
 		if total > MaxBundleBytes {
-			return BundleInfo{}, errors.New("bundle total size limit exceeded")
+			return BundleInfo{}, nil, errors.New("bundle total size limit exceeded")
 		}
 		b, e := io.ReadAll(io.LimitReader(tr, h.Size+1))
 		if e != nil || int64(len(b)) != h.Size {
-			return BundleInfo{}, errors.New("invalid bundle member")
+			return BundleInfo{}, nil, errors.New("invalid bundle member")
 		}
 		data[n] = b
 	}
 	if len(data) >= MaxBundleMembers {
-		return BundleInfo{}, errors.New("bundle member count limit exceeded")
+		return BundleInfo{}, nil, errors.New("bundle member count limit exceeded")
 	}
 	mb, ok := data["bundle.yaml"]
 	if !ok {
-		return BundleInfo{}, errors.New("bundle manifest missing")
+		return BundleInfo{}, nil, errors.New("bundle manifest missing")
 	}
 	var m BundleManifest
 	if e = yaml.Unmarshal(mb, &m); e != nil || m.SchemaVersion != BundleSchemaVersion {
-		return BundleInfo{}, errors.New("invalid bundle manifest")
+		return BundleInfo{}, nil, errors.New("invalid bundle manifest")
 	}
 	for n, fp := range m.MemberFingerprints {
 		b, ok := data[n]
 		if !ok {
-			return BundleInfo{}, fmt.Errorf("manifest member missing: %s", n)
+			return BundleInfo{}, nil, fmt.Errorf("manifest member missing: %s", n)
 		}
 		x := sha256.Sum256(b)
 		if fp != "sha256:"+hex.EncodeToString(x[:]) {
-			return BundleInfo{}, fmt.Errorf("fingerprint mismatch: %s", n)
+			return BundleInfo{}, nil, fmt.Errorf("fingerprint mismatch: %s", n)
 		}
 	}
 	names := make([]string, 0, len(data))
@@ -227,7 +231,7 @@ func InspectBundle(path string) (BundleInfo, error) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	return BundleInfo{m, names}, nil
+	return BundleInfo{m, names}, data, nil
 }
 func unsafeMember(n string) bool {
 	return n == "" || strings.HasPrefix(n, "/") || filepath.IsAbs(n) || strings.Contains(n, "\\") || strings.Contains(n, "../") || filepath.Clean(n) != n

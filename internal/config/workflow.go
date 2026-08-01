@@ -75,6 +75,14 @@ type PolicyConfig struct {
 	Parsing struct {
 		Enabled bool `yaml:"enabled" json:"enabled"`
 	} `yaml:"parsing" json:"parsing"`
+	Research struct {
+		Enabled                 bool   `yaml:"enabled" json:"enabled"`
+		ResearchSet             string `yaml:"research_set,omitempty" json:"research_set,omitempty"`
+		VerifySignatures        bool   `yaml:"verify_signatures" json:"verify_signatures"`
+		RequireKnownSigner      bool   `yaml:"require_known_signer" json:"require_known_signer"`
+		DeriveCandidateContract bool   `yaml:"derive_candidate_contract" json:"derive_candidate_contract"`
+		GenerateDossier         bool   `yaml:"generate_dossier" json:"generate_dossier"`
+	} `yaml:"research" json:"research"`
 }
 type SecretsConfig struct {
 	Enabled        bool   `yaml:"enabled" json:"enabled"`
@@ -207,6 +215,9 @@ func Validate(c Config) []Diagnostic {
 	}
 	if c.Policy.LiveCollection {
 		add("ERROR", "live policy collection is unavailable: no approved live protocol contract")
+	}
+	if c.Policy.Research.Enabled && c.Policy.Research.ResearchSet == "" {
+		add("ERROR", "policy.research.research_set is required when offline research is enabled")
 	}
 	if c.Secrets.Format != "" && c.Secrets.Format != "text" && c.Secrets.Format != "json" {
 		add("ERROR", "secrets.format must be text or json")
