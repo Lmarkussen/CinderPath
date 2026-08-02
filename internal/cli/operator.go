@@ -159,6 +159,36 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: %s\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), support, strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 			return nil
 		}
+		if techniqueID == "RECON-2" {
+			if s.cfg.Workflow.Provider == "live" {
+				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				defer cancel()
+				opts := recon2LiveOptions(s.cfg, target)
+				if err := live.ResolveSMBPassword(&opts.SMB); err != nil {
+					return err
+				}
+				out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon2", Live: opts})
+				if err != nil {
+					return err
+				}
+				status := string(out.Run.Status)
+				if format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0})
+				}
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nSMB share evidence: assets=%d findings=%d\nSelected modules: live.smb.share_metadata\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				return nil
+			}
+			mappings := defensiveMappings(techniqueID)
+			if format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{
+					"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target),
+					"assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings,
+					"limitations": []string{"configure the existing authorized live connector for bounded authenticated SMB share metadata", "no SMB protocol request was sent"}, "live_policy_requests": 0, "run_id": runID,
+				})
+			}
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no SMB protocol request was sent\n", techniqueID, redactedTarget(target), snapshotRevision(), support, strings.Join(mappings, ", "))
+			return nil
+		}
 		if format == "json" {
 			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "next_actions": []string{"configure the existing authorized live connector with LDAP enabled"}, "live_policy_requests": 0}
 			return json.NewEncoder(s.stdout).Encode(result)
@@ -215,6 +245,18 @@ func recon1LiveOptions(c config.Config, target string) live.Options {
 		search = 30 * time.Second
 	}
 	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{389, 636}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{Timeout: host, MaxBodyBytes: 1024, MaxRedirects: 0}, LDAP: live.LDAPOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, PageSize: c.LDAP.PageSize, MaxEntries: c.LDAP.MaxEntries, SearchTimeout: search}}
+}
+
+func recon2LiveOptions(c config.Config, target string) live.Options {
+	server := target
+	if server == "" {
+		server = c.WorkflowScope.DomainController
+	}
+	host := mustDuration(c.Discovery.HostTimeout)
+	if host <= 0 {
+		host = 10 * time.Second
+	}
+	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{445}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{Timeout: host, MaxBodyBytes: 1024, MaxRedirects: 0}, SMB: live.SMBOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, Domain: c.WorkflowScope.Domain, Port: 445, ConnectTimeout: 5 * time.Second, OperationTimeout: 10 * time.Second, MaxShares: 128}}
 }
 
 func redactedTarget(v string) string {

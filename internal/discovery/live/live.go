@@ -24,3 +24,7 @@ func All(opts Options) []modules.Module {
 func LDAPOnly(opts Options) []modules.Module {
 	return []modules.Module{&ldapRootDSEModule{opts: opts}, &ldapDirectoryModule{opts: opts}}
 }
+
+func SMBOnly(opts Options) []modules.Module {
+	return []modules.Module{&smbShareMetadataModule{opts: opts}}
+}

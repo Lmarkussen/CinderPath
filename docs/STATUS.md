@@ -432,7 +432,10 @@ The default probe ports are:
 
 One summarized `network_probe` evidence record is created per host with attempted, open, timed-out, and failed ports. Accepted connections create `host_exposes_service` relationships. Closed ports do not flood stdout or create individual findings.
 
-TCP 445, generic LDAP ports, TCP 1433, and TCP 10123 are connect-only in this stage. There is no authentication, share enumeration, SQL query, LDAP query, or SCCM notification message.
+TCP 445, generic LDAP ports, TCP 1433, and TCP 10123 are connect-only in the
+generic discovery stage. The explicit RECON-2 adapter is separate and performs
+one authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata request only; it does
+not change generic discovery behavior.
 
 ## HTTP and TLS behavior
 
@@ -811,8 +814,9 @@ the snapshot never enables live validation or execution. The embedded catalog is
 generated from the locally reviewed Misconfiguration Manager revision recorded in
 the snapshot; re-import remains a development-only operation.
 
-`RECON-1` now routes through the existing bounded LDAP modules when an explicitly
+`RECON-1` routes through the existing bounded LDAP modules when an explicitly
 configured live connector is present. It records SCCM publishing evidence, site
-and management-point assets, and evidence-backed relationships; without a
-connector it returns a no-network plan. No GOAD runtime validation has been run
-in this phase.
+and management-point assets, and evidence-backed relationships; the workflow was
+runtime-validated through the authorized GOAD controller. `RECON-2` now uses a
+bounded authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata module; runtime
+validation remains pending.

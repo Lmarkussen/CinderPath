@@ -22,7 +22,16 @@ type Options struct {
 	Concurrency                 int
 	HTTP                        HTTPOptions
 	LDAP                        LDAPOptions
+	SMB                         SMBOptions
 	Hints                       RoleHints
+}
+type SMBOptions struct {
+	Enabled                                                              bool
+	Server, User, Password, PasswordReference, PasswordEnv, PasswordFile string
+	Domain                                                               string
+	Port                                                                 int
+	ConnectTimeout, OperationTimeout                                     time.Duration
+	MaxShares                                                            int
 }
 type HTTPOptions struct {
 	UserAgent    string
@@ -113,6 +122,15 @@ func resolver(server string) *net.Resolver {
 
 func ResolveLDAPPassword(opts *LDAPOptions) error {
 	return ResolveLDAPPasswordContext(context.Background(), opts)
+}
+
+func ResolveSMBPassword(opts *SMBOptions) error {
+	ldap := LDAPOptions{Enabled: true, User: opts.User, Password: opts.Password, PasswordReference: opts.PasswordReference, PasswordEnv: opts.PasswordEnv, PasswordFile: opts.PasswordFile}
+	if err := ResolveLDAPPasswordContext(context.Background(), &ldap); err != nil {
+		return err
+	}
+	opts.Password, opts.PasswordReference = ldap.Password, ldap.PasswordReference
+	return nil
 }
 
 const maxLDAPPasswordFileBytes int64 = 64 * 1024

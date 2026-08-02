@@ -29,6 +29,12 @@ The `defensive_controls` track plans PREVENT, DETECT, and CANARY mappings.
 Current registry entries are truthfully `planned` or `documented` only.
 
 `RECON-1` is mapped to the existing LDAP discovery path. Its assessment remains
-partial until an authorized live connector run confirms the publishing result;
-validation and execution remain not applicable.
+runtime-validated through the authorized GOAD controller; validation and
+execution remain not applicable.
+
+`RECON-2` is mapped to the upstream SMB role-enumeration technique. Its
+reviewed module performs only authenticated SMB2/3 `IPC$`/`srvsvc`
+`NetShareEnumAll` share-metadata enumeration; it never reads share contents.
+Discovery and assessment remain partial until an authorized runtime validation
+is completed.
 Provider-backed deployment discovery is implemented, but the validated lab returned zero task-sequence, advertisement, collection, and boot-image instances from the relationship-bearing schemas. Consequently `pxe_unknown_computer` remains `discovery_supported`, while PXE boot-media, task-sequence-media retrieval, and WIM analysis remain `planned`. No active PXE validation is justified.
