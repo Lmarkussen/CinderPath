@@ -76,6 +76,55 @@ func (s *state) pxeCommand() *cobra.Command {
 	_ = analyze.MarkFlagRequired("candidate")
 	_ = analyze.MarkFlagRequired("output")
 	root.AddCommand(candidates, plan, collector, analyze)
+	var providerServer, providerSite, providerOutput string
+	providerPlan := &cobra.Command{Use: "provider-plan", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		c := pxe.CandidateFromEvidence(providerServer, providerSite, []string{"sccm_site_server", "pxe_enabled_distribution_point"}, []string{"existing PXE posture assessment"})
+		p := pxe.BuildPlan(c)
+		p.ReadOnlyChecks = []string{"root\\SMS provider availability", "root\\SMS\\site_" + providerSite + " exact class schemas", "bounded selected provider instance metadata", "bounded redacted smspxe templates"}
+		if e := pxe.WritePlan(providerOutput, p); e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "PXE provider inspection plan\nCandidate: %s\nNamespaces: root\\SMS, root\\SMS\\site_%s\nMaximum structurally selected classes: 32\nMaximum targets: 1\nSQL access: prohibited\nTask-sequence bodies: prohibited\nLive PXE requests: 0\n", c.CandidateID, providerSite)
+		return nil
+	}}
+	providerPlan.Flags().StringVar(&providerServer, "server", "", "exact approved SCCM provider alias")
+	providerPlan.Flags().StringVar(&providerSite, "site-code", "", "safe site code")
+	providerPlan.Flags().StringVar(&providerOutput, "output", "", "mode-0600 provider plan")
+	_ = providerPlan.MarkFlagRequired("server")
+	_ = providerPlan.MarkFlagRequired("site-code")
+	_ = providerPlan.MarkFlagRequired("output")
+	deploymentCollector := &cobra.Command{Use: "deployment-metadata", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		return atomicCaptureWrite(providerOutput, []byte(pxe.DeploymentCollectorPowerShell(providerSite)))
+	}}
+	deploymentCollector.Flags().StringVar(&providerSite, "site-code", "", "safe site code embedded in exact provider namespace")
+	deploymentCollector.Flags().StringVar(&providerOutput, "output", "", "generated Windows PowerShell 5.1 collector")
+	_ = deploymentCollector.MarkFlagRequired("site-code")
+	_ = deploymentCollector.MarkFlagRequired("output")
+	var deploymentInput, deploymentDossier, deploymentFormat string
+	analyzeDeployments := &cobra.Command{Use: "analyze-deployments", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		r, e := pxe.LoadDeploymentRuntime(deploymentInput)
+		if e != nil {
+			return e
+		}
+		a := pxe.AnalyzeDeployments(r)
+		if e = pxe.WriteDeploymentDossier(deploymentDossier, a); e != nil {
+			return e
+		}
+		if e = s.persistPXEDeployments(a, deploymentDossier); e != nil {
+			return e
+		}
+		if deploymentFormat == "json" {
+			return json.NewEncoder(s.stdout).Encode(a)
+		}
+		fmt.Fprintf(s.stdout, "SCCM PXE deployment metadata assessment\nProvider available: %t\nNamespaces inspected: %d\nClasses inspected: %d\nTask sequences observed: %d\nDeployments observed: %d\nPXE-available deployments: %d\nUnknown-computer deployments: %d\nBoot-image relationships: %d\nPXE password posture: %s\nLog observations: %d\nAssessment: %s\nActive validation: %s\nDossier: %s\nTask-sequence bodies read: 0\nCollection members read: 0\nSQL queries: 0\nLive PXE requests: 0\n", a.ProviderAvailable, len(r.Namespaces), len(r.Classes), a.TaskSequenceCount, a.DeploymentCount, a.PXEDeploymentCount, a.UnknownComputerDeploymentCount, a.BootRelationshipCount, a.PXEPasswordPosture, len(r.LogObservations), a.Classification, a.ActiveValidationReadiness, filepath.Base(deploymentDossier))
+		return nil
+	}}
+	analyzeDeployments.Flags().StringVar(&deploymentInput, "deployments", "", "schema-v1 returned provider metadata")
+	analyzeDeployments.Flags().StringVar(&deploymentDossier, "output", "", "new owner-only deployment dossier")
+	analyzeDeployments.Flags().StringVar(&deploymentFormat, "format", "text", "text or json")
+	_ = analyzeDeployments.MarkFlagRequired("deployments")
+	_ = analyzeDeployments.MarkFlagRequired("output")
+	root.AddCommand(providerPlan, deploymentCollector, analyzeDeployments)
 	return root
 }
 
@@ -96,4 +145,23 @@ func (s *state) persistPXE(a pxe.Assessment, dossier string) error {
 		return e
 	}
 	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"pxe_assessment": id, "live_pxe_requests": 0})
+}
+
+func (s *state) persistPXEDeployments(a pxe.DeploymentAssessment, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "lab pxe analyze-deployments", string(s.cfg.Profile), version.Version, []string{"offline", "provider_metadata", "no_content", "live_pxe_requests=0"})
+	if e != nil {
+		return e
+	}
+	id := models.StableID("pxe_deployment_assessment", a.Runtime.CollectedAt)
+	data := map[string]any{"provider_available": a.ProviderAvailable, "namespace_count": len(a.Runtime.Namespaces), "class_count": len(a.Runtime.Classes), "task_sequence_count": a.TaskSequenceCount, "deployment_count": a.DeploymentCount, "pxe_deployment_count": a.PXEDeploymentCount, "unknown_computer_deployment_count": a.UnknownComputerDeploymentCount, "relationships": a.Relationships, "password_posture": a.PXEPasswordPosture, "classification": a.Classification, "readiness": a.ActiveValidationReadiness, "dossier": filepath.Base(dossier), "live_pxe_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: id, RunID: run.ID, CaptureID: "pxe_deployment_assessment", Fingerprint: id, Data: data}); e != nil {
+		return e
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"pxe_deployment_assessment": id, "live_pxe_requests": 0})
 }

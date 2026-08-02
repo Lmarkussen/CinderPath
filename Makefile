@@ -9,6 +9,7 @@ BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unk
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
 .PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz policy-schema-test policy-instance-selection-test policy-schema-parser-test policy-content-plan-test policy-schema-fuzz policy-preview-test policy-preview-script-test policy-preview-fuzz framework-coverage-test credential-target-test credential-policy-test naa-discovery-test task-sequence-policy-test credential-policy-fuzz pxe-assessment-test pxe-candidate-test pxe-script-test pxe-fuzz capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
+.PHONY: pxe-provider-test pxe-deployment-test pxe-deployment-script-test pxe-deployment-fuzz
 
 help:
 	@printf '%s\n' \
@@ -76,6 +77,10 @@ help:
 	  '  pxe-candidate-test   exact one-target candidate evidence tests' \
 	  '  pxe-script-test      passive PowerShell collector safety tests' \
 	  '  pxe-fuzz             bounded PXE metadata fuzz smoke test' \
+	  '  pxe-provider-test    SMS Provider metadata safety tests' \
+	  '  pxe-deployment-test  PXE deployment relationship assessment tests' \
+	  '  pxe-deployment-script-test provider collector PowerShell safety tests' \
+	  '  pxe-deployment-fuzz  bounded provider metadata fuzz smoke test' \
 	  '  correlation-fuzz       bounded offline correlation fuzz smoke tests' \
 	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
@@ -330,6 +335,18 @@ pxe-script-test:
 
 pxe-fuzz:
 	go test ./internal/pxe -run '^$$' -fuzz '^FuzzPXERuntime$$' -fuzztime=1s
+
+pxe-provider-test:
+	go test ./internal/pxe -run 'TestDeploymentCollectorSafety|TestDeploymentRuntimeSafety'
+
+pxe-deployment-test:
+	go test ./internal/pxe -run 'TestDeploymentAssessment'
+
+pxe-deployment-script-test:
+	go test ./internal/pxe -run 'TestDeploymentCollectorSafety'
+
+pxe-deployment-fuzz:
+	go test ./internal/pxe -run '^$$' -fuzz '^FuzzPXEDeploymentRuntime$$' -fuzztime=1s
 
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 

@@ -607,6 +607,8 @@ Targeted credential-policy discovery now recognizes NAA, task-sequence, network-
 
 PXE/OSD posture assessment now identifies one exact SCCM server candidate before access and performs bounded server-local service, feature, registry, log-metadata, and boot-image-metadata checks. The validated GOAD server used WDS, had PXE and unknown-computer support enabled, and exposed three server-local boot-image metadata records; PXE password and task-sequence deployment posture remained unknown. No PXE, DHCP, TFTP, boot-media, WIM, or content request occurred. See [PXE and OSD posture assessment](docs/PXE_OSD_ASSESSMENT.md).
 
+PXE deployment assessment can now inspect an existing SMS Provider using bounded structural schema selection. The validated provider exposed the expected task-sequence, advertisement, collection, and boot-image schemas but no corresponding instances, so no PXE deployment, unknown-computer deployment relationship, or boot-image relationship was established. This negative result keeps active PXE validation blocked and does not read task-sequence bodies or media.
+
 Reviewed exact-allowlist previews now summarize two authority `Capabilities`
 properties and one deployment `MessageDetails` property. All were well-formed
 XML and structure-only fixtures were sufficient; no raw value was copied and

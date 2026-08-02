@@ -139,3 +139,4 @@ a null XML resolver, 256-character redacted output, and zero raw copies.
 Preserve `runtime_preview_validated` versus content validation. The roadmap is
 planning metadata; NAA, PXE/OSD, Shadow Credentials, and defensive tracks are
 not implemented capabilities.
+PXE deployment metadata collection is SMS Provider read-only and structurally bounded. Preserve the 32-class and 2,000-instance caps, explicit instance-query warnings, fingerprint-only relationships, and zero access to task-sequence bodies, collection membership, SQL, PXE, DHCP, TFTP, media, WIM, or package content. The tested provider exposed schemas but zero relationship-bearing instances; active PXE validation remains unjustified.

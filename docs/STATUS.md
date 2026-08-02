@@ -793,3 +793,13 @@ three boot-image file metadata records. PXE password posture and PXE deployment
 metadata remain unknown. The classification is
 `pxe_present_no_exposure_established`; no PXE, DHCP, TFTP, image, media,
 task-sequence, or content request occurred.
+
+The follow-up read-only provider workflow verified `root\SMS` and
+`root\SMS\site_P01`, structurally ranked 32 bounded schemas, and found the
+task-sequence, advertisement, collection, and boot-image relationship schemas.
+Those schemas returned zero instances, so task sequences, deployments,
+unknown-computer deployment edges, and boot-image relationships remain zero.
+One helper-class instance query was explicitly marked unavailable. A bounded
+`smspxe.log` template observation alone did not change the assessment or justify
+active validation. Generator fixes cover PowerShell 5.1 method-collection,
+return-token, and reserved `$PID` behavior.
