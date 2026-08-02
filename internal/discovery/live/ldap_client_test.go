@@ -22,6 +22,20 @@ func TestParseSCCMObject(t *testing.T) {
 		t.Fatalf("object=%+v", o)
 	}
 }
+
+func TestRECON1EvidenceAndSiteDeduplication(t *testing.T) {
+	objects := []directoryObject{
+		{DN: "CN=Site,CN=System Management,DC=lab,DC=local", Attributes: map[string][]string{"objectClass": {"mSSMSSite"}, "mSMSSiteCode": {"P01"}}, Roles: []string{"site_server"}},
+		{DN: "CN=MP,CN=System Management,DC=lab,DC=local", Attributes: map[string][]string{"objectClass": {"mSMSManagementPoint"}}, Roles: []string{"management_point"}, Hosts: []string{"mp01.lab.local"}},
+	}
+	r := recon1Evidence(objects, rootDSE{DefaultNamingContext: "DC=lab,DC=local"}, "test")
+	if len(r.Evidence) != 1 || len(r.Findings) != 1 || r.Evidence[0].Data["publishing_state"] != "sccm_ad_publishing_confirmed" {
+		t.Fatalf("result=%+v", r)
+	}
+	if got := r.Evidence[0].Data["sites_observed"].([]string); len(got) != 1 || got[0] != "P01" {
+		t.Fatalf("sites=%v", got)
+	}
+}
 func TestDNSResultNormalization(t *testing.T) {
 	got := mergeUnique([]string{"192.0.2.1", "2001:0db8::1"}, []string{"192.0.2.1"})
 	if len(got) != 2 || got[1] != "2001:db8::1" {

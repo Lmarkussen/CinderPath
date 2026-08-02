@@ -810,3 +810,9 @@ snapshot under `internal/framework/data`. Coverage dimensions are independent;
 the snapshot never enables live validation or execution. The embedded catalog is
 generated from the locally reviewed Misconfiguration Manager revision recorded in
 the snapshot; re-import remains a development-only operation.
+
+`RECON-1` now routes through the existing bounded LDAP modules when an explicitly
+configured live connector is present. It records SCCM publishing evidence, site
+and management-point assets, and evidence-backed relationships; without a
+connector it returns a no-network plan. No GOAD runtime validation has been run
+in this phase.

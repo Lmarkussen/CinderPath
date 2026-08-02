@@ -3,6 +3,7 @@ package live
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -163,28 +164,108 @@ func (m *ldapDirectoryModule) Run(ctx context.Context, run modules.RunContext, _
 	}
 	out := &modules.Result{}
 	now := time.Now()
+	siteIDs := map[string]string{}
 	for _, obj := range objects {
 		e := models.Evidence{Type: "ldap_sccm_object", Title: "SCCM-related directory object", Summary: "Bounded LDAP search returned an object with SCCM-related class, name, keywords, or service binding metadata.", Data: map[string]any{"distinguished_name": obj.DN, "attributes": obj.Attributes, "inferred_roles": obj.Roles, "referenced_hosts": obj.Hosts}, SourceModule: m.Metadata().Name, Sensitivity: models.SensitivityInternal}
 		e.Prepare(now)
 		out.Evidence = append(out.Evidence, e)
+		if hasRole(obj.Roles, "site_server") {
+			if siteCode := strings.ToUpper(first(obj.Attributes, "mSMSSiteCode")); siteCode != "" {
+				site := models.Asset{Kind: models.AssetSite, SiteCode: siteCode, Domain: strings.ToUpper(m.opts.Domain), Properties: map[string]string{"observation_origin": "live", "directory_reference": models.StableFingerprint(obj.DN), "role_basis": "ldap_sccm_object"}, Source: m.Metadata().Name, Confidence: models.ConfidenceHigh}
+				site.Prepare(now)
+				out.Assets = append(out.Assets, site)
+				siteIDs[siteCode] = site.ID
+			}
+		}
 		for _, host := range obj.Hosts {
-			a := models.Asset{Kind: models.AssetUnknown, FQDN: host, Hostname: strings.Split(host, ".")[0], Domain: strings.ToUpper(m.opts.Domain), Roles: obj.Roles, Properties: map[string]string{"observation_origin": "live", "directory_reference": obj.DN, "role_basis": "ldap_sccm_object"}, Source: m.Metadata().Name, Confidence: models.ConfidenceHigh}
+			kind := models.AssetUnknown
+			if hasRole(obj.Roles, "management_point") {
+				kind = models.AssetManagementPoint
+			} else if hasRole(obj.Roles, "site_server") {
+				kind = models.AssetSiteServer
+			}
+			a := models.Asset{Kind: kind, FQDN: host, Hostname: strings.Split(host, ".")[0], Domain: strings.ToUpper(m.opts.Domain), SiteCode: first(obj.Attributes, "mSMSSiteCode"), Roles: obj.Roles, Properties: map[string]string{"observation_origin": "live", "directory_reference": models.StableFingerprint(obj.DN), "role_basis": "ldap_sccm_object"}, Source: m.Metadata().Name, Confidence: models.ConfidenceHigh}
 			a.Prepare(now)
 			out.Assets = append(out.Assets, a)
 			rel := models.Relationship{FromID: models.StableID("ldapobj", models.StableFingerprint(obj.DN)), ToID: a.ID, Type: models.RelationshipDirectoryReferencesHost, Properties: map[string]string{"origin": "live", "distinguished_name": obj.DN}, EvidenceIDs: []string{e.ID}, Confidence: models.ConfidenceHigh}
 			rel.Prepare()
 			out.Relationships = append(out.Relationships, rel)
+			if siteCode := strings.ToUpper(first(obj.Attributes, "mSMSSiteCode")); siteCode != "" {
+				if siteID := siteIDs[siteCode]; siteID != "" {
+					member := models.Relationship{FromID: a.ID, ToID: siteID, Type: models.RelationshipMemberOfSite, Properties: map[string]string{"origin": "live", "site_code": siteCode}, EvidenceIDs: []string{e.ID}, Confidence: models.ConfidenceHigh}
+					member.Prepare()
+					out.Relationships = append(out.Relationships, member)
+				}
+			}
 		}
+	}
+	if recon := recon1Evidence(objects, root, m.Metadata().Name); recon != nil {
+		out.Evidence = append(out.Evidence, recon.Evidence...)
+		out.Findings = append(out.Findings, recon.Findings...)
+		out.Capabilities = append(out.Capabilities, recon.Capabilities...)
+		out.Warnings = append(out.Warnings, recon.Warnings...)
 	}
 	cap := models.Capability{Name: "sccm_directory_objects_discovered", Available: len(objects) > 0, Reason: fmt.Sprintf("bounded LDAP searches returned %d SCCM-related objects", len(objects)), Source: m.Metadata().Name, EvidenceIDs: evidenceIDs(out.Evidence)}
 	cap.Prepare()
-	out.Capabilities = []models.Capability{cap}
+	out.Capabilities = append(out.Capabilities, cap)
 	if len(objects) > 0 {
 		f := models.Finding{RuleID: "DISCOVERY-SCCM-DIRECTORY", Title: "SCCM-related LDAP objects discovered", Summary: fmt.Sprintf("Read-only LDAP searches found %d potentially SCCM-related directory objects.", len(objects)), Description: "This informational result identifies directory metadata for topology mapping; it is not a vulnerability.", Severity: models.SeverityInformational, Confidence: models.ConfidenceHigh, EvidenceIDs: evidenceIDs(out.Evidence), Tags: []string{"discovery", "ldap", "sccm"}, Remediation: "Confirm role assignments and restrict directory visibility only where operationally appropriate."}
 		f.Prepare(now)
 		out.Findings = []models.Finding{f}
 	}
 	return out, nil
+}
+
+func hasRole(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
+}
+
+func recon1Evidence(objects []directoryObject, root rootDSE, source string) *modules.Result {
+	if len(objects) == 0 {
+		return &modules.Result{Warnings: []string{"RECON-1 found no SCCM-related LDAP objects within the bounded search"}}
+	}
+	sites, mps := map[string]bool{}, map[string]bool{}
+	systemManagement, namingHints := false, 0
+	for _, obj := range objects {
+		text := strings.ToLower(obj.DN + " " + strings.Join(flatten(obj.Attributes), " "))
+		if strings.Contains(text, "cn=system management") {
+			systemManagement = true
+		}
+		if hasRole(obj.Roles, "site_server") {
+			if v := first(obj.Attributes, "mSMSSiteCode"); v != "" {
+				sites[strings.ToUpper(v)] = true
+			}
+		}
+		if hasRole(obj.Roles, "management_point") {
+			for _, h := range obj.Hosts {
+				mps[h] = true
+			}
+		}
+		if strings.Contains(text, "sccm") || strings.Contains(text, "mecm") || strings.Contains(text, "configmgr") || strings.Contains(text, "sms") {
+			namingHints++
+		}
+	}
+	data := map[string]any{"technique_id": "RECON-1", "publishing_state": "sccm_ad_publishing_confirmed", "system_management_state": map[bool]string{true: "system_management_container_present", false: "historical_or_partial_sccm_evidence"}[systemManagement], "sites_observed": sortedStrings(sites), "management_points_observed": sortedStrings(mps), "possible_cas_sites": []string{}, "weak_naming_hints": namingHints, "default_naming_context_fingerprint": models.StableFingerprint(root.DefaultNamingContext), "evidence_source": source, "network_behavior": "ldap_only"}
+	e := models.Evidence{Type: "recon1_ldap_assessment", Title: "RECON-1 SCCM site information via LDAP", Summary: "Bounded LDAP evidence assessed SCCM publishing objects, sites, and management points.", Data: data, SourceModule: source, Sensitivity: models.SensitivityInternal}
+	e.Prepare(time.Now())
+	cap := models.Capability{Name: "recon1_ldap_assessment", Available: true, Reason: "bounded LDAP SCCM publishing evidence was assessed", Source: source, EvidenceIDs: []string{e.ID}}
+	cap.Prepare()
+	f := models.Finding{RuleID: "SCCM-RECON-1-AD-PUBLISHING-CONFIRMED", Title: "SCCM AD publishing observed", Summary: "LDAP publishing metadata identifies SCCM site or management-point objects.", Description: "This is a discovery observation, not a vulnerability or authorization finding.", Severity: models.SeverityInformational, Confidence: models.ConfidenceHigh, EvidenceIDs: []string{e.ID}, Tags: []string{"discovery", "ldap", "recon-1"}}
+	f.Prepare(time.Now())
+	return &modules.Result{Evidence: []models.Evidence{e}, Capabilities: []models.Capability{cap}, Findings: []models.Finding{f}}
+}
+func sortedStrings(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for x := range m {
+		out = append(out, x)
+	}
+	sort.Strings(out)
+	return out
 }
 func evidenceIDs(in []models.Evidence) []string {
 	out := make([]string, len(in))

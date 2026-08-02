@@ -621,3 +621,4 @@ readiness did not advance. Broader planning is exposed truthfully through
 [`docs/MISCONFIGURATION_MANAGER_ROADMAP.md`](docs/MISCONFIGURATION_MANAGER_ROADMAP.md).
 The canonical offline technique catalog and its independent support dimensions are
 described in [`docs/FRAMEWORK_COVERAGE.md`](docs/FRAMEWORK_COVERAGE.md).
+The first framework-mapped workflow is the LDAP-only [`RECON-1`](docs/TECHNIQUES/RECON-1.md) assessment.

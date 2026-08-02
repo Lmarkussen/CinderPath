@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/artifact"
+	"github.com/Lmarkussen/CinderPath/internal/config"
+	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/framework"
+	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -123,22 +129,85 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 }
 
 func (s *state) assessTechniqueCommand() *cobra.Command {
-	var target string
+	var target, runID, format string
 	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		techniqueID := strings.ToUpper(args[0])
 		support := "unsupported_or_unknown"
 		if snapshot, err := framework.EmbeddedSnapshot(); err == nil {
 			for _, coverage := range snapshot.Coverage {
-				if coverage.TechniqueID == strings.ToUpper(args[0]) {
+				if coverage.TechniqueID == techniqueID {
 					support = string(coverage.Assessment)
 					break
 				}
 			}
 		}
-		fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nAssessment support: %s\nActive validation: not performed\n", args[0], redactedTarget(target), support)
+		if techniqueID == "RECON-1" && s.cfg.Workflow.Provider == "live" && s.cfg.Workflow.LDAP {
+			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			defer cancel()
+			opts := recon1LiveOptions(s.cfg, target)
+			out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon1", Live: opts})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: completed\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: supported\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+			return nil
+		}
+		if format == "json" {
+			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "next_actions": []string{"configure the existing authorized live connector with LDAP enabled"}, "live_policy_requests": 0}
+			return json.NewEncoder(s.stdout).Encode(result)
+		}
+		fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nNetwork behavior: none\nActive validation: not performed\nNext action: configure the existing authorized live connector with LDAP enabled; no network activity occurred\n", techniqueID, redactedTarget(target), snapshotRevision(), support)
 		return nil
 	}}
 	c.Flags().StringVar(&target, "target", "", "target associated with the technique assessment")
+	c.Flags().StringVar(&runID, "run", "", "existing run context")
+	c.Flags().StringVar(&format, "format", "text", "text or json")
 	return c
+}
+
+func defensiveMappings(id string) []string {
+	s, err := framework.EmbeddedSnapshot()
+	if err != nil {
+		return nil
+	}
+	out := []string{}
+	for _, m := range s.MatrixMappings {
+		if m.AttackID == id {
+			out = append(out, m.DefenseID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func snapshotRevision() string {
+	s, err := framework.EmbeddedSnapshot()
+	if err != nil {
+		return "unknown"
+	}
+	return s.UpstreamRevision
+}
+func sumFindings(m map[models.Severity]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+func recon1LiveOptions(c config.Config, target string) live.Options {
+	server := c.WorkflowScope.DomainController
+	if server == "" {
+		server = target
+	}
+	host := mustDuration(c.Discovery.HostTimeout)
+	if host <= 0 {
+		host = 30 * time.Second
+	}
+	search := mustDuration(c.LDAP.SearchTimeout)
+	if search <= 0 {
+		search = 30 * time.Second
+	}
+	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{389, 636}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{Timeout: host, MaxBodyBytes: 1024, MaxRedirects: 0}, LDAP: live.LDAPOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, PageSize: c.LDAP.PageSize, MaxEntries: c.LDAP.MaxEntries, SearchTimeout: search}}
 }
 
 func redactedTarget(v string) string {

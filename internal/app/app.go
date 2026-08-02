@@ -206,6 +206,11 @@ func (a *Application) DiscoverWithOptions(ctx context.Context, args []string, op
 			return Outcome{}, err
 		}
 		return a.executeModules(ctx, "discover", args, "live", discovery.Select(live.All(options.Live)))
+	case "live-recon1":
+		if err := live.ValidateOptions(options.Live); err != nil {
+			return Outcome{}, err
+		}
+		return a.executeModules(ctx, "assess RECON-1", args, "live", live.LDAPOnly(options.Live))
 	default:
 		return Outcome{}, fmt.Errorf("invalid discovery provider %q (use mock or live)", options.Provider)
 	}

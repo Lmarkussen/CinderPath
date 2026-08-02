@@ -17,3 +17,10 @@ func All(opts Options) []modules.Module {
 		&correlationModule{opts: opts},
 	}
 }
+
+// LDAPOnly returns the existing bounded LDAP modules for technique-specific
+// reconnaissance. It deliberately excludes DNS, TCP, HTTP, PXE, and SCCM
+// protocol modules.
+func LDAPOnly(opts Options) []modules.Module {
+	return []modules.Module{&ldapRootDSEModule{opts: opts}, &ldapDirectoryModule{opts: opts}}
+}

@@ -14,7 +14,7 @@ import (
 )
 
 var rootDSEAttributes = []string{"defaultNamingContext", "configurationNamingContext", "rootDomainNamingContext", "schemaNamingContext", "dnsHostName", "supportedLDAPVersion", "supportedSASLMechanisms", "domainFunctionality", "forestFunctionality", "domainControllerFunctionality", "isGlobalCatalogReady"}
-var sccmAttributes = []string{"objectClass", "cn", "distinguishedName", "dNSHostName", "name", "keywords", "serviceBindingInformation", "serviceClassName"}
+var sccmAttributes = []string{"objectClass", "cn", "distinguishedName", "dNSHostName", "name", "keywords", "serviceBindingInformation", "serviceClassName", "mSMSSiteCode", "mSMSManagementPoint", "mSMSSite"}
 
 type rootDSE struct {
 	DefaultNamingContext, ConfigurationNamingContext, RootDomainNamingContext, SchemaNamingContext, DNSHostName string

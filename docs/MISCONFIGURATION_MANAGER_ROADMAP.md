@@ -27,4 +27,8 @@ authorized Shadow Credentials execution and cleanup. Execution is unavailable.
 
 The `defensive_controls` track plans PREVENT, DETECT, and CANARY mappings.
 Current registry entries are truthfully `planned` or `documented` only.
+
+`RECON-1` is mapped to the existing LDAP discovery path. Its assessment remains
+partial until an authorized live connector run confirms the publishing result;
+validation and execution remain not applicable.
 Provider-backed deployment discovery is implemented, but the validated lab returned zero task-sequence, advertisement, collection, and boot-image instances from the relationship-bearing schemas. Consequently `pxe_unknown_computer` remains `discovery_supported`, while PXE boot-media, task-sequence-media retrieval, and WIM analysis remain `planned`. No active PXE validation is justified.
