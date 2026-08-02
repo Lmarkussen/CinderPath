@@ -42,6 +42,27 @@ func TestBinaryInspectionExpandedAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestBinaryInspectionPreservesOffsetsForUnicodeLikeBinary(t *testing.T) {
+	// U+023A lowercases to U+2C65, whose UTF-8 encoding is longer. Binary
+	// inspection must fold ASCII markers without changing byte offsets.
+	b := bytes.Repeat([]byte("Ⱥ"), 400000)
+	b = append(b, []byte("<?XML bounded-marker")...)
+	a, err := InspectBinary(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := len(b) - len("<?XML bounded-marker")
+	for _, observation := range a.Observations {
+		if observation.Description == "embedded XML start" {
+			if observation.Offset != want {
+				t.Fatalf("offset=%d want=%d", observation.Offset, want)
+			}
+			return
+		}
+	}
+	t.Fatal("XML marker not observed")
+}
+
 func TestSanitizationModesAndReview(t *testing.T) {
 	src := copyFixture(t)
 	original, _ := os.ReadFile(filepath.Join(src, "request.body"))

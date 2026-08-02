@@ -100,7 +100,15 @@ func InspectBinary(b []byte) (BinaryAnalysis, error) {
 			add(mapClass(p.conf), m[0], m[1]-m[0], "ascii", p.desc, p.conf)
 		}
 	}
-	lower := bytes.ToLower(b)
+	// Preserve byte offsets while matching ASCII protocol markers. bytes.ToLower
+	// applies Unicode case mappings and can change the length of arbitrary binary
+	// input, making offsets unsafe to apply back to b.
+	lower := append([]byte(nil), b...)
+	for i, c := range lower {
+		if c >= 'A' && c <= 'Z' {
+			lower[i] = c + ('a' - 'A')
+		}
+	}
 	for _, p := range []struct{ s, desc string }{{"<?xml", "embedded XML start"}, {"content-type:", "MIME content-type header"}, {"content-disposition:", "multipart header"}, {"multipart/", "multipart content type"}, {"boundary=", "MIME boundary declaration"}} {
 		for off := 0; ; {
 			i := bytes.Index(lower[off:], []byte(p.s))
@@ -108,6 +116,9 @@ func InspectBinary(b []byte) (BinaryAnalysis, error) {
 				break
 			}
 			i += off
+			if i < 0 || i >= len(b) {
+				break
+			}
 			end := bytes.IndexByte(b[i:], '\n')
 			if end < 0 || end > 1024 {
 				end = len(p.s)

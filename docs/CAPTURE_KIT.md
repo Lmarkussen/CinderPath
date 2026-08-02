@@ -14,6 +14,27 @@ The same client was subsequently observed for exactly ten minutes without trigge
 
 Generated `raw/capture-started-at.txt` and `raw/local-raw-manifest.json` are lifecycle evidence. Validation treats them as preparation and finalization markers, respectively, so a returned finalized kit with blank operator timestamp fields is still `requires_sanitization` rather than `ready_for_capture`.
 
+## Controlled machine-policy observation
+
+On the same verified client, the installed Configuration Manager control-panel interface enumerated a combined `Request & Evaluate Machine Policy` action. An authorized lab harness invoked that existing local action exactly once while CinderPath remained observational; it did not construct, authenticate, or send an SCCM request. A 205-second `pktmon` session recorded 407 packets with no reported drops and preserved ETL plus PCAPNG. Only changed allowlisted `CcmMessaging.log` and `PolicyAgent.log` snapshots were copied. The logs confirm a machine-assignment request and no new assignments, but CinderPath could not structurally associate opaque TLS with a policy exchange. Three visible HTTP exchanges were unrelated operating-system trust-list downloads.
+
+Representative redacted output was:
+
+```text
+Capture kit state: requires_sanitization
+Raw files: 7
+Blocking conditions:
+  raw evidence is sensitive and sanitized evidence is absent
+
+Capture: capture_<REDACTED>
+Format: pcapng
+Exchanges: 3
+Sequence: fully_ordered
+Live SCCM execution: blocked
+```
+
+The sentinel, identifiers in copied logs, opaque binary regions, and incomplete TCP reconstruction require sanitization and manual review. Raw captures and logs remain outside Git. This evidence is `machine_policy_trigger_observed_logs_only` and secret-extraction readiness is `not_ready_no_policy_evidence`.
+
 All names below are synthetic authorized-lab examples:
 
 ```bash

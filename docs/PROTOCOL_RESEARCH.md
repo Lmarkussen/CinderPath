@@ -84,3 +84,13 @@ claims. This capture is metadata-only evidence and does not change the live
 blocker. A useful next controlled variable is a separately authorized capture
 window around a normal operator-managed client cycle, still without CinderPath
 triggering or replaying policy traffic.
+
+The second controlled capture invoked the installed client's standard combined
+machine-policy action once and recorded 407 packets over approximately 205
+seconds. Allowlisted logs positively record the request and a no-new-assignments
+outcome. Offline reconstruction found one partial TCP flow and three ordered
+HTTP exchanges, but all visible routes belonged to unrelated Windows trust-list
+downloads. Remaining TLS could not be attributed structurally to the policy
+cycle, and duplicate, gap, conflict, and incomplete-response warnings remain.
+The evidence is therefore `machine_policy_trigger_observed_logs_only`, not a
+candidate policy exchange. No sanitized protocol fixture was derived.

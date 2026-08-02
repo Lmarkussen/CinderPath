@@ -12,6 +12,8 @@ The generated scripts have been runtime-validated on one disposable GOAD client:
 
 A subsequent ten-minute, manually controlled passive baseline used the already installed Windows `pktmon` 10.0.17763.3650 on one active adapter. No SCCM action was triggered. The tool recorded 212 packets with zero reported drops to ETL and converted a preserved copy to PCAPNG locally. Offline CinderPath ingestion decoded all 212 packet records but reconstructed no supported flows or HTTP exchanges; it reported opaque TLS and conservative TCP-reassembly warnings. The result is therefore `sccm_endpoint_metadata_only`, not a policy exchange or live-contract validation. Raw evidence remains outside Git and blocked from import/export pending sanitization and manual review.
 
+A second controlled capture invoked the installed client's standard **Request & Evaluate Machine Policy** control-panel action exactly once while CinderPath only observed. During a 205-second `pktmon` window, 407 packets were recorded with zero reported drops. Two allowlisted logs correlated the action with a machine-assignment request and a no-new-assignments result. Offline parsing reconstructed one partial flow and three visible HTTP exchanges, but those exchanges were unrelated Windows trust-list downloads; SCCM traffic remained opaque and could not be structurally attributed to a policy exchange. Readiness remains `not_ready_no_policy_evidence`.
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \
