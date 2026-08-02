@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -43,7 +43,9 @@ help:
 	  '  capture-kit-cli-test  capture-kit and guided-import CLI tests' \
 	  '  capture-kit-script-test static passive PowerShell/shell tests' \
 	  '  guided-import-test    reviewed offline guided-import tests' \
-	  '  windows-log-test      bounded Windows log inventory tests' \
+	  '  windows-log-test      bounded redacted Windows-log inspection tests' \
+	  '  capture-evidence-bundle-test dedicated bundle export/inspect/import tests' \
+	  '  capture-evidence-signing-test capture-evidence Ed25519 integrity tests' \
 	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
 	  '  capture-fuzz/sequence-fuzz/parser-fuzz bounded offline fuzz smoke tests' \
@@ -161,7 +163,7 @@ capture-test:
 	go test ./internal/capture -run 'TestHAR|TestPCAP'
 
 capture-integration:
-	go test ./internal/capture ./internal/database -run 'Test.*Import|TestSchemaV[56]'
+	go test ./internal/capture ./internal/database -run 'Test.*Import|TestSchemaV[568]'
 
 sequence-test:
 	go test ./internal/capture -run 'Test.*Deterministic|Test.*Sequence'
@@ -197,10 +199,17 @@ capture-kit-script-test:
 	go test ./internal/capturekit -run '^TestCreateLayoutModesAndPassiveScripts$$'
 
 guided-import-test:
-	go test ./internal/buildtool -run '^TestCaptureKitCLIOffline$$'
+	go test ./internal/buildtool -run '^TestCaptureKitCLIOffline$$|^TestCaptureEvidenceBundleCLIOffline$$'
 
 windows-log-test:
-	go test ./internal/capturekit -run '^TestCreateLayoutModesAndPassiveScripts$$'
+	go test ./internal/capturekit -run '^TestInspectLogs'
+
+capture-evidence-bundle-test:
+	go test ./internal/capturekit -run '^TestEvidenceBundle'
+	go test ./internal/buildtool -run '^TestCaptureEvidenceBundleCLIOffline$$'
+
+capture-evidence-signing-test:
+	go test ./internal/capturekit -run '^TestEvidenceBundleExportInspectImportAndSigning$$'
 
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 
@@ -232,6 +241,15 @@ analysis-fuzz:
 capture-kit-fuzz:
 	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzMetadataParser$$' -fuzztime=1s
 	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzSafePath$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzLogDecoder$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzLogLineInspector$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzEvidenceManifest$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzEvidencePath$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzStateEvaluator$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzImportSourceSelector$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzEvidenceArchiveValidator$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzEvidenceArchiveExtractor$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzCaptureKitReportSerializer$$' -fuzztime=1s
 
 docs-check:
 	go test ./internal/buildtool -run '^TestDocumentationConsistency$$'

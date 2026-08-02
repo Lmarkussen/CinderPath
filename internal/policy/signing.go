@@ -65,6 +65,29 @@ func KeyID(pub ed25519.PublicKey) string {
 	x := sha256.Sum256(pub)
 	return "ed25519:" + hex.EncodeToString(x[:12])
 }
+
+// SignCanonicalPayload reuses the research Ed25519 key format for other
+// canonical offline artifacts. The caller owns canonicalization and binding.
+func SignCanonicalPayload(payload []byte, keyPath string) (SignatureEnvelope, error) {
+	priv, pub, e := loadPrivateKey(keyPath)
+	if e != nil {
+		return SignatureEnvelope{}, e
+	}
+	sum := sha256.Sum256(payload)
+	return SignatureEnvelope{SigningKeyVersion, "ed25519", pub.KeyID, pub.PublicKey, base64.StdEncoding.EncodeToString(ed25519.Sign(priv, payload)), "sha256:" + hex.EncodeToString(sum[:])}, nil
+}
+
+func VerifyCanonicalPayload(payload []byte, env SignatureEnvelope) (SignatureVerification, error) {
+	pubRaw, e := base64.StdEncoding.DecodeString(env.PublicKey)
+	if e != nil || len(pubRaw) != ed25519.PublicKeySize || KeyID(pubRaw) != env.KeyID {
+		return SignatureVerification{State: "signature_invalid", SignerKeyID: env.KeyID, Integrity: "failed", TrustEffect: "none", ContractPromotion: "none"}, errors.New("invalid signer public key")
+	}
+	sig, e := base64.StdEncoding.DecodeString(env.Signature)
+	if e != nil || !ed25519.Verify(pubRaw, payload, sig) {
+		return SignatureVerification{State: "signature_invalid", SignerKeyID: env.KeyID, Integrity: "failed", TrustEffect: "none", ContractPromotion: "none"}, errors.New("signature is invalid")
+	}
+	return SignatureVerification{State: "signature_valid", SignerKeyID: env.KeyID, Integrity: "all members verified", TrustEffect: "none", ContractPromotion: "none"}, nil
+}
 func GenerateSigningKey(path string, force bool) (string, error) {
 	if path == "" {
 		return "", errors.New("signing key output is required")

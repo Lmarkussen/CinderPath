@@ -73,3 +73,5 @@ authorization or technical support for sending that traffic.
 ## Generated passive capture kit
 
 Use `cinderpath lab capture-kit create --output DIR` for the guided workflow and read [CAPTURE_KIT.md](CAPTURE_KIT.md). Generated inventory, preparation, and finalization scripts are local and passive. They do not start capture or trigger SCCM behavior. `Get-ComputerInfo`, read-only `Get-CimInstance -Namespace root\ccm -ClassName SMS_Client`, log-directory listing, and certificate metadata listing are examples only; namespaces and classes vary by SCCM version/environment. A policy retrieval must be observed naturally or initiated separately through an approved lab procedure.
+
+After authorized transfer to Linux, `lab capture-kit inspect-logs` performs bounded generic structural inspection only. It does not infer SCCM semantics from filenames or recover passwords. Remove the synthetic leakage sentinel only after confirming the leakage check detects it; unresolved authorization, token, cookie, key, hash, or sentinel evidence blocks capture-evidence export. Windows runtime execution remains optional manual validation; normal CI uses static and golden script tests.

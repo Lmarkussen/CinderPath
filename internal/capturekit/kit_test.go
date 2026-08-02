@@ -110,6 +110,55 @@ func TestTraversalAndSensitiveFilesRejected(t *testing.T) {
 		t.Fatal("private key container accepted")
 	}
 }
+
+func TestStateMachineImportExportAndSentinel(t *testing.T) {
+	p := testKit(t)
+	m, _ := LoadMetadata(p)
+	m.Capture.StartedAt = "2026-08-02T10:00:00Z"
+	m.Capture.StoppedAt = "2026-08-02T10:01:00Z"
+	b, _ := yaml.Marshal(m)
+	_ = os.WriteFile(filepath.Join(p, "metadata/capture.template.yaml"), b, 0o600)
+	_ = os.WriteFile(filepath.Join(p, "raw/sample.pcap"), []byte("raw"), 0o600)
+	v, _ := Validate(p)
+	if v.State != RequiresSanitization {
+		t.Fatalf("state=%s", v.State)
+	}
+	_ = os.WriteFile(filepath.Join(p, "sanitized/sample.har"), []byte(`{"log":{"version":"1.2","entries":[]}}`), 0o600)
+	v, _ = Validate(p)
+	if v.State != RequiresManualReview {
+		t.Fatalf("state=%s", v.State)
+	}
+	m.Review = Review{RawSensitive: true, MetadataReviewed: true, BinaryReviewed: true, Sanitized: true, LeakageChecksPassed: true}
+	b, _ = yaml.Marshal(m)
+	_ = os.WriteFile(filepath.Join(p, "metadata/capture.template.yaml"), b, 0o600)
+	v, _ = Validate(p)
+	if v.State != ReadyForImport {
+		t.Fatalf("state=%s", v.State)
+	}
+	_ = os.WriteFile(filepath.Join(p, "output/guided-import.json"), []byte("{}"), 0o600)
+	v, _ = Validate(p)
+	if v.State != Imported {
+		t.Fatalf("state=%s", v.State)
+	}
+	m.Review.BundleExportApproved = true
+	b, _ = yaml.Marshal(m)
+	_ = os.WriteFile(filepath.Join(p, "metadata/capture.template.yaml"), b, 0o600)
+	_ = os.WriteFile(filepath.Join(p, "raw/CINDERPATH_SYNTHETIC_LEAK_SENTINEL.txt"), []byte("sentinel"), 0o600)
+	v, _ = Validate(p)
+	if v.State != Invalid {
+		t.Fatalf("sentinel state=%s", v.State)
+	}
+	_ = os.Remove(filepath.Join(p, "raw/CINDERPATH_SYNTHETIC_LEAK_SENTINEL.txt"))
+	v, _ = Validate(p)
+	if v.State != ReadyForEvidenceBundle {
+		t.Fatalf("state=%s blockers=%v", v.State, v.Blockers)
+	}
+	_ = os.WriteFile(filepath.Join(p, "output/evidence-bundle.json"), []byte("{}"), 0o600)
+	v, _ = Validate(p)
+	if v.State != EvidenceBundleExported {
+		t.Fatalf("state=%s", v.State)
+	}
+}
 func FuzzMetadataParser(f *testing.F) {
 	f.Add([]byte("schema_version: 1\ncapture:\n  authorized_lab: true\nenvironment:\n  disposable: true\n"))
 	f.Fuzz(func(t *testing.T, b []byte) {
@@ -130,5 +179,24 @@ func FuzzSafePath(f *testing.F) {
 			return
 		}
 		_ = safeRelative(s)
+	})
+}
+func FuzzStateEvaluator(f *testing.F) {
+	f.Add(uint8(0), false, false, false)
+	f.Fuzz(func(t *testing.T, s uint8, reviewed, leak, approved bool) {
+		states := []State{Created, ReadyForCapture, CaptureInProgress, RawCaptureComplete, RequiresSanitization, RequiresManualReview, ReviewFailed, ReadyForImport, Imported, ReadyForEvidenceBundle, EvidenceBundleExported, Invalid}
+		m := Metadata{Review: Review{MetadataReviewed: reviewed, BinaryReviewed: reviewed, LeakageChecksPassed: leak, BundleExportApproved: approved}}
+		v := Validation{State: states[int(s)%len(states)]}
+		_, _ = explain(v.State, m, v)
+	})
+}
+func FuzzImportSourceSelector(f *testing.F) {
+	f.Add("kit", "")
+	f.Add("", "bundle")
+	f.Fuzz(func(t *testing.T, a, b string) {
+		if len(a)+len(b) > 4096 {
+			return
+		}
+		_, _ = SelectImportSource(a, b)
 	})
 }

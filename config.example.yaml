@@ -91,6 +91,9 @@ policy:
 # Capture kits use explicit CLI commands. Site, management-point, client,
 # action, and environment fields are unverified operator metadata. No setting
 # starts capture or enables live policy collection.
+# Generic log inspection and capture-evidence bundle limits are compiled,
+# bounded offline safety limits. Capture-evidence bundles are distinct from
+# protocol-contract bundles and cannot enable approved_live.
 # Binary sanitization and research bundles are explicit CLI workflows. The safe
 # default is metadata_only: opaque bodies remain unchanged and require review.
 # No configuration key can set a protocol contract to approved_live.

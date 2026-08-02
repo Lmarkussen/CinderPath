@@ -76,7 +76,24 @@ type JSONReport struct {
 	Workflow                        WorkflowResearch               `json:"workflow"`
 	PolicyResearch                  PolicyResearch                 `json:"policy_research"`
 	ProtocolResearch                ProtocolResearch               `json:"protocol_research"`
-	CaptureKits                     []database.CaptureRecord       `json:"capture_kits"`
+	CaptureKits                     CaptureKitResearch             `json:"capture_kits"`
+}
+
+type CaptureKitResearch struct {
+	Kits                  []database.CaptureRecord `json:"kits"`
+	Files                 []database.CaptureRecord `json:"files"`
+	Validations           []database.CaptureRecord `json:"validations"`
+	Reviews               []database.CaptureRecord `json:"reviews"`
+	Imports               []database.CaptureRecord `json:"imports"`
+	ClientInventories     []database.CaptureRecord `json:"client_inventories"`
+	ToolInventories       []database.CaptureRecord `json:"tool_inventories"`
+	MatrixLinks           []database.CaptureRecord `json:"matrix_links"`
+	Dossiers              []database.CaptureRecord `json:"dossiers"`
+	EvidenceBundles       []database.CaptureRecord `json:"evidence_bundles"`
+	EvidenceBundleMembers []database.CaptureRecord `json:"evidence_bundle_members"`
+	LogInspections        []database.CaptureRecord `json:"windows_log_inspections"`
+	LivePolicyRequests    int                      `json:"live_policy_requests"`
+	SafetyBanner          string                   `json:"safety_banner"`
 }
 
 type captureKitStore interface {
@@ -244,9 +261,20 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 	pr.LiveCollection.Reason = "no approved live protocol contract"
 	wr := WorkflowResearch{Stages: []database.WorkflowRecord{}, Modules: []database.WorkflowRecord{}}
 	rr := ProtocolResearch{LiveCollectionBlocked: true, Banner: "This report contains offline protocol research. A candidate protocol contract is not approval for live SCCM execution. No live SCCM policy request was sent."}
-	kits := []database.CaptureRecord{}
+	kits := CaptureKitResearch{LivePolicyRequests: 0, SafetyBanner: "This workflow prepared or analyzed an authorized lab capture kit. CinderPath did not register a client, trigger policy retrieval, start packet capture, or send a live SCCM policy request."}
 	if cs, ok := store.(captureKitStore); ok {
-		kits, _ = cs.ListCaptureRecords(ctx, "capture_kit_imports")
+		kits.Kits, _ = cs.ListCaptureRecords(ctx, "capture_kits")
+		kits.Files, _ = cs.ListCaptureRecords(ctx, "capture_kit_files")
+		kits.Validations, _ = cs.ListCaptureRecords(ctx, "capture_kit_validation_results")
+		kits.Reviews, _ = cs.ListCaptureRecords(ctx, "capture_kit_reviews")
+		kits.Imports, _ = cs.ListCaptureRecords(ctx, "capture_kit_imports")
+		kits.ClientInventories, _ = cs.ListCaptureRecords(ctx, "windows_client_inventories")
+		kits.ToolInventories, _ = cs.ListCaptureRecords(ctx, "capture_tool_inventories")
+		kits.MatrixLinks, _ = cs.ListCaptureRecords(ctx, "capture_kit_matrix_links")
+		kits.Dossiers, _ = cs.ListCaptureRecords(ctx, "capture_kit_dossiers")
+		kits.EvidenceBundles, _ = cs.ListCaptureRecords(ctx, "capture_evidence_bundles")
+		kits.EvidenceBundleMembers, _ = cs.ListCaptureRecords(ctx, "capture_evidence_bundle_members")
+		kits.LogInspections, _ = cs.ListCaptureRecords(ctx, "windows_log_inspections")
 	}
 	if ps, ok := store.(policyStore); ok {
 		pr.Contracts, _ = ps.ListPolicyRecords(ctx, "protocol_contracts")
@@ -512,7 +540,7 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{"
 {{if .Report.Metadata.MockData}}<div class="banner">MOCK DATA — This report contains only synthetic demonstration data. It is not evidence from a live SCCM environment.</div>{{end}}
 {{if .Report.Metadata.LiveData}}<div class="banner" style="background:#123a2d;border-color:#38c98b">LIVE OBSERVATIONS — Safe, read-only metadata from explicitly scoped targets. Inferred roles remain unconfirmed unless stated otherwise.</div>{{end}}
 <div class="banner" style="background:#123a2d;border-color:#38c98b">{{.Report.NoRemoteAuthenticationStatement}}</div>
-{{if .Report.CaptureKits}}<div class="banner">This workflow prepared or analyzed an authorized lab capture kit. CinderPath did not register a client, trigger policy retrieval, start packet capture, or send a live SCCM policy request.</div><section><h2>Capture kits</h2><table><tr><th>Kit/import</th><th>Fingerprint</th><th>State</th><th>Import status</th></tr>{{range .Report.CaptureKits}}<tr><td><code>{{.CaptureID}}</code></td><td><code>{{.Fingerprint}}</code></td><td>{{index .Data "State"}}</td><td>offline; raw bodies excluded</td></tr>{{end}}</table></section>{{end}}
+{{if .Report.CaptureKits.Kits}}<div class="banner">{{.Report.CaptureKits.SafetyBanner}}</div><section><h2>Capture kits</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.CaptureKits.Kits}}</div>Kits</div><div class="card"><div class="metric">{{len .Report.CaptureKits.Imports}}</div>Imports</div><div class="card"><div class="metric">{{len .Report.CaptureKits.LogInspections}}</div>Log inspections</div><div class="card"><div class="metric">{{len .Report.CaptureKits.EvidenceBundles}}</div>Evidence bundles</div></div><table><tr><th>Kit</th><th>Fingerprint</th><th>State</th><th>Blockers</th></tr>{{range .Report.CaptureKits.Kits}}<tr><td><code>{{.ID}}</code></td><td><code>{{.Fingerprint}}</code></td><td>{{index .Data "state"}}</td><td>{{index .Data "blockers"}}</td></tr>{{end}}</table><p>Capture-evidence bundles preserve reviewed offline evidence and are distinct from protocol-contract research bundles. Import and signatures do not validate a live SCCM contract.</p></section>{{end}}
 {{if .Report.PolicyResearch.Fixtures}}<div class="banner">This run analyzed offline SCCM fixtures. No live SCCM policy request was sent. Protected SCCM values were not decrypted. Confirmed plaintext values may exist only in deliberate terminal output or the dedicated secure secrets file.</div>
 <section><h2>Policy protocol research</h2><div class="grid"><div class="card"><div class="metric">{{len .Report.PolicyResearch.Contracts}}</div>Contracts</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Fixtures}}</div>Fixtures</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Assignments}}</div>Assignments</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Documents}}</div>Documents</div><div class="card"><div class="metric">{{len .Report.PolicyResearch.Candidates}}</div>Redacted candidates</div></div><p><strong>Live execution:</strong> blocked — {{.Report.PolicyResearch.LiveCollection.Reason}}</p><h3>Contracts</h3><table><tr><th>ID</th><th>Name</th><th>State</th><th>Observed route</th></tr>{{range .Report.PolicyResearch.Contracts}}<tr><td><code>{{.ID}}</code></td><td>{{index .Data "name"}}</td><td>{{index .Data "verification_state"}}</td><td>{{index (index .Data "method") "value"}} {{index (index .Data "path") "value"}}</td></tr>{{end}}</table><h3>Fixture inventory</h3><table><tr><th>ID</th><th>Name</th><th>Type</th><th>Sizes</th></tr>{{range .Report.PolicyResearch.Fixtures}}<tr><td><code>{{.ID}}</code></td><td>{{index .Data "name"}}</td><td>synthetic={{index .Data "synthetic"}} sanitized={{index .Data "sanitized"}}</td><td>{{index .Data "request_size"}} / {{index .Data "response_size"}}</td></tr>{{end}}</table><h3>Policy documents</h3><table><tr><th>Policy</th><th>Type/version</th><th>Parser</th><th>Candidate counts</th></tr>{{range .Report.PolicyResearch.Documents}}<tr><td>{{index .Data "policy_id"}}</td><td>{{index .Data "policy_type"}} / {{index .Data "policy_version"}}</td><td>{{index .Data "parser_status"}}</td><td>protected={{index .Data "protected_value_count"}} candidate={{index .Data "plaintext_candidate_count"}} confirmed={{index .Data "confirmed_plaintext_count"}}</td></tr>{{end}}</table><h3>Secret candidates (redacted)</h3><table><tr><th>Category/state</th><th>Preview</th><th>Source</th><th>Confidence</th></tr>{{range .Report.PolicyResearch.Candidates}}<tr><td>{{index .Data "category"}} / {{index .Data "state"}}</td><td>{{index .Data "redacted_preview"}}</td><td>{{index .Data "policy_id"}} · {{index .Data "field"}}</td><td>{{index .Data "confidence"}}</td></tr>{{end}}</table></section>{{end}}
 {{if .Report.Workflow.Stages}}<section><h2>Unified workflow stages</h2><table><tr><th>Run</th><th>Stage</th><th>State</th><th>Reason</th></tr>{{range .Report.Workflow.Stages}}<tr><td><code>{{.RunID}}</code></td><td>{{.Name}}</td><td>{{.State}}</td><td>{{index .Data "reason"}}</td></tr>{{end}}</table></section>{{end}}

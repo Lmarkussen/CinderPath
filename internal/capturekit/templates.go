@@ -57,10 +57,11 @@ const protectGitignore = `*
 *secret*
 `
 const inventoryPS = `# Passive, bounded Windows/SCCM metadata inventory. No network or state changes.
-[CmdletBinding()] param([string]$OutputPath = "")
+[CmdletBinding()] param([string]$OutputPath = "", [string]$ToolOutputPath = "")
 $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not $OutputPath) { $OutputPath = Join-Path $Root "metadata\client-inventory.json" }
+if (-not $ToolOutputPath) { $ToolOutputPath = Join-Path $Root "metadata\tool-inventory.json" }
 $Errors = [System.Collections.Generic.List[object]]::new()
 function Safe-Read([string]$Name, [scriptblock]$Action) {
   try { & $Action } catch { $Errors.Add([ordered]@{ item=$Name; error=$_.Exception.Message.Substring(0,[Math]::Min(256,$_.Exception.Message.Length)) }); $null }
@@ -85,6 +86,8 @@ $Logs = Safe-Read "ccm_log_inventory" { @(Get-ChildItem "$env:windir\CCM\Logs" -
 $Channels = Safe-Read "event_log_channels" { @(Get-WinEvent -ListLog "Microsoft-Windows-*" -ErrorAction Stop | Select-Object -First 128 LogName,IsEnabled,RecordCount) }
 $Result = [ordered]@{schema_version=1;collected_at=(Get-Date).ToUniversalTime().ToString("o");hostname_sha256=$HostHash;windows=$OS;timezone=[TimeZoneInfo]::Local.Id;ccmexec_service=$Service;sccm_client=$Client;sccm_authority=$Authority;certificates=$Certs;network_adapters=$Adapters;proxy=$Proxy;capture_tools=$Tools;ccm_logs=$Logs;event_log_channels=$Channels;errors=$Errors}
 $Result | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
+$ToolResult = [ordered]@{schema_version=1;collected_at=(Get-Date).ToUniversalTime().ToString("o");detection="executable_presence_only";tools=$Tools}
+$ToolResult | ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $ToolOutputPath -Encoding utf8NoBOM
 Write-Host "Passive inventory written locally to metadata/client-inventory.json"
 `
 const preparePS = `# Prepares local directories and instructions only. It never starts capture or SCCM actions.
@@ -146,7 +149,9 @@ KIT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 CINDERPATH_BIN=${CINDERPATH_BIN:-cinderpath}
 `
 const inspectSH = shellCommon + `printf '%s\n' "$CINDERPATH_BIN lab capture-kit validate --directory $KIT_DIR"
-exec "$CINDERPATH_BIN" lab capture-kit validate --directory "$KIT_DIR"
+"$CINDERPATH_BIN" lab capture-kit validate --directory "$KIT_DIR"
+printf '%s\n' "$CINDERPATH_BIN lab capture-kit inspect-logs --directory $KIT_DIR"
+exec "$CINDERPATH_BIN" lab capture-kit inspect-logs --directory "$KIT_DIR"
 `
 const sanitizeSH = shellCommon + `printf '%s\n' "Sanitization is explicit and format-dependent. Raw files are not modified."
 printf '%s\n' "Use: $CINDERPATH_BIN protocol sanitize --input <raw-fixture-dir> --output $KIT_DIR/sanitized/<label> --replacement-map <mode-0600-file>"
@@ -159,9 +164,10 @@ exec "$CINDERPATH_BIN" lab capture-kit validate --directory "$KIT_DIR"
 const importSH = shellCommon + `printf '%s\n' "$CINDERPATH_BIN capture guided-import --kit $KIT_DIR"
 exec "$CINDERPATH_BIN" capture guided-import --kit "$KIT_DIR"
 `
-const bundleSH = shellCommon + `printf '%s\n' "Bundle export is blocked unless review approval and leakage checks are recorded."
-printf '%s\n' "$CINDERPATH_BIN capture guided-import --kit $KIT_DIR --bundle-output <reviewed-output>"
-exit 2
+const bundleSH = shellCommon + `if [ "$#" -ne 1 ]; then printf '%s\n' "usage: $0 OUTPUT.capture-bundle.tar.gz" >&2; exit 2; fi
+printf '%s\n' "Bundle export is blocked unless review approval and leakage checks are recorded."
+printf '%s\n' "$CINDERPATH_BIN lab capture-kit bundle export --directory $KIT_DIR --output $1"
+exec "$CINDERPATH_BIN" lab capture-kit bundle export --directory "$KIT_DIR" --output "$1"
 `
 const preReview = "# Pre-capture review\n\n- [ ] Authorized disposable lab confirmed\n- [ ] Existing configured client confirmed\n- [ ] Approved manual capture procedure selected\n"
 const postReview = "# Post-capture review\n\n- [ ] Raw evidence remains local and sensitive\n- [ ] Start/stop timestamps recorded\n- [ ] No raw file was modified\n"

@@ -6,13 +6,16 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 ## Current status
 
-CinderPath now generates and validates a passive cross-platform Windows SCCM lab capture kit. It provides read-only local inventory, preparation and finalization scripts, tool-neutral manual capture guidance, raw/sanitized review gates, guided offline import, and controlled-matrix attachment. It does not start capture, trigger policy retrieval, contact SCCM, or register a client. See [`docs/CAPTURE_KIT.md`](docs/CAPTURE_KIT.md).
+CinderPath now provides a complete passive cross-platform Windows SCCM lab capture-kit lifecycle: read-only local inventory, preparation/finalization scripts, bounded redacted Windows-log inspection, deterministic review states, guided offline import, controlled-matrix attachment, atomic redacted dossiers, and a dedicated signed capture-evidence bundle format. Capture-evidence bundles are separate from protocol-contract research bundles and require no observed contract; importing or signing one never validates live SCCM protocol behavior. CinderPath does not start capture, trigger policy retrieval, contact SCCM, or register a client. See [`docs/CAPTURE_KIT.md`](docs/CAPTURE_KIT.md).
 
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \
   --site-code ABC --client-label win11-client-a --capture-label baseline-01
 cinderpath lab capture-kit validate --directory ~/cinderpath-lab-kit
+cinderpath lab capture-kit inspect-logs --directory ~/cinderpath-lab-kit
+cinderpath lab capture-kit bundle export --directory ~/cinderpath-lab-kit \
+  --output baseline-01.capture-bundle.tar.gz
 cinderpath capture guided-import --kit ~/cinderpath-lab-kit --dry-run
 cinderpath matrix add-kit --matrix research-matrix.yaml --kit ~/cinderpath-lab-kit
 ```

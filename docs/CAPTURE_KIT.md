@@ -57,12 +57,44 @@ cinderpath matrix add-kit --matrix research-matrix.yaml \
   --kit ~/cinderpath-lab-kit
 ```
 
-Replacement maps must be mode `0600` and never enter command history or export directories. Complete identifier, binary, and leakage reviews manually and update `metadata/capture.template.yaml`. States are `ready_for_capture`, `capture_in_progress`, `raw_capture_complete`, `requires_sanitization`, `requires_manual_review`, `ready_for_import`, `ready_for_bundle_export`, and `invalid`. Raw evidence is never ready for sharing. All kit metadata is an operator assertion, not independent verification.
+Replacement maps must be mode `0600` and never enter command history or export directories. Complete identifier, binary, and leakage reviews manually and update `metadata/capture.template.yaml`. The deterministic states are `created`, `ready_for_capture`, `capture_in_progress`, `raw_capture_complete`, `requires_sanitization`, `requires_manual_review`, `review_failed`, `ready_for_import`, `imported`, `ready_for_evidence_bundle`, `evidence_bundle_exported`, and `invalid`. `validate` and `show` explain blockers and allowed next actions. Raw finalization never makes evidence exportable; import does not imply export approval; review cannot override a hash, sentinel, or leakage failure.
 
-Guided import accepts only supported files under `sanitized/`, runs existing bounded offline parsing, leaves `raw/` unchanged, persists redacted attribution, and may create an atomic dossier. Dry-run performs no persistence or secret output. Generic capture-kit bundle export is intentionally unavailable in this phase: use the existing reviewed protocol-bundle workflow only when an observed contract and compatible sanitized fixture exist. Signatures do not grant trust.
+Guided import accepts supported files under `sanitized/` from either a local kit or a dedicated capture-evidence bundle, runs existing bounded offline parsing, leaves its source unchanged, persists redacted attribution, and may create an atomic dossier. `--kit` and `--bundle` are mutually exclusive. Dry-run performs validation and planning without persistence or secret output.
+
+## Bounded Windows-log inspection
+
+```bash
+# Synthetic or explicitly authorized-lab example.
+cinderpath lab capture-kit inspect-logs --directory ~/cinderpath-lab-kit
+```
+
+The generic inspector reads only `.log` files already under `raw/` or `sanitized/`. It bounds file count, bytes per file, total bytes, lines, line length, and observations; rejects symlinks; recognizes UTF-8, UTF-16LE, and UTF-16BE; and classifies opaque binary input as unsupported. It emits fingerprints and redacted structural categories for timestamps, components, severity-like tokens, URLs, addresses, GUIDs, SIDs, paths, status codes, and correlation-like identifiers. Authorization, bearer, cookie, and private-key indicators are never copied into previews. Password-like text remains an unconfirmed heuristic. No filename establishes SCCM semantics, and no semantic SCCM log parser is currently fixture-validated.
+
+## Capture-evidence bundles
+
+```bash
+# Synthetic or explicitly authorized-lab examples.
+cinderpath lab capture-kit bundle export --directory ~/cinderpath-lab-kit \
+  --output baseline-01.capture-bundle.tar.gz
+cinderpath lab capture-kit bundle inspect --input baseline-01.capture-bundle.tar.gz
+cinderpath lab capture-kit bundle sign --input baseline-01.capture-bundle.tar.gz \
+  --key ~/.config/cinderpath/research-signing-key \
+  --output baseline-01.signed.capture-bundle.tar.gz
+cinderpath lab capture-kit bundle verify --input baseline-01.signed.capture-bundle.tar.gz
+cinderpath capture guided-import --bundle baseline-01.capture-bundle.tar.gz \
+  --dossier-output reports/baseline-01
+```
+
+A capture-evidence bundle is a distinct `bundle_type: capture_evidence` archive. It does not require or contain an observed protocol contract. It contains the canonical bundle manifest, kit manifest, bounded metadata, reviewed sanitized evidence, review records, and optional redacted inspection/import summaries. It excludes `raw/`, replacement maps, secure-secret files, signing keys, tool binaries, raw archives, symlinks, and unsafe paths. Export requires authorized/disposable assertions, current hashes, completed metadata/binary review, passed leakage checks, explicit bundle approval, and removal of the synthetic sentinel and all positive leakage indicators. Output must be outside the kit.
+
+Archive inspection/import enforce member-count, per-member, total-size, regular-file, traversal, duplicate-path, and fingerprint limits. Import is atomic and remains offline evidence. Ed25519 signing reuses the research signing-key format and covers the canonical capture-evidence manifest, whose member hashes bind every member. A valid signature proves integrity and signer identity only; it does not prove sanitization, protocol correctness, client identity, or live approval. Capture-evidence bundles are rejected by protocol-contract bundle commands because the formats remain separate.
+
+The schema-v7 audit wires every retained kit table to a real workflow: stable kits/files and run-attributed validation, review, import, inventory, matrix-link, and dossier records. Because migration 7 was already published, schema v8 safely adds capture-evidence bundle/member and Windows-log inspection tables for existing databases. Stored paths are safe relative paths or basenames; raw bodies, complete log lines, authorization values, cookies, bearer tokens, passwords, private keys, and replacement maps are excluded.
+
+Capture-kit dossiers are atomic owner-only directories containing kit/state summaries, redacted client/tool inventories, file inventory, log categories, review/sanitization/leakage summaries, bundle provenance, matrix state, gaps, and safety boundaries. They contain no raw bodies or complete sensitive log lines.
 
 Matrix attachment requires reviewed sanitized data, records operator-declared client/OS/site/MP/version/action/tool/format/TLS/signature labels, rejects missing variables and duplicate fingerprints, and does not run analysis.
 
 Confirmed plaintext from later offline analysis retains existing controls: `--hide-secrets` wins; safe never displays plaintext; standard requires `--show-secrets`; aggressive/yolo defaults require an interactive TTY; non-TTY hides plaintext unless explicitly enabled. A dedicated secrets file is atomic mode `0600`. Ordinary JSON, HTML, SQLite fields, dossiers, manifests, logs, paths, and errors remain redacted. Offline usability is `unvalidated`.
 
-The live blocker remains reviewed, sanitized, reproducible captures from an already configured client across controlled versions and conditions, with exact framing, identity prerequisites, failure behavior, and proven read-only semantics. Live collection and `approved_live` promotion remain absent.
+Windows execution is not part of normal Linux CI; PowerShell is covered by static and golden safety tests and must still receive optional manual validation in a disposable Windows lab. The live blocker remains reviewed, sanitized, reproducible captures from an already configured client across controlled versions and conditions, with exact framing, identity prerequisites, failure behavior, and proven read-only semantics. Live collection and `approved_live` promotion remain absent.

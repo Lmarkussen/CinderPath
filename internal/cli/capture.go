@@ -267,7 +267,12 @@ func (s *state) matrixCommand() *cobra.Command {
 	}}
 	validate.Flags().StringVar(&setPath, "matrix", "", "matrix YAML")
 	var kitPath string
-	addKit := &cobra.Command{Use: "add-kit", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { return addKitToMatrix(setPath, kitPath) }}
+	addKit := &cobra.Command{Use: "add-kit", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		if e := addKitToMatrix(setPath, kitPath); e != nil {
+			return e
+		}
+		return s.persistMatrixLink(context.Background(), setPath, kitPath)
+	}}
 	addKit.Flags().StringVar(&setPath, "matrix", "", "matrix YAML")
 	addKit.Flags().StringVar(&kitPath, "kit", "", "reviewed capture-kit directory")
 	_ = addKit.MarkFlagRequired("matrix")

@@ -7,6 +7,11 @@ synthetic or authorized-lab files locally and never elevates candidate contracts
 The passive Windows preparation and guided import workflow is documented in
 [CAPTURE_KIT.md](CAPTURE_KIT.md); kit metadata/review are operator assertions,
 not evidence of registration, retrieval, identity validation, or live approval.
+Capture-evidence bundles use `bundle_type: capture_evidence` and intentionally do
+not require a protocol contract. Protocol-contract research bundles retain their
+existing contract/fixture semantics. Neither command family accepts the other
+bundle type, and capture-evidence import or signature verification never creates
+or promotes an `approved_live` contract.
 
 Generic XML, JSON, and multipart parsers emit bounded redacted structure, not
 SCCM semantics. Parser lifecycle states are `observed_structure`,

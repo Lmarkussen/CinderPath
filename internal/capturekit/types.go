@@ -1,6 +1,9 @@
 package capturekit
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 const SchemaVersion = 1
 
@@ -57,6 +60,7 @@ type Review struct {
 	Sanitized            bool `yaml:"sanitized" json:"sanitized"`
 	LeakageChecksPassed  bool `yaml:"leakage_checks_passed" json:"leakage_checks_passed"`
 	BundleExportApproved bool `yaml:"bundle_export_approved" json:"bundle_export_approved"`
+	ReviewFailed         bool `yaml:"review_failed" json:"review_failed"`
 }
 type Manifest struct {
 	SchemaVersion int      `yaml:"schema_version" json:"schema_version"`
@@ -65,32 +69,129 @@ type Manifest struct {
 	CreatedAt     string   `yaml:"created_at" json:"created_at"`
 	RequiredFiles []string `yaml:"required_files" json:"required_files"`
 	Safety        string   `yaml:"safety" json:"safety"`
+	SetupComplete bool     `yaml:"setup_complete" json:"setup_complete"`
 }
 type State string
 
 const (
-	ReadyForCapture      State = "ready_for_capture"
-	CaptureInProgress    State = "capture_in_progress"
-	RawCaptureComplete   State = "raw_capture_complete"
-	RequiresSanitization State = "requires_sanitization"
-	RequiresManualReview State = "requires_manual_review"
-	ReadyForImport       State = "ready_for_import"
-	ReadyForBundleExport State = "ready_for_bundle_export"
-	Invalid              State = "invalid"
+	Created                State = "created"
+	ReadyForCapture        State = "ready_for_capture"
+	CaptureInProgress      State = "capture_in_progress"
+	RawCaptureComplete     State = "raw_capture_complete"
+	RequiresSanitization   State = "requires_sanitization"
+	RequiresManualReview   State = "requires_manual_review"
+	ReviewFailed           State = "review_failed"
+	ReadyForImport         State = "ready_for_import"
+	Imported               State = "imported"
+	ReadyForEvidenceBundle State = "ready_for_evidence_bundle"
+	EvidenceBundleExported State = "evidence_bundle_exported"
+	Invalid                State = "invalid"
 )
 
 type Validation struct {
-	State        State    `json:"state" yaml:"state"`
-	KitID        string   `json:"kit_id" yaml:"kit_id"`
-	Fingerprint  string   `json:"fingerprint" yaml:"fingerprint"`
-	Errors       []string `json:"errors" yaml:"errors"`
-	Warnings     []string `json:"warnings" yaml:"warnings"`
-	RawFiles     []File   `json:"raw_files" yaml:"raw_files"`
-	Sanitized    []File   `json:"sanitized_files" yaml:"sanitized_files"`
-	LiveRequests int      `json:"live_policy_requests" yaml:"live_policy_requests"`
+	State              State    `json:"state" yaml:"state"`
+	KitID              string   `json:"kit_id" yaml:"kit_id"`
+	Fingerprint        string   `json:"fingerprint" yaml:"fingerprint"`
+	Errors             []string `json:"errors" yaml:"errors"`
+	Warnings           []string `json:"warnings" yaml:"warnings"`
+	Blockers           []string `json:"blockers" yaml:"blockers"`
+	AllowedNextActions []string `json:"allowed_next_actions" yaml:"allowed_next_actions"`
+	RawFiles           []File   `json:"raw_files" yaml:"raw_files"`
+	Sanitized          []File   `json:"sanitized_files" yaml:"sanitized_files"`
+	LiveRequests       int      `json:"live_policy_requests" yaml:"live_policy_requests"`
+}
+
+type LogLimits struct {
+	MaxFiles                                 int
+	MaxBytesPerFile, MaxTotalBytes           int64
+	MaxLines, MaxLineLength, MaxObservations int
+}
+type LogInspection struct {
+	SchemaVersion       int                 `json:"schema_version"`
+	KitID               string              `json:"kit_id"`
+	InspectorVersion    string              `json:"inspector_version"`
+	InspectedAt         time.Time           `json:"inspected_at"`
+	Files               []LogFileInspection `json:"files"`
+	Observations        []LogObservation    `json:"observations"`
+	Warnings            []string            `json:"warnings"`
+	Truncated           bool                `json:"truncated"`
+	SensitiveIndicators int                 `json:"sensitive_indicators"`
+}
+type LogFileInspection struct {
+	LogFileID        string    `json:"log_file_id"`
+	KitID            string    `json:"kit_id"`
+	SafeName         string    `json:"safe_name"`
+	Encoding         string    `json:"encoding"`
+	SHA256           string    `json:"sha256"`
+	Classification   string    `json:"classification"`
+	Size             int64     `json:"size"`
+	LinesInspected   int       `json:"lines_inspected"`
+	ObservationCount int       `json:"observation_count"`
+	Truncated        bool      `json:"truncated"`
+	Warnings         []string  `json:"warnings"`
+	InspectedAt      time.Time `json:"inspected_at"`
+	InspectorVersion string    `json:"inspector_version"`
+}
+type LogObservation struct {
+	ObservationID   string `json:"observation_id"`
+	LogFileID       string `json:"log_file_id"`
+	LineNumber      int    `json:"line_number"`
+	Category        string `json:"category"`
+	Classification  string `json:"classification"`
+	RedactedPreview string `json:"redacted_preview"`
+	Fingerprint     string `json:"fingerprint"`
+	Confidence      string `json:"confidence"`
+	Reason          string `json:"reason"`
+}
+
+type EvidenceMember struct {
+	Path   string `yaml:"path" json:"path"`
+	Size   int64  `yaml:"size" json:"size"`
+	SHA256 string `yaml:"sha256" json:"sha256"`
+}
+type EvidenceManifest struct {
+	SchemaVersion               int              `yaml:"schema_version" json:"schema_version"`
+	BundleType                  string           `yaml:"bundle_type" json:"bundle_type"`
+	BundleID                    string           `yaml:"bundle_id" json:"bundle_id"`
+	CreatedAt                   string           `yaml:"created_at" json:"created_at"`
+	ToolVersion                 string           `yaml:"tool_version" json:"tool_version"`
+	KitID                       string           `yaml:"kit_id" json:"kit_id"`
+	KitFingerprint              string           `yaml:"kit_fingerprint" json:"kit_fingerprint"`
+	CaptureLabel                string           `yaml:"capture_label" json:"capture_label"`
+	ClientLabel                 string           `yaml:"client_label" json:"client_label"`
+	MetadataSchemaVersion       int              `yaml:"metadata_schema_version" json:"metadata_schema_version"`
+	ReviewState                 string           `yaml:"review_state" json:"review_state"`
+	SanitizationState           string           `yaml:"sanitization_state" json:"sanitization_state"`
+	LeakageCheckState           string           `yaml:"leakage_check_state" json:"leakage_check_state"`
+	TLSVisibility               string           `yaml:"tls_visibility" json:"tls_visibility"`
+	LogInspectionState          string           `yaml:"log_inspection_state" json:"log_inspection_state"`
+	ExpectedAnalysisFingerprint string           `yaml:"expected_analysis_fingerprint" json:"expected_analysis_fingerprint"`
+	SignatureState              string           `yaml:"signature_state" json:"signature_state"`
+	Members                     []EvidenceMember `yaml:"members" json:"members"`
+	SourceFormats               []string         `yaml:"source_formats" json:"source_formats"`
+	SafetyNotes                 []string         `yaml:"safety_notes" json:"safety_notes"`
+}
+type EvidenceBundleInfo struct {
+	Manifest           EvidenceManifest `json:"manifest"`
+	SignatureState     string           `json:"signature_state"`
+	SignerKeyID        string           `json:"signer_key_id"`
+	Integrity          string           `json:"integrity"`
+	TrustEffect        string           `json:"trust_effect"`
+	ContractPromotion  string           `json:"contract_promotion"`
+	LivePolicyRequests int              `json:"live_policy_requests"`
 }
 type CreateOptions struct {
 	Output, SiteCode, ManagementPoint, ClientLabel, CaptureLabel, CaptureAction string
 	Force                                                                       bool
 	Now                                                                         time.Time
+}
+
+func SelectImportSource(kit, bundle string) (string, error) {
+	if (kit == "") == (bundle == "") {
+		return "", errors.New("exactly one of kit or bundle is required")
+	}
+	if kit != "" {
+		return "kit", nil
+	}
+	return "capture_evidence_bundle", nil
 }

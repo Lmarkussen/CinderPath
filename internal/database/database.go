@@ -196,6 +196,26 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err = tx.Commit(); err != nil {
 			return fmt.Errorf("commit schema v7: %w", err)
 		}
+		version = 7
+	}
+	if version == 7 {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		for _, statement := range schemaV8 {
+			if _, err = tx.ExecContext(ctx, statement); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply schema v8: %w", err)
+			}
+		}
+		if _, err = tx.ExecContext(ctx, "PRAGMA user_version = 8"); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return fmt.Errorf("commit schema v8: %w", err)
+		}
 	}
 	return nil
 }

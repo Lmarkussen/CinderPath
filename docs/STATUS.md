@@ -2,7 +2,7 @@
 
 ## Passive Windows lab capture kit
 
-A schema-v7 passive capture-kit workflow is implemented. `lab capture-kit` atomically creates, shows, validates, and locally finalizes owner-only kits; generated PowerShell performs bounded read-only inventory/preparation/local hash finalization and never starts capture or SCCM actions. `capture guided-import` accepts only reviewed sanitized formats, preserves raw inputs, records redacted attribution, and can create a dossier. `matrix add-kit` attaches reviewed operator metadata without analysis. Generic kit bundle export remains explicitly unavailable unless the existing protocol-contract workflow applies. Live policy collection remains blocked.
+A schema-v7 audit plus schema-v8 extension implements the passive capture-kit lifecycle. `lab capture-kit` atomically creates, shows, validates, and locally finalizes owner-only kits; performs bounded redacted generic Windows-log inspection; and exports, inspects, imports, signs, and verifies a separate `capture_evidence` bundle format. Generated PowerShell never starts capture or SCCM actions. `capture guided-import` accepts reviewed local kits or validated capture-evidence bundles, preserves sources, records redacted attribution, and creates a capture-kit dossier. `matrix add-kit` attaches reviewed operator metadata without analysis. Capture-evidence integrity, import, and signing do not validate or approve a protocol contract. Live policy collection remains blocked.
 
 ## Unified operator workflow
 

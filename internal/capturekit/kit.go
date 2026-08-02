@@ -87,7 +87,7 @@ func Create(o CreateOptions) error {
 	mb, _ := yaml.Marshal(m)
 	files := map[string]string{
 		"README-FIRST.txt": readmeFirst, "SAFETY.txt": safety, "WINDOWS-CHECKLIST.txt": windowsChecklist, "LINUX-CHECKLIST.txt": linuxChecklist,
-		"metadata/capture.template.yaml": string(mb), "metadata/client-inventory.template.json": "{\n  \"schema_version\": 1,\n  \"status\": \"not_collected\"\n}\n", "metadata/tool-inventory.template.json": "{\n  \"schema_version\": 1,\n  \"tools\": []\n}\n", "metadata/review-state.template.yaml": "schema_version: 1\nmetadata_reviewed: false\nbinary_reviewed: false\nsanitzed: false\nleakage_checks_passed: false\nbundle_export_approved: false\n",
+		"metadata/capture.template.yaml": string(mb), "metadata/client-inventory.template.json": "{\n  \"schema_version\": 1,\n  \"status\": \"not_collected\"\n}\n", "metadata/tool-inventory.template.json": "{\n  \"schema_version\": 1,\n  \"tools\": []\n}\n", "metadata/review-state.template.yaml": "schema_version: 1\nmetadata_reviewed: false\nbinary_reviewed: false\nsanitized: false\nleakage_checks_passed: false\nbundle_export_approved: false\nreview_failed: false\n",
 		"windows/Collect-CinderPathInventory.ps1": inventoryPS, "windows/Prepare-CinderPathCapture.ps1": preparePS, "windows/Finalize-CinderPathCapture.ps1": finalizePS, "windows/commands-manual.txt": manualCommands, "windows/event-log-notes.txt": eventNotes,
 		"linux/inspect.sh": inspectSH, "linux/sanitize.sh": sanitizeSH, "linux/review.sh": reviewSH, "linux/import.sh": importSH, "linux/bundle.sh": bundleSH,
 		"review/PRE-CAPTURE.md": preReview, "review/POST-CAPTURE.md": postReview, "review/IDENTIFIER-REVIEW.md": identifierReview, "review/BINARY-REVIEW.md": binaryReview, "review/LEAKAGE-CHECK.md": leakageReview,
@@ -105,7 +105,7 @@ func Create(o CreateOptions) error {
 	kitSeed := strings.Join([]string{o.CaptureLabel, o.ClientLabel, o.SiteCode, o.ManagementPoint, o.CaptureAction}, "\x00")
 	sum := sha256.Sum256([]byte(kitSeed))
 	fp := hex.EncodeToString(sum[:])
-	man := Manifest{SchemaVersion: 1, KitID: "capture_kit_" + fp[:16], Fingerprint: fp, CreatedAt: o.Now.UTC().Format(time.RFC3339), RequiredFiles: required, Safety: "passive_preparation_only"}
+	man := Manifest{SchemaVersion: 1, KitID: "capture_kit_" + fp[:16], Fingerprint: fp, CreatedAt: o.Now.UTC().Format(time.RFC3339), RequiredFiles: required, Safety: "passive_preparation_only", SetupComplete: true}
 	b, _ := yaml.Marshal(man)
 	if e = writeFile(filepath.Join(tmp, "manifest.yaml"), b, 0o600); e != nil {
 		return e
@@ -263,28 +263,89 @@ func Validate(dir string) (Validation, error) {
 			}
 		}
 	}
+	if m.Review.BundleExportApproved && regularExists(filepath.Join(abs, "raw", "CINDERPATH_SYNTHETIC_LEAK_SENTINEL.txt")) {
+		v.Errors = append(v.Errors, "synthetic leakage sentinel remains in raw/")
+	}
 	if len(v.Errors) > 0 {
+		v.Blockers = append(v.Blockers, v.Errors...)
 		return v, nil
 	}
 	started := m.Capture.StartedAt != ""
 	stopped := m.Capture.StoppedAt != ""
+	imported := regularExists(filepath.Join(abs, "output", "guided-import.json"))
+	exported := regularExists(filepath.Join(abs, "output", "evidence-bundle.json"))
 	switch {
+	case !man.SetupComplete:
+		v.State = Created
 	case !started:
 		v.State = ReadyForCapture
 	case started && !stopped:
 		v.State = CaptureInProgress
-	case len(v.RawFiles) > 0 && !m.Review.Sanitized:
+	case stopped && len(v.RawFiles) == 0 && len(v.Sanitized) == 0:
+		v.State = RawCaptureComplete
+	case len(v.RawFiles) > 0 && len(v.Sanitized) == 0:
 		v.State = RequiresSanitization
+	case m.Review.ReviewFailed:
+		v.State = ReviewFailed
 	case !m.Review.MetadataReviewed || !m.Review.BinaryReviewed || !m.Review.LeakageChecksPassed:
 		v.State = RequiresManualReview
-	case len(v.Sanitized) == 0:
-		v.State = RawCaptureComplete
+	case exported:
+		v.State = EvidenceBundleExported
+	case imported && m.Review.BundleExportApproved:
+		v.State = ReadyForEvidenceBundle
+	case imported:
+		v.State = Imported
 	case m.Review.BundleExportApproved:
-		v.State = ReadyForBundleExport
+		v.State = ReadyForEvidenceBundle
 	default:
 		v.State = ReadyForImport
 	}
+	v.Blockers, v.AllowedNextActions = explain(v.State, m, v)
 	return v, nil
+}
+func regularExists(path string) bool {
+	st, e := os.Lstat(path)
+	return e == nil && st.Mode().IsRegular()
+}
+func explain(s State, m Metadata, v Validation) ([]string, []string) {
+	var b, a []string
+	switch s {
+	case Created:
+		b = append(b, "capture-kit setup is incomplete")
+		a = append(a, "complete generated kit setup")
+	case ReadyForCapture:
+		a = append(a, "run the passive Windows preparation script", "start and stop an approved capture tool manually")
+	case CaptureInProgress:
+		b = append(b, "capture stop timestamp is missing")
+		a = append(a, "stop the operator-controlled capture and finalize raw evidence")
+	case RawCaptureComplete, RequiresSanitization:
+		b = append(b, "raw evidence is sensitive and sanitized evidence is absent")
+		a = append(a, "sanitize copies into sanitized/ without modifying raw/")
+	case RequiresManualReview:
+		if !m.Review.MetadataReviewed {
+			b = append(b, "metadata review is incomplete")
+		}
+		if !m.Review.BinaryReviewed {
+			b = append(b, "binary review is incomplete")
+		}
+		if !m.Review.LeakageChecksPassed {
+			b = append(b, "leakage checks are incomplete")
+		}
+		a = append(a, "inspect binary and log evidence", "record manual review after sensitive content is removed")
+	case ReviewFailed:
+		b = append(b, "operator review is marked failed")
+		a = append(a, "remove or safely transform unresolved sensitive content and repeat review")
+	case ReadyForImport:
+		a = append(a, "run cinderpath capture guided-import --kit <kit>")
+	case Imported:
+		b = append(b, "import does not imply evidence-bundle approval")
+		a = append(a, "approve capture-evidence export only after review and leakage checks")
+	case ReadyForEvidenceBundle:
+		a = append(a, "export a dedicated capture-evidence bundle")
+	case EvidenceBundleExported:
+		a = append(a, "inspect or sign the capture-evidence bundle; integrity does not imply protocol approval")
+	}
+	return b, a
 }
 func inventory(root, sub string, v *Validation) []File {
 	var out []File
