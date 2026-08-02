@@ -24,4 +24,6 @@ Run the current truthful plan with:
 cinderpath assess technique RECON-2 --target <identified-sccm-host>
 ```
 
-Coverage remains partial until an authorized GOAD runtime validation exists.
+The authorized GOAD runtime validation completed with generic administrative
+shares only. Discovery and assessment are now supported; no SCCM-role finding
+was created and validation/execution remain not applicable.

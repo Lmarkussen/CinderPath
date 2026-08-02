@@ -817,6 +817,7 @@ the snapshot; re-import remains a development-only operation.
 `RECON-1` routes through the existing bounded LDAP modules when an explicitly
 configured live connector is present. It records SCCM publishing evidence, site
 and management-point assets, and evidence-backed relationships; the workflow was
-runtime-validated through the authorized GOAD controller. `RECON-2` now uses a
-bounded authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata module; runtime
-validation remains pending.
+runtime-validated through the authorized GOAD controller. `RECON-2` uses a
+bounded authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata module and has been
+runtime-validated through the authorized GOAD controller. The run observed only
+generic administrative shares, so no SCCM-role finding was created.
