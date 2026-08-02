@@ -87,6 +87,7 @@ func (s *state) labCommand() *cobra.Command {
 	root.AddCommand(c)
 	root.AddCommand(s.captureKitCommand())
 	root.AddCommand(s.clientArtifactsCommand())
+	root.AddCommand(s.pxeCommand())
 	return root
 }
 

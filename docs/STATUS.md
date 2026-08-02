@@ -785,3 +785,11 @@ collection/deployment variables, legacy package accounts, and OSD service
 accounts. Runtime validation selected 18 exact machine-policy classes and
 observed zero concrete instances or protected fields; no value was copied and
 readiness is `no_credential_policy_evidence`.
+
+Bounded PXE/OSD posture assessment selected the single server explicitly listed
+in the GOAD SCCM inventory. Server-local metadata confirmed installed/running
+WDS, PXE-enabled DP configuration, unknown-computer support, `smspxe.log`, and
+three boot-image file metadata records. PXE password posture and PXE deployment
+metadata remain unknown. The classification is
+`pxe_present_no_exposure_established`; no PXE, DHCP, TFTP, image, media,
+task-sequence, or content request occurred.

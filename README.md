@@ -605,6 +605,8 @@ The recommended next phase is authentication-provider hardening: OS-backed secre
 
 Targeted credential-policy discovery now recognizes NAA, task-sequence, network-folder, domain-join, protected-variable, legacy-package, and OSD account schemas through class/property combinations and policy provenance. Names alone never establish a secret. The validated run selected 18 exact classes but observed no concrete credential-policy instances and copied no values. See [the focused guide](docs/CREDENTIAL_POLICY_DISCOVERY.md).
 
+PXE/OSD posture assessment now identifies one exact SCCM server candidate before access and performs bounded server-local service, feature, registry, log-metadata, and boot-image-metadata checks. The validated GOAD server used WDS, had PXE and unknown-computer support enabled, and exposed three server-local boot-image metadata records; PXE password and task-sequence deployment posture remained unknown. No PXE, DHCP, TFTP, boot-media, WIM, or content request occurred. See [PXE and OSD posture assessment](docs/PXE_OSD_ASSESSMENT.md).
+
 Reviewed exact-allowlist previews now summarize two authority `Capabilities`
 properties and one deployment `MessageDetails` property. All were well-formed
 XML and structure-only fixtures were sufficient; no raw value was copied and

@@ -2,6 +2,13 @@
 
 Targeted credential-policy discovery must use the retained inventory first and an exact generated class allowlist second. A password/account name, encoding shape, or entropy alone is not a credential candidate. The validated run found zero concrete NAA/task-sequence/variable instances and copied zero values. Discovery support does not mean credential recovery or validation support.
 
+PXE/OSD posture assessment requires an exact independently evidenced server and
+one-target plan before access. Preserve fixed server-local service, feature,
+registry, log-metadata, and boot-image-metadata bounds. Never turn posture
+assessment into DHCP/PXE/TFTP traffic, boot-media/WIM retrieval, task-sequence
+content access, or configuration changes. PXE enablement alone is not a
+vulnerability or authorization for active validation.
+
 ## Project identity
 
 - Repository and Go module: `github.com/Lmarkussen/CinderPath`

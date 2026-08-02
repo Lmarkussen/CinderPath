@@ -1,0 +1,99 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+
+	"github.com/Lmarkussen/CinderPath/internal/database"
+	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/pxe"
+	"github.com/Lmarkussen/CinderPath/internal/version"
+	"github.com/spf13/cobra"
+)
+
+func (s *state) pxeCommand() *cobra.Command {
+	root := &cobra.Command{Use: "pxe", Short: "Bounded offline and server-local PXE/OSD posture assessment"}
+	var alias, site, output, format, input string
+	candidates := &cobra.Command{Use: "candidates", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		c := pxe.CandidateFromEvidence(alias, site, []string{"sccm_site_server"}, []string{"GOAD SCCM inventory membership"})
+		if format == "json" {
+			return json.NewEncoder(s.stdout).Encode(c)
+		}
+		fmt.Fprintf(s.stdout, "PXE/OSD server candidates\nCandidates: 1\n  %s\nSafety: inventory evidence only; port-only evidence is insufficient.\nLive PXE requests: 0\n", pxe.RedactedCandidateText(c))
+		return nil
+	}}
+	candidates.Flags().StringVar(&alias, "candidate", "", "exact approved inventory alias")
+	candidates.Flags().StringVar(&site, "site-code", "", "safe SCCM site code")
+	candidates.Flags().StringVar(&format, "format", "text", "text or json")
+	_ = candidates.MarkFlagRequired("candidate")
+	plan := &cobra.Command{Use: "inspect-plan", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		c := pxe.CandidateFromEvidence(alias, site, []string{"sccm_site_server"}, []string{"GOAD SCCM inventory membership"})
+		p := pxe.BuildPlan(c)
+		if e := pxe.WritePlan(output, p); e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "PXE/OSD inspection plan\nCandidate: %s\nMaximum targets: 1\nMaximum commands: %d\nConnection: %s\nCredential source: %s\nStop conditions: authentication failure; endpoint mismatch; write requirement; additional target\nLive PXE requests: 0\n", c.CandidateID, p.MaximumCommands, p.ConnectionMethod, p.CredentialSource)
+		return nil
+	}}
+	plan.Flags().StringVar(&alias, "candidate", "", "exact approved inventory alias")
+	plan.Flags().StringVar(&site, "site-code", "", "safe SCCM site code")
+	plan.Flags().StringVar(&output, "output", "", "mode-0600 inspection plan")
+	_ = plan.MarkFlagRequired("candidate")
+	_ = plan.MarkFlagRequired("output")
+	collector := &cobra.Command{Use: "collector-script", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		return atomicCaptureWrite(output, []byte(pxe.CollectorPowerShell()))
+	}}
+	collector.Flags().StringVar(&output, "output", "", "generated Windows PowerShell 5.1 collector")
+	_ = collector.MarkFlagRequired("output")
+	analyze := &cobra.Command{Use: "analyze", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		r, e := pxe.LoadRuntime(input)
+		if e != nil {
+			return e
+		}
+		c := pxe.CandidateFromEvidence(alias, site, []string{"sccm_site_server"}, []string{"GOAD SCCM inventory membership"})
+		p := pxe.BuildPlan(c)
+		a := pxe.Analyze(c, p, r)
+		if e = pxe.WriteDossier(output, a); e != nil {
+			return e
+		}
+		if e = s.persistPXE(a, output); e != nil {
+			return e
+		}
+		if format == "json" {
+			return json.NewEncoder(s.stdout).Encode(a)
+		}
+		fmt.Fprintf(s.stdout, "SCCM PXE/OSD posture assessment\nCandidate servers: 1\nConfirmed inventory roles: %v\nPXE responder: %s\nWDS installed: %t\nConfigMgr PXE responder installed: %t\nPXE enabled: %t\nUnknown-computer posture: %s\nPXE password posture: %s\nBoot images: %d state=%s\nPXE deployments: %d state=%s\nAssessment: %s\nActive validation: %s\nMisconfiguration Manager: pxe_dp_assessment=assessment_supported pxe_unknown_computer=discovery_supported\nDossier: %s\nLive PXE requests: 0\n", a.Candidate.ObservedRoles, a.PXEResponderType, a.WDSInstalled, a.ConfigMgrPXEResponderInstalled, a.PXEEnabled, a.UnknownComputerPosture, a.PXEPasswordPosture, a.BootImageCount, a.BootImageMetadataState, a.PXEDeploymentCount, a.DeploymentMetadataState, a.Classification, a.ActiveValidationReadiness, filepath.Base(output))
+		return nil
+	}}
+	analyze.Flags().StringVar(&input, "inventory", "", "schema-v1 returned PXE posture metadata")
+	analyze.Flags().StringVar(&alias, "candidate", "", "exact approved inventory alias")
+	analyze.Flags().StringVar(&site, "site-code", "", "safe SCCM site code")
+	analyze.Flags().StringVar(&output, "output", "", "new owner-only PXE assessment dossier")
+	analyze.Flags().StringVar(&format, "format", "text", "text or json")
+	_ = analyze.MarkFlagRequired("inventory")
+	_ = analyze.MarkFlagRequired("candidate")
+	_ = analyze.MarkFlagRequired("output")
+	root.AddCommand(candidates, plan, collector, analyze)
+	return root
+}
+
+func (s *state) persistPXE(a pxe.Assessment, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "lab pxe analyze", string(s.cfg.Profile), version.Version, []string{"offline", "server_local_read_only", "live_pxe_requests=0"})
+	if e != nil {
+		return e
+	}
+	id := models.StableID("pxe_assessment", a.Candidate.ServerFingerprint+"|"+a.Runtime.CollectedAt)
+	data := map[string]any{"candidate": a.Candidate, "role_evidence": a.PXEResponderType, "services": a.Runtime.Services, "registry_metadata": a.Runtime.Registry, "log_metadata": a.Runtime.Logs, "boot_image_count": a.BootImageCount, "deployment_count": a.PXEDeploymentCount, "unknown_computer_posture": a.UnknownComputerPosture, "pxe_password_posture": a.PXEPasswordPosture, "classification": a.Classification, "readiness": a.ActiveValidationReadiness, "dossier": filepath.Base(dossier), "live_pxe_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: id, RunID: run.ID, CaptureID: "pxe_assessment", Fingerprint: a.Candidate.ServerFingerprint, Data: data}); e != nil {
+		return e
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"pxe_assessment": id, "live_pxe_requests": 0})
+}
