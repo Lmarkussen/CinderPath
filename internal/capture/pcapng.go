@@ -193,6 +193,9 @@ func ngTime(v, res uint64) time.Time {
 func addNGPacket(c *NormalizedCapture, data []byte, id int, link uint16, caplen, orig uint32, ts time.Time) {
 	idx := len(c.Packets)
 	c.Packets = append(c.Packets, Packet{ID: stableID("packet", fmt.Sprint(idx), fingerprint(data)), Index: idx, InterfaceID: id, Timestamp: ts, CapturedLength: caplen, OriginalLength: orig, Truncated: caplen < orig, LinkType: link, Fingerprint: fingerprint(data)})
+	if link == 1 {
+		c.DNSEvents = append(c.DNSEvents, parseDNSPacket(data, c.Packets[len(c.Packets)-1].ID, ts)...)
+	}
 }
 
 type classicPacket struct {

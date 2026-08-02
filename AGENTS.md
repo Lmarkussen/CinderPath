@@ -99,3 +99,12 @@ biases whose sign is inverse to an RFC3339 offset. Keep the synthetic regression
 Known WinRM ports 5985/5986 are contradicting SCCM-attribution evidence. The
 retained run classified six candidates as `no_correlatable_tls_flow`; never
 treat timing around remote invocation as SCCM transport evidence.
+
+Offline endpoint attribution extracts bounded captured DNS and joins only
+fingerprinted DNS, SNI, flow, fixture-supported log, and passive inventory
+evidence. It never performs resolution. Keep endpoint, flow, and policy-event
+confidence separate. The retained evidence identified a medium-confidence
+management-point endpoint from inventory plus logs, but did not link it to a
+TLS flow; preserve `endpoint_identified_but_flow_ambiguous` and
+`not_ready_no_policy_evidence`. Prefer reviewed above-TLS client metadata over
+another capture made solely because TLS is opaque.

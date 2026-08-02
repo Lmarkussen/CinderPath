@@ -100,3 +100,13 @@ but no correlatable SCCM TLS flow. Five candidates used the known WinRM control
 port, including the flow nearest the trigger; the HTTPS/SNI-bearing flow lacked
 matching log endpoint evidence. Correct CMTrace handling treats its numeric
 suffix as a UTC conversion bias. No further client action was performed.
+
+The follow-on endpoint pass remained fully offline. It combined passive client
+inventory with redacted log hints, captured DNS, SNI, and flow-address
+fingerprints. A management-point endpoint was identified at medium confidence
+from inventory and log evidence, but no captured DNS/address or SNI graph edge
+associated it with a TLS flow. Thus the flow result is
+`endpoint_identified_but_flow_ambiguous`, payload visibility remains opaque,
+and readiness remains `not_ready_no_policy_evidence`. Repeating packet capture
+is not justified merely because TLS is encrypted; reviewed client-side
+above-TLS message or policy-cache metadata is the next useful evidence source.

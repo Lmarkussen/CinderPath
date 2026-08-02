@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/capture"
@@ -184,6 +185,34 @@ func (s *state) persistCorrelation(c capture.NormalizedCapture, r capture.Correl
 	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"correlation_id": id, "classification": r.Classification, "live_requests": 0})
 }
 
+func (s *state) persistEndpointCorrelation(c capture.NormalizedCapture, r capture.EndpointCorrelationResult, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "capture correlate-endpoints", string(s.cfg.Profile), version.Version, []string{"offline", "redacted", "live_requests=0"})
+	if e != nil {
+		return e
+	}
+	raw, _ := json.Marshal(r)
+	fp := models.StableFingerprint(string(raw))
+	id := models.StableID("capture_endpoint_correlation", models.StableFingerprint(c.Source.ID, fp))
+	data := map[string]any{"endpoint_correlation_id": id, "capture_id": c.Source.ID, "endpoint_classification": r.EndpointClassification, "flow_classification": r.FlowClassification, "dns_event_count": len(r.DNS), "endpoint_candidates": r.Endpoints, "tls_links": r.TLSLinks, "live_policy_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: id, RunID: run.ID, CaptureID: c.Source.ID, Fingerprint: fp, Data: data}); e != nil {
+		_ = db.FinishRun(ctx, run.ID, models.RunFailed, map[string]any{"live_requests": 0})
+		return e
+	}
+	if dossier != "" {
+		did := models.StableID("capture_endpoint_dossier", models.StableFingerprint(id, filepath.Base(dossier)))
+		if e = db.UpsertCaptureRecord(ctx, "capture_dossiers", database.CaptureRecord{ID: did, RunID: run.ID, CaptureID: c.Source.ID, Fingerprint: fp, Data: map[string]any{"safe_name": filepath.Base(dossier), "endpoint_correlation_id": id, "live_policy_requests": 0}}); e != nil {
+			return e
+		}
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"endpoint_correlation_id": id, "endpoint_classification": r.EndpointClassification, "flow_classification": r.FlowClassification, "live_requests": 0})
+}
+
 func (s *state) captureCommand() *cobra.Command {
 	root := &cobra.Command{Use: "capture", Short: "Import and normalize authorized captures offline; never contacts a target"}
 	var input, format, output string
@@ -289,6 +318,61 @@ func (s *state) captureCommand() *cobra.Command {
 	for _, name := range []string{"capture", "logs", "trigger", "output"} {
 		_ = correlate.MarkFlagRequired(name)
 	}
+	var endpointCapture, endpointLogs, endpointInventory, endpointTrigger, endpointOutput, endpointFormat string
+	endpointCorrelate := &cobra.Command{Use: "correlate-endpoints", Short: "Attribute SCCM endpoints from offline DNS, SNI, inventory, and redacted logs", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		if endpointFormat != "text" && endpointFormat != "json" {
+			return fmt.Errorf("unsupported output format %q", endpointFormat)
+		}
+		c, e := loadCapture(endpointCapture, "")
+		if e != nil {
+			return e
+		}
+		logs, warnings, e := capture.ReadSemanticLogs(endpointLogs)
+		if e != nil {
+			return e
+		}
+		inventory, e := capture.LoadInventoryEvidence(endpointInventory)
+		if e != nil {
+			return e
+		}
+		trigger, e := capture.LoadTrigger(endpointTrigger)
+		if e != nil {
+			return e
+		}
+		r, e := capture.CorrelateEndpoints(c, logs, inventory, trigger, capture.DefaultCorrelationWindow())
+		if e != nil {
+			return e
+		}
+		r.Warnings = append(r.Warnings, warnings...)
+		if e = capture.GenerateEndpointDossier(endpointOutput, r); e != nil {
+			return e
+		}
+		if e = s.persistEndpointCorrelation(c, r, endpointOutput); e != nil {
+			return e
+		}
+		if endpointFormat == "json" {
+			return json.NewEncoder(s.stdout).Encode(r)
+		}
+		fmt.Fprintf(s.stdout, "Offline SCCM endpoint attribution\nDNS events: %d\nEndpoint candidates: %d\nEvidence edges: %d\nTLS flows considered: %d\nEndpoint classification: %s\nFlow classification: %s\nDossier: %s\nLive SCCM policy requests: 0\n", len(r.DNS), len(r.Endpoints), len(r.Edges), len(r.TLSLinks), r.EndpointClassification, r.FlowClassification, filepath.Base(endpointOutput))
+		for i, x := range r.Endpoints {
+			if i >= 10 {
+				fmt.Fprintln(s.stdout, "Endpoint output truncated at 10 rows")
+				break
+			}
+			fmt.Fprintf(s.stdout, "  %s score=%d confidence=%s roles=%s support=%d contradictions=%d\n", x.ID, x.Score, x.Confidence, strings.Join(x.Roles, ","), len(x.SupportingEvidence), len(x.ContradictingEvidence))
+		}
+		fmt.Fprintln(s.stdout, "Safety: offline fingerprint correlation only; endpoint identity does not reveal TLS payloads.")
+		return nil
+	}}
+	endpointCorrelate.Flags().StringVar(&endpointCapture, "capture", "", "PCAP or PCAPNG capture (offline)")
+	endpointCorrelate.Flags().StringVar(&endpointLogs, "logs", "", "directory containing bounded local log files")
+	endpointCorrelate.Flags().StringVar(&endpointInventory, "inventory", "", "bounded passive client-inventory JSON")
+	endpointCorrelate.Flags().StringVar(&endpointTrigger, "trigger", "", "schema-v1 controlled trigger JSON")
+	endpointCorrelate.Flags().StringVar(&endpointOutput, "output", "", "new owner-only endpoint dossier directory")
+	endpointCorrelate.Flags().StringVar(&endpointFormat, "format", "text", "output format: text or json")
+	for _, name := range []string{"capture", "logs", "inventory", "trigger", "output"} {
+		_ = endpointCorrelate.MarkFlagRequired(name)
+	}
 	for _, c := range []*cobra.Command{imp, inspect, normalize, verify} {
 		c.Flags().StringVar(&input, "input", "", "HAR, PCAP, PCAPNG, or normalized JSON capture")
 		c.Flags().StringVar(&format, "format", "", "input format (auto from extension)")
@@ -296,7 +380,7 @@ func (s *state) captureCommand() *cobra.Command {
 	}
 	normalize.Flags().StringVar(&output, "output", "", "mode-0600 normalized JSON output")
 	_ = normalize.MarkFlagRequired("output")
-	root.AddCommand(imp, inspect, normalize, verify, list, show, correlate, s.guidedImportCommand())
+	root.AddCommand(imp, inspect, normalize, verify, list, show, correlate, endpointCorrelate, s.guidedImportCommand())
 	return root
 }
 

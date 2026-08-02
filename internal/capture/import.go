@@ -276,6 +276,7 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 		o += int(n)
 		idx := len(c.Packets)
 		c.Packets = append(c.Packets, Packet{ID: stableID("packet", fmt.Sprint(idx), fingerprint(packet)), Index: idx, Timestamp: time.Unix(int64(sec), int64(usec)*1000).UTC(), CapturedLength: n, OriginalLength: orig, Truncated: n < orig, LinkType: 1, Fingerprint: fingerprint(packet)})
+		c.DNSEvents = append(c.DNSEvents, parseDNSPacket(packet, c.Packets[len(c.Packets)-1].ID, c.Packets[len(c.Packets)-1].Timestamp)...)
 		payload, flow, seq, ok := tcpPayload(packet)
 		if ok && len(payload) > 0 {
 			if len(flows) >= l.MaxStreams {
@@ -302,8 +303,9 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 			}
 			if len(payload) >= 3 && payload[0] == 0x16 && payload[1] == 0x03 {
 				m.tls = true
-				if sni := tlsSNIFingerprint(payload); sni != "" {
-					m.sni = sni
+				if sni, version, alpn := tlsClientMetadata(payload); sni != "" || version != "" || alpn != "" {
+					m.sni, m.tlsVersion, m.alpn = sni, version, alpn
+					m.clientHelloAt = at
 				}
 			}
 		} else if bytes.Contains(packet, []byte{0x16, 0x03}) {
@@ -447,6 +449,9 @@ type flowMeta struct {
 	ended           time.Time
 	tls             bool
 	sni             string
+	tlsVersion      string
+	alpn            string
+	clientHelloAt   time.Time
 	gaps            int
 	duplicates      int
 	retransmissions int
@@ -502,6 +507,7 @@ func pairDirectional(c *NormalizedCapture, metadata map[string]*flowMeta) {
 			f.PacketIDs = append([]string(nil), m.packetIDs...)
 			f.PacketSizeSequence = append([]int(nil), m.packetSizes...)
 			f.StartedAt, f.EndedAt, f.TLS, f.SNI = m.started, m.ended, m.tls, m.sni
+			f.TLSVersion, f.ALPNFingerprint, f.ClientHelloAt = m.tlsVersion, m.alpn, m.clientHelloAt
 			f.Client, f.Server = m.client, m.server
 			f.Gaps, f.Duplicates, f.Retransmissions, f.Conflicts = m.gaps, m.duplicates, m.retransmissions, m.conflicts
 			f.Warnings = append([]string(nil), m.warnings...)
@@ -556,38 +562,44 @@ func fingerprintEndpoints(flow string) (Endpoint, Endpoint) {
 }
 
 func tlsSNIFingerprint(b []byte) string {
+	sni, _, _ := tlsClientMetadata(b)
+	return sni
+}
+
+func tlsClientMetadata(b []byte) (string, string, string) {
 	// TLS record + ClientHello, bounded to the first captured record.
 	if len(b) < 9 || b[0] != 0x16 || b[5] != 0x01 {
-		return ""
+		return "", "", ""
 	}
+	version := fmt.Sprintf("0x%02x%02x", b[1], b[2])
 	record := int(binary.BigEndian.Uint16(b[3:5]))
 	if record+5 > len(b) {
-		return ""
+		return "", "", ""
 	}
 	p := 9
 	if p+34 > len(b) {
-		return ""
+		return "", "", ""
 	}
 	p += 34
 	if p >= len(b) {
-		return ""
+		return "", "", ""
 	}
 	session := int(b[p])
 	p++
 	if p+session+2 > len(b) {
-		return ""
+		return "", "", ""
 	}
 	p += session
 	ciphers := int(binary.BigEndian.Uint16(b[p : p+2]))
 	p += 2
 	if p+ciphers+1 > len(b) {
-		return ""
+		return "", "", ""
 	}
 	p += ciphers
 	compress := int(b[p])
 	p++
 	if p+compress+2 > len(b) {
-		return ""
+		return "", "", ""
 	}
 	p += compress
 	extLen := int(binary.BigEndian.Uint16(b[p : p+2]))
@@ -596,27 +608,38 @@ func tlsSNIFingerprint(b []byte) string {
 	if end > len(b) {
 		end = len(b)
 	}
+	var sni, alpn string
 	for p+4 <= end {
 		typ := binary.BigEndian.Uint16(b[p : p+2])
 		n := int(binary.BigEndian.Uint16(b[p+2 : p+4]))
 		p += 4
 		if p+n > end {
-			return ""
+			return "", "", ""
 		}
 		if typ == 0 && n >= 5 {
 			q := p + 2
 			if q+3 > p+n {
-				return ""
+				return "", "", ""
 			}
 			nameLen := int(binary.BigEndian.Uint16(b[q+1 : q+3]))
 			q += 3
 			if q+nameLen <= p+n && nameLen > 0 && nameLen <= 255 {
-				return fingerprint([]byte(strings.ToLower(string(b[q : q+nameLen]))))[:16]
+				sni = fingerprint([]byte(strings.ToLower(string(b[q : q+nameLen]))))[:16]
+			}
+		}
+		if typ == 16 && n >= 3 {
+			q := p + 2
+			if q < p+n {
+				nameLen := int(b[q])
+				q++
+				if nameLen > 0 && q+nameLen <= p+n {
+					alpn = fingerprint(b[q : q+nameLen])[:16]
+				}
 			}
 		}
 		p += n
 	}
-	return ""
+	return sni, version, alpn
 }
 
 func tcpPayload(p []byte) ([]byte, string, uint32, bool) {

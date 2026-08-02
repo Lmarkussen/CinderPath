@@ -161,3 +161,27 @@ window. The closest TLS flow was the known WinRM control channel and is explicit
 contradicting evidence. The HTTPS/SNI-bearing flow lacked a matching log endpoint
 fingerprint. This does not justify policy framing, encrypted-value, or secret
 decoder work.
+
+## Offline endpoint attribution
+
+`cinderpath capture correlate-endpoints` accepts an offline PCAP/PCAPNG,
+bounded logs, passive client-inventory JSON, and a controlled trigger record.
+It extracts bounded UDP/TCP DNS questions and A/AAAA/CNAME answers, fingerprints
+all names and addresses, and joins those observations to TLS SNI, flow endpoint
+fingerprints, fixture-supported log hints, and inventory management-point
+metadata. It never resolves a name or contacts an endpoint.
+
+```bash
+# Synthetic offline paths only.
+cinderpath capture correlate-endpoints --capture capture.pcapng \
+  --logs client-logs --inventory client-inventory.json \
+  --trigger trigger.json --output reports/endpoint-correlation
+```
+
+The graph distinguishes exact matches, captured DNS resolution,
+address-to-flow links, SNI-to-hostname links, and inventory/log matches. Timing
+and common ports remain weak evidence; WinRM control ports are contradictions.
+On retained evidence, inventory plus logs supported a medium-confidence
+management-point endpoint, while DNS/address and SNI did not link that endpoint
+to a TLS flow. The result is `endpoint_identified_but_flow_ambiguous`, not a
+policy contract or secret-extraction prerequisite.

@@ -149,3 +149,11 @@ Matrix attachment requires reviewed sanitized data, records operator-declared cl
 Confirmed plaintext from later offline analysis retains existing controls: `--hide-secrets` wins; safe never displays plaintext; standard requires `--show-secrets`; aggressive/yolo defaults require an interactive TTY; non-TTY hides plaintext unless explicitly enabled. A dedicated secrets file is atomic mode `0600`. Ordinary JSON, HTML, SQLite fields, dossiers, manifests, logs, paths, and errors remain redacted. Offline usability is `unvalidated`.
 
 Windows execution is not part of normal Linux CI; PowerShell is covered by static and golden safety tests and must still receive optional manual validation in a disposable Windows lab. The live blocker remains reviewed, sanitized, reproducible captures from an already configured client across controlled versions and conditions, with exact framing, identity prerequisites, failure behavior, and proven read-only semantics. Live collection and `approved_live` promotion remain absent.
+
+The retained controlled kit was also processed by the offline endpoint
+correlator. It extracted 12 captured DNS events and joined fingerprint-only DNS,
+SNI, flow, log, and passive inventory metadata. Inventory and logs supported a
+medium-confidence management-point candidate, while no DNS/address or SNI edge
+linked it to a TLS flow. The distinct flow classification is
+`endpoint_identified_but_flow_ambiguous`; kit review, sanitization, import, and
+export readiness are unchanged.

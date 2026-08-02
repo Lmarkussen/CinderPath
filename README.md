@@ -36,6 +36,30 @@ and was rejected; the HTTPS candidate lacked matching log endpoint evidence.
 Attribution is `no_correlatable_tls_flow`, and secret readiness remains
 `not_ready_no_policy_evidence`.
 
+Offline `capture correlate-endpoints` now joins bounded captured DNS records,
+TLS SNI, fingerprinted flow addresses, fixture-supported log endpoint hints,
+and passive Windows client-inventory metadata. It performs no DNS lookup and
+never emits raw hostnames or addresses. Endpoint confidence and flow confidence
+remain separate; port 443 and timing cannot create strong attribution.
+
+```text
+Offline SCCM endpoint attribution
+DNS events: 12
+Endpoint candidates: 5
+Evidence edges: 13
+TLS flows considered: 6
+Endpoint classification: medium_confidence_management_point_endpoint
+Flow classification: endpoint_identified_but_flow_ambiguous
+Live SCCM policy requests: 0
+Safety: offline fingerprint correlation only; endpoint identity does not reveal TLS payloads.
+```
+
+This redacted output is from the retained authorized capture. Inventory and log
+fingerprints identified one management-point candidate, but neither captured
+DNS/address evidence nor the visible SNI connected it to a TLS flow. The result
+does not establish policy framing or improve secret readiness beyond
+`not_ready_no_policy_evidence`. Raw capture and logs remain outside Git.
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \

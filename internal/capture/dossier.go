@@ -119,3 +119,47 @@ func GenerateCorrelationDossier(output string, r CorrelationResult, force bool) 
 	}
 	return os.Rename(tmp, output)
 }
+
+// GenerateEndpointDossier atomically writes fingerprint-only endpoint evidence.
+func GenerateEndpointDossier(output string, r EndpointCorrelationResult) error {
+	if output == "" {
+		return errors.New("endpoint correlation dossier output is required")
+	}
+	if _, err := os.Lstat(output); err == nil {
+		return errors.New("endpoint correlation dossier output already exists")
+	}
+	parent := filepath.Dir(output)
+	tmp, err := os.MkdirTemp(parent, ".cinderpath-endpoints-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err = os.Chmod(tmp, 0o700); err != nil {
+		return err
+	}
+	files := map[string]any{
+		"dns-events.json":                   r.DNS,
+		"endpoint-candidates.json":          r.Endpoints,
+		"endpoint-evidence-graph.json":      r.Edges,
+		"tls-endpoint-links.json":           r.TLSLinks,
+		"endpoint-correlation-summary.json": r,
+	}
+	for name, value := range files {
+		b, e := json.MarshalIndent(value, "", "  ")
+		if e != nil {
+			return e
+		}
+		b = append(b, '\n')
+		if e = os.WriteFile(filepath.Join(tmp, name), b, 0o600); e != nil {
+			return e
+		}
+	}
+	md := fmt.Sprintf("# Offline endpoint correlation\n\nEndpoint classification: `%s`\n\nFlow classification: `%s`\n\nDNS events: %d\n\nEndpoint candidates: %d\n\nEndpoint identity does not reveal encrypted payloads. Live SCCM policy requests: 0.\n", r.EndpointClassification, r.FlowClassification, len(r.DNS), len(r.Endpoints))
+	gaps := "# Gaps and next actions\n\n- TLS payload remains opaque.\n- Endpoint fingerprints do not establish policy framing or secret fields.\n- Preserve raw capture and logs outside Git.\n"
+	for name, body := range map[string]string{"endpoint-correlation-summary.md": md, "gaps-and-next-actions.md": gaps} {
+		if err = os.WriteFile(filepath.Join(tmp, name), []byte(body), 0o600); err != nil {
+			return err
+		}
+	}
+	return os.Rename(tmp, output)
+}

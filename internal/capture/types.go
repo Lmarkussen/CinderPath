@@ -96,6 +96,9 @@ type Flow struct {
 	PacketSizeSequence  []int     `json:"packet_size_sequence,omitempty"`
 	TLS                 bool      `json:"tls"`
 	SNI                 string    `json:"sni_fingerprint,omitempty"`
+	TLSVersion          string    `json:"tls_version,omitempty"`
+	ALPNFingerprint     string    `json:"alpn_fingerprint,omitempty"`
+	ClientHelloAt       time.Time `json:"client_hello_at,omitempty"`
 }
 type StructuredField struct {
 	Path        string `json:"path"`
@@ -157,6 +160,25 @@ type NormalizedCapture struct {
 	Interfaces       []Interface    `json:"interfaces,omitempty"`
 	Packets          []Packet       `json:"packets,omitempty"`
 	Flows            []Flow         `json:"flows,omitempty"`
+	DNSEvents        []DNSEvent     `json:"dns_events,omitempty"`
+}
+
+// DNSEvent is bounded, fingerprint-only evidence extracted from captured DNS.
+type DNSEvent struct {
+	ID                     string    `json:"dns_event_id"`
+	Timestamp              time.Time `json:"timestamp,omitempty"`
+	QueryNameFingerprint   string    `json:"query_name_fingerprint,omitempty"`
+	QueryType              uint16    `json:"query_type,omitempty"`
+	ResponseCode           int       `json:"response_code"`
+	Response               bool      `json:"response"`
+	Truncated              bool      `json:"truncated"`
+	AnswerFingerprints     []string  `json:"answer_fingerprints,omitempty"`
+	CNAMEChainFingerprints []string  `json:"cname_chain_fingerprints,omitempty"`
+	TTL                    uint32    `json:"ttl,omitempty"`
+	PacketIDs              []string  `json:"packet_ids"`
+	FlowID                 string    `json:"flow_id,omitempty"`
+	Confidence             string    `json:"confidence"`
+	Warnings               []string  `json:"warnings,omitempty"`
 }
 type MatrixMember struct {
 	Label, CapturePath, Fingerprint string

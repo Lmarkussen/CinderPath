@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -50,6 +50,10 @@ help:
 	  '  timeline-test          normalized timestamp timeline tests' \
 	  '  flow-attribution-test  opaque TLS candidate-ranking tests' \
 	  '  capture-quality-test   reassembly and capture-quality tests' \
+	  '  dns-evidence-test      bounded offline DNS parsing tests' \
+	  '  endpoint-attribution-test passive SCCM endpoint scoring tests' \
+	  '  endpoint-graph-test    fingerprint-only endpoint graph tests' \
+	  '  endpoint-correlation-fuzz bounded DNS/endpoint fuzz smoke tests' \
 	  '  correlation-fuzz       bounded offline correlation fuzz smoke tests' \
 	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
@@ -228,6 +232,16 @@ flow-attribution-test:
 capture-quality-test:
 	go test ./internal/capture -run 'TestCaptureQuality|TestTCPOverlap'
 
+dns-evidence-test:
+	go test ./internal/capture -run 'TestDNS'
+
+endpoint-attribution-test:
+	go test ./internal/capture -run 'TestEndpointCorrelation|TestEndpointTiming|TestEndpointWinRM|TestEndpointTrust|TestLoadInventory'
+	go test ./internal/buildtool -run 'TestCaptureEndpointCorrelationCLI'
+
+endpoint-graph-test:
+	go test ./internal/capture -run 'TestEndpointCorrelation|TestEndpointDossier'
+
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 
 capture-fuzz:
@@ -261,6 +275,14 @@ correlation-fuzz:
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzTCPOverlapResolver$$' -fuzztime=1s
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzFlowCandidateScorer$$' -fuzztime=1s
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzCaptureQualitySerializer$$' -fuzztime=1s
+
+endpoint-correlation-fuzz:
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzDNSNameDecompression$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzDNSMessageParser$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzEndpointGraphConstruction$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzEndpointCandidateScoring$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzTLSMetadataCorrelation$$' -fuzztime=1s
+	go test ./internal/capture -run '^$$' -fuzz '^FuzzEndpointDossierSerialization$$' -fuzztime=1s
 
 capture-kit-fuzz:
 	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzMetadataParser$$' -fuzztime=1s

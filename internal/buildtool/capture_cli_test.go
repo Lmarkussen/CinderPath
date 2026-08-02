@@ -69,6 +69,46 @@ func TestCaptureCorrelationCLIOffline(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptureEndpointCorrelationCLIOffline(t *testing.T) {
+	d := t.TempDir()
+	at := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	c := capture.NormalizedCapture{SchemaVersion: capture.SchemaVersion, AlgorithmVersion: capture.AlgorithmVersion, Source: capture.Source{ID: "capture_synthetic", Format: "normalized_json", Fingerprint: "synthetic"}, DNSEvents: []capture.DNSEvent{{ID: "dns_synthetic", Timestamp: at, QueryNameFingerprint: "hostname_fingerprint", AnswerFingerprints: []string{"address_fingerprint"}, Confidence: "high"}}, Flows: []capture.Flow{{ID: "flow_synthetic", TLS: true, SNI: "hostname_fingerprint", StartedAt: at.Add(time.Second), Client: capture.Endpoint{AddressFingerprint: "client_fingerprint", Port: 50000}, Server: capture.Endpoint{AddressFingerprint: "address_fingerprint", Port: 443}}}}
+	b, _ := json.Marshal(c)
+	capturePath := filepath.Join(d, "capture.json")
+	if e := os.WriteFile(capturePath, b, 0600); e != nil {
+		t.Fatal(e)
+	}
+	logs := filepath.Join(d, "logs")
+	_ = os.Mkdir(logs, 0700)
+	line := `<![LOG[Sending message to https://mp.synthetic.invalid/route]LOG]!><time="10:00:00.000+000" date="07-01-2026" component="CcmMessaging" context="" type="1" thread="1" file="x">`
+	if e := os.WriteFile(filepath.Join(logs, "synthetic.log"), []byte(line+"\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	inv := filepath.Join(d, "inventory.json")
+	if e := os.WriteFile(inv, []byte(`{"schema_version":1,"sccm_authority":{"CurrentManagementPoint":"mp.synthetic.invalid"}}`), 0600); e != nil {
+		t.Fatal(e)
+	}
+	trigger := filepath.Join(d, "trigger.json")
+	tb, _ := json.Marshal(capture.Trigger{SchemaVersion: 1, Timestamp: at, Action: "machine_policy_cycle"})
+	_ = os.WriteFile(trigger, tb, 0600)
+	out, stderr, e := runCLI(t, "--db", filepath.Join(d, "endpoint.db"), "capture", "correlate-endpoints", "--capture", capturePath, "--logs", logs, "--inventory", inv, "--trigger", trigger, "--output", filepath.Join(d, "dossier"), "--format", "text")
+	if e != nil {
+		t.Fatalf("endpoint correlate: %v stderr=%s", e, stderr)
+	}
+	for _, want := range []string{"Offline SCCM endpoint attribution", "Endpoint classification:", "Flow classification:", "Live SCCM policy requests: 0"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %s", want, out)
+		}
+	}
+	if strings.Contains(out, "mp.synthetic.invalid") {
+		t.Fatal("raw endpoint leaked")
+	}
+	dbBytes, _ := os.ReadFile(filepath.Join(d, "endpoint.db"))
+	if bytes.Contains(dbBytes, []byte("mp.synthetic.invalid")) {
+		t.Fatal("raw endpoint persisted")
+	}
+}
 func TestCaptureCLIIntegrationOffline(t *testing.T) {
 	d := t.TempDir()
 	har := `{"log":{"version":"1.2","entries":[{"request":{"method":"GET","url":"http://synthetic.invalid/x?token=CLI_SECRET_SENTINEL","httpVersion":"HTTP/1.1","headers":[{"Name":"Authorization","Value":"Bearer CLI_SECRET_SENTINEL"}]},"response":{"status":200,"httpVersion":"HTTP/1.1"}}]}}`

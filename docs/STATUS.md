@@ -742,3 +742,15 @@ Suggested commit message for the completed phase:
 ```text
 Add guarded SCCM authentication validation
 ```
+
+## Offline endpoint attribution status
+
+Bounded UDP/TCP DNS extraction and fingerprint-only endpoint attribution are
+implemented. Client inventory, fixture-supported log endpoint hints, captured
+DNS, SNI, and flow addresses join through a deterministic evidence graph;
+endpoint confidence and flow confidence remain separate. The retained
+controlled capture yielded 12 DNS events and five candidates. Inventory and
+log evidence identified one management-point endpoint at medium confidence,
+but captured DNS/address and SNI evidence did not link it to a TLS flow. The
+flow result is `endpoint_identified_but_flow_ambiguous`, and secret readiness
+remains `not_ready_no_policy_evidence`. No resolution or network action occurs.
