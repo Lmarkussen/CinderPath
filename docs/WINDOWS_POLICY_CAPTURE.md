@@ -119,3 +119,8 @@ script has Linux static/golden coverage and completed one authorized runtime
 on Windows Server 2019 with Windows PowerShell 5.1. It recorded bounded schema,
 instance, file, and registry metadata and zero live requests; missing `Reduced`,
 `DM`, and `User` policy namespaces were nonfatal. No artifact content was copied.
+
+The fixture-driven selector was verified on the same VM. It observed 15
+bounded instances and retained 10 concrete authority, deployment-state, and
+configuration records after filtering provider noise. Three XML properties
+require explicit preview review; none was copied.

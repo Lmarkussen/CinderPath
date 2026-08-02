@@ -6,6 +6,8 @@ import "time"
 const SchemaVersion = 1
 const AlgorithmVersion = "local-sccm-artifact-v1"
 
+const SchemaAnalysisVersion = "sccm-policy-schema-v1"
+
 type Limits struct {
 	MaxNamespaces, MaxClasses, MaxSelectedClasses, MaxInstances, MaxProperties int
 	MaxFiles, MaxDepth, MaxObservations                                        int
@@ -168,4 +170,95 @@ type Finding struct {
 	State         string `json:"state"`
 	Description   string `json:"description"`
 	Vulnerability bool   `json:"vulnerability"`
+}
+
+type SchemaFeature struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type SchemaRanking struct {
+	SchemaID               string          `json:"schema_id"`
+	Namespace              string          `json:"namespace"`
+	Class                  string          `json:"class"`
+	Classification         string          `json:"classification"`
+	Confidence             string          `json:"confidence"`
+	Score                  int             `json:"score"`
+	EstimatedInstanceCount int             `json:"estimated_instance_count"`
+	CountState             string          `json:"count_state"`
+	SupportingEvidence     []string        `json:"supporting_evidence"`
+	ContradictingEvidence  []string        `json:"contradicting_evidence,omitempty"`
+	Features               []SchemaFeature `json:"schema_features"`
+	ExcludedByDefault      bool            `json:"excluded_by_default"`
+	ExclusionReason        string          `json:"exclusion_reason,omitempty"`
+}
+
+type SchemaFamily struct {
+	FamilyID      string   `json:"family_id"`
+	FamilyType    string   `json:"family_type"`
+	StructuralKey string   `json:"structural_key"`
+	SchemaIDs     []string `json:"schema_ids"`
+	Warnings      []string `json:"warnings,omitempty"`
+}
+
+type InstanceSelection struct {
+	SchemaID               string   `json:"schema_id"`
+	Namespace              string   `json:"namespace"`
+	Class                  string   `json:"class"`
+	Score                  int      `json:"selection_score"`
+	Confidence             string   `json:"confidence"`
+	EstimatedInstanceCount int      `json:"estimated_instance_count"`
+	Reasons                []string `json:"reasons"`
+	Warnings               []string `json:"warnings,omitempty"`
+	Selected               bool     `json:"selected"`
+}
+
+type ParserStatus struct {
+	ParserID           string   `json:"parser_id"`
+	Classification     string   `json:"classification"`
+	Lifecycle          string   `json:"lifecycle"`
+	Fixture            string   `json:"supporting_fixture,omitempty"`
+	RequiredProperties []string `json:"required_properties"`
+	ObservedSchemas    []string `json:"observed_schemas,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
+}
+type ParsedPolicyFixture struct {
+	ParserID      string            `json:"parser_id"`
+	Lifecycle     string            `json:"lifecycle"`
+	Namespace     string            `json:"namespace"`
+	Class         string            `json:"class"`
+	Relationships map[string]string `json:"relationships,omitempty"`
+	Warnings      []string          `json:"warnings,omitempty"`
+}
+
+type ContentPlan struct {
+	CandidateID    string   `json:"candidate_id"`
+	InstanceID     string   `json:"instance_id"`
+	Property       string   `json:"property"`
+	Shape          string   `json:"shape"`
+	OriginalLength string   `json:"original_length_bucket"`
+	Fingerprint    string   `json:"fingerprint,omitempty"`
+	Mode           string   `json:"recommended_export_mode"`
+	Eligible       bool     `json:"eligible"`
+	ReviewRequired bool     `json:"review_required"`
+	Reasons        []string `json:"reasons"`
+	Blockers       []string `json:"blockers,omitempty"`
+}
+
+type SchemaAnalysis struct {
+	SchemaVersion        int                 `json:"schema_version"`
+	AlgorithmVersion     string              `json:"algorithm_version"`
+	InventoryFingerprint string              `json:"inventory_fingerprint"`
+	Rankings             []SchemaRanking     `json:"schema_rankings"`
+	Families             []SchemaFamily      `json:"schema_families"`
+	InstancePlan         []InstanceSelection `json:"instance_selection_plan"`
+	SelectedInstances    []InstanceMetadata  `json:"selected_instance_metadata"`
+	Parsers              []ParserStatus      `json:"parser_status"`
+	Relationships        []Relationship      `json:"relationship_graph"`
+	ContentPlan          []ContentPlan       `json:"content_export_plan"`
+	Previews             []any               `json:"content_previews"`
+	Readiness            string              `json:"secret_readiness"`
+	Findings             []Finding           `json:"findings"`
+	Capabilities         []string            `json:"capabilities"`
+	LivePolicyRequests   int                 `json:"live_policy_requests"`
 }

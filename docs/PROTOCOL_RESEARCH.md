@@ -193,6 +193,12 @@ entropy, base64 shape, or timestamp alone cannot establish a secret. See
 [`LOCAL_POLICY_ARTIFACTS.md`](LOCAL_POLICY_ARTIFACTS.md). No local content copy,
 decryption, or live protocol action is implied.
 
+Fixture-backed authority, assignment, configuration, and deployment-state
+schema parsers now distinguish runtime metadata validation from content
+validation. The authorized read-only run selected 10 concrete records and
+planned three XML previews, but copied no property and established no encrypted
+value or protection format.
+
 One authorized Windows Server 2019 / PowerShell 5.1 execution confirmed the
 metadata path against an installed Configuration Manager 5.00.9128.1007 client.
 It observed accessible policy schemas but no structurally supported encrypted

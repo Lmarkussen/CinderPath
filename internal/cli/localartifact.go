@@ -79,8 +79,113 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 	_ = inspect.MarkFlagRequired("output")
 	exportPlan.Flags().StringVar(&output, "output", "", "mode-0600 export-plan JSON")
 	_ = exportPlan.MarkFlagRequired("output")
-	root.AddCommand(discover, inspect, show, exportPlan)
+	schemaCommand := func(use string, dossier bool) *cobra.Command {
+		var schemaInventory, schemaOutput, schemaFormat string
+		var schemaMaxClasses, schemaMaxInstances int
+		var schemaIncludeIntrinsic bool
+		cmd := &cobra.Command{Use: use, Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+			v, e := localartifact.Load(schemaInventory, localartifact.DefaultLimits())
+			if e != nil {
+				return e
+			}
+			a := localartifact.AnalyzeSchemas(v, localartifact.SchemaOptions{MaxClasses: schemaMaxClasses, MaxInstances: schemaMaxInstances, IncludeIntrinsic: schemaIncludeIntrinsic})
+			if dossier {
+				if e = localartifact.GenerateSchemaDossier(schemaOutput, a); e != nil {
+					return e
+				}
+				if e = s.persistPolicySchemaAnalysis(a, schemaOutput); e != nil {
+					return e
+				}
+			} else if schemaOutput != "" {
+				b, _ := json.MarshalIndent(a, "", "  ")
+				if e = atomicCaptureWrite(schemaOutput, append(b, '\n')); e != nil {
+					return e
+				}
+			}
+			return printSchemaAnalysis(s, a, schemaFormat, use, schemaOutput)
+		}}
+		cmd.Flags().StringVar(&schemaInventory, "inventory", "", "schema-v1 local-artifacts JSON")
+		cmd.Flags().StringVar(&schemaOutput, "output", "", "new dossier directory or mode-0600 JSON")
+		cmd.Flags().IntVar(&schemaMaxClasses, "max-classes", 96, "maximum selected concrete classes (1-96)")
+		cmd.Flags().IntVar(&schemaMaxInstances, "max-instances", 2000, "maximum planned total instances (1-2000)")
+		cmd.Flags().BoolVar(&schemaIncludeIntrinsic, "include-intrinsic", false, "include intrinsic classes diagnostically; never grants content eligibility")
+		cmd.Flags().StringVar(&schemaFormat, "format", "text", "text or json")
+		_ = cmd.MarkFlagRequired("inventory")
+		if dossier {
+			_ = cmd.MarkFlagRequired("output")
+		}
+		return cmd
+	}
+	root.AddCommand(discover, inspect, show, exportPlan, schemaCommand("rank-schemas", false), schemaCommand("plan-instances", false), schemaCommand("inspect-instances", true), schemaCommand("parser-status", false), schemaCommand("content-plan", false))
 	return root
+}
+
+func (s *state) persistPolicySchemaAnalysis(a localartifact.SchemaAnalysis, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "lab client-artifacts inspect-instances", string(s.cfg.Profile), version.Version, []string{"offline", "local_read_only", "schema_analysis", "live_requests=0"})
+	if e != nil {
+		return e
+	}
+	rid := models.StableID("policy_schema_analysis", a.InventoryFingerprint+"|"+a.AlgorithmVersion)
+	data := map[string]any{"schema_rankings": a.Rankings, "schema_families": a.Families, "instance_selection_plan": a.InstancePlan, "instance_fingerprints": a.SelectedInstances, "relationship_edges": a.Relationships, "parser_lifecycle": a.Parsers, "content_plan": a.ContentPlan, "secret_readiness": a.Readiness, "dossier": filepath.Base(dossier), "live_policy_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: rid, RunID: run.ID, CaptureID: "policy_schema_analysis", Fingerprint: a.InventoryFingerprint, Data: data}); e != nil {
+		return e
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"policy_schema_analysis": rid, "live_requests": 0})
+}
+
+func printSchemaAnalysis(s *state, a localartifact.SchemaAnalysis, format, operation, output string) error {
+	if format != "text" && format != "json" {
+		return fmt.Errorf("unsupported output format %q", format)
+	}
+	if format == "json" {
+		return json.NewEncoder(s.stdout).Encode(a)
+	}
+	selected := 0
+	excluded := 0
+	eligible := 0
+	for _, p := range a.InstancePlan {
+		if p.Selected {
+			selected++
+		}
+	}
+	for _, r := range a.Rankings {
+		if r.ExcludedByDefault {
+			excluded++
+		}
+	}
+	for _, p := range a.ContentPlan {
+		if p.Eligible {
+			eligible++
+		}
+	}
+	fmt.Fprintf(s.stdout, "SCCM policy schema analysis\nOperation: %s\nSchemas ranked: %d\nIntrinsic/noise excluded by default: %d\nSchema families: %d\nClasses selected for bounded instance inspection: %d\nConcrete selected instances: %d\nRelationship edges: %d\nParser-relevant preview candidates: %d\nContent copied: 0\nSecret readiness: %s\n", operation, len(a.Rankings), excluded, len(a.Families), selected, len(a.SelectedInstances), len(a.Relationships), eligible, a.Readiness)
+	if output != "" {
+		fmt.Fprintf(s.stdout, "Output: %s\n", filepath.Base(output))
+	}
+	for i, r := range a.Rankings {
+		if i == 10 {
+			fmt.Fprintln(s.stdout, "Schema ranking truncated at 10 rows")
+			break
+		}
+		fmt.Fprintf(s.stdout, "  %s\\%s classification=%s score=%d confidence=%s selected=%t\n", r.Namespace, r.Class, r.Classification, r.Score, r.Confidence, planSelected(a.InstancePlan, r.SchemaID))
+	}
+	fmt.Fprintln(s.stdout, "Safety: offline/read-only metadata; no SCCM methods, policy retrieval, content copy, credential extraction, or live request.")
+	fmt.Fprintln(s.stdout, "Live SCCM policy requests: 0")
+	return nil
+}
+func planSelected(p []localartifact.InstanceSelection, id string) bool {
+	for _, x := range p {
+		if x.SchemaID == id {
+			return x.Selected
+		}
+	}
+	return false
 }
 
 func printLocalArtifacts(s *state, r localartifact.Result, format, output string) error {

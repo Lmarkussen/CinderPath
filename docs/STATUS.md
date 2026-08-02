@@ -767,3 +767,9 @@ PowerShell 5.1 runtime completed with 10 namespace records, 1,024 bounded class
 schemas, 8 instance records, 85 file records, 33 registry records, and zero
 live requests. Policy schemas were found, but no supported encrypted-value
 candidate; readiness is `ready_for_policy_schema_parser`, not secret recovery.
+
+Fixture-driven schema analysis now ranks evidence, clusters families, filters
+intrinsic/provider noise, records parser lifecycle and instance-of edges, and
+produces a review-only content plan. The revised runtime observed 15 bounded
+instances; offline selection retained 10 concrete records and three XML preview
+candidates, copied nothing, and reached `ready_for_policy_instance_parser`.

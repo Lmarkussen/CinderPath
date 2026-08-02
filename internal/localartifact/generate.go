@@ -52,6 +52,13 @@ func Create(o CreateOptions) error {
 	script = strings.ReplaceAll(script, `qualifiers=@($c.CimClassQualifiers.Name|Sort-Object)`, `qualifiers=@($c.CimClassQualifiers|ForEach-Object{$_.Name}|Sort-Object)`)
 	script = strings.ReplaceAll(script, `methods=@($c.CimClassMethods.Name|Sort-Object)`, `methods=@($c.CimClassMethods|ForEach-Object{$_.Name}|Sort-Object)`)
 	script = strings.ReplaceAll(script, `$relevant=($ns-like 'root\ccm\Policy*' -or $combined-match 'policy|assignment|message|authority|cache')`, `$relevant=(-not $c.CimClassName.StartsWith('__'))-and($ns-like 'root\ccm\Policy*' -or $combined-match 'policy|assignment|message|authority|cache')`)
+	script = strings.ReplaceAll(script, `$MaxSelectedClasses=64;`, `$MaxSelectedClasses=96;`)
+	script = strings.ReplaceAll(script, `$MaxObservations=20000`, `$MaxObservations=50000`)
+	script = strings.ReplaceAll(script, `$Observations=0`, `$Observations=0;$TotalInstances=0`)
+	script = strings.ReplaceAll(script, `Get-CimInstance -Namespace $ns -ClassName $c.CimClassName -ErrorAction Stop|Select-Object -First $MaxInstances`, `Get-CimInstance -Namespace $ns -ClassName $c.CimClassName -ErrorAction Stop|Select-Object -First ([Math]::Min($MaxInstances,[Math]::Max(0,2000-$TotalInstances)))`)
+	script = strings.ReplaceAll(script, `$count=$rows.Count;$countState='bounded';$idx=0`, `$count=$rows.Count;$TotalInstances+=$count;$countState='bounded';$idx=0`)
+	script = strings.ReplaceAll(script, `$ip=@();foreach($p in @($c.CimClassProperties|Select-Object -First $MaxProperties))`, `$ip=@();foreach($p in @($row.CimInstanceProperties|Select-Object -First $MaxProperties))`)
+	script = strings.ReplaceAll(script, `if($s-match '^\s*[\{\[]'){return "JSON_like"}`, `if($s-match '^\{?[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}\}?$'){return "GUID_like"};if($s-match '^\s*[\{\[]'){return "JSON_like"}`)
 	script = strings.ReplaceAll(script, `entropy=0;printable_ratio=`, `entropy=(Get-Entropy $sample);printable_ratio=`)
 	for n, b := range map[string]string{"Discover-CinderPathPolicyArtifacts.ps1": script, "README.txt": "Passive local SCCM artifact discovery. The script inventories bounded metadata only; it invokes no client method and performs no network request.\n"} {
 		if e = os.WriteFile(filepath.Join(tmp, n), []byte(b), 0700); e != nil {

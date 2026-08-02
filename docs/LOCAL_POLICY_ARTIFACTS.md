@@ -92,3 +92,30 @@ supported encrypted-value candidate, so the result was
 `ready_for_policy_schema_parser`. Intrinsic WMI system classes are explicitly
 excluded from policy-instance scoring; their binary fields cannot establish a
 policy secret. No fixture-driven decoder work is justified yet.
+
+## Fixture-driven schema and instance analysis
+
+`rank-schemas`, `plan-instances`, `inspect-instances`, `parser-status`, and
+`content-plan` distinguish schemas from concrete instances. A 1,024-class
+inventory is not 1,024 policies. The verified analysis excluded 430
+intrinsic/provider schemas, formed 355 structural families, and selected 10
+concrete metadata records from 15 observed instances. Fixture-backed authority,
+assignment, configuration, and deployment-state parsers reach at most
+`runtime_metadata_validated`.
+
+Three XML-shaped properties were planned as `redacted_preview` candidates, but
+nothing was copied. CLSIDs are `GUID_like`, not JSON, and SID/CLSID/provider
+metadata is ineligible. Readiness is `ready_for_policy_instance_parser`;
+encrypted-value and decoder work remain unjustified.
+
+```text
+Schemas ranked: 1024
+Intrinsic/noise excluded by default: 430
+Schema families: 355
+Concrete selected instances: 10
+Relationship edges: 10
+Parser-relevant preview candidates: 3
+Content copied: 0
+Secret readiness: ready_for_policy_instance_parser
+Live SCCM policy requests: 0
+```

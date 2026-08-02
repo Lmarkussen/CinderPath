@@ -74,6 +74,12 @@ schemas but no supported encrypted-value candidate, supporting
 `ready_for_policy_schema_parser` only; no content was copied and no secret or
 decryption claim was made.
 
+Fixture-driven follow-on analysis now ranks schemas, clusters families, filters
+intrinsic/provider noise, plans concrete instance inspection, and separates
+preview planning from copying. The verified run selected 10 concrete records
+and three XML preview candidates while copying zero content. Readiness is
+`ready_for_policy_instance_parser`; encrypted-value work remains blocked.
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \

@@ -118,5 +118,9 @@ The local-artifact script completed one authorized Windows Server 2019 /
 PowerShell 5.1 runtime with bounded namespace, schema, instance, file, and
 registry metadata and zero live requests. Preserve the runtime fixes for empty
 pipeline counts, locked files, explicit collection enumeration, and nonfatal
-errors. The run supports encrypted-value classifier research only; it copied no
-artifact content and does not establish general Windows compatibility.
+errors. Fixture-driven analysis now filters intrinsic/provider/registration
+noise, clusters structural families, and separates instance and content plans.
+Preserve brace-GUID classification before JSON and concrete-instance property
+enumeration. The verified result is only `ready_for_policy_instance_parser`;
+encrypted-value and decoder readiness remain blocked. No artifact content was
+copied, and this does not establish general Windows compatibility.

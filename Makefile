@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz policy-schema-test policy-instance-selection-test policy-schema-parser-test policy-content-plan-test policy-schema-fuzz capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -58,6 +58,11 @@ help:
 	  '  local-artifact-cli-test offline local-artifact CLI tests' \
 	  '  local-artifact-script-test passive PowerShell static tests' \
 	  '  local-artifact-fuzz    bounded metadata/parser fuzz smoke tests' \
+	  '  policy-schema-test     schema ranking and family tests' \
+	  '  policy-instance-selection-test bounded concrete instance planner tests' \
+	  '  policy-schema-parser-test fixture-driven schema parser tests' \
+	  '  policy-content-plan-test reviewed preview/export gate tests' \
+	  '  policy-schema-fuzz     bounded schema/planner/parser fuzz smoke tests' \
 	  '  correlation-fuzz       bounded offline correlation fuzz smoke tests' \
 	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
@@ -254,6 +259,25 @@ local-artifact-cli-test:
 
 local-artifact-script-test:
 	go test ./internal/localartifact -run '^TestCreatePassivePowerShell51$$'
+
+policy-schema-test:
+	go test ./internal/localartifact -run 'TestSchemaRanking|TestIntrinsic'
+
+policy-instance-selection-test:
+	go test ./internal/localartifact -run 'TestInstancePlan'
+
+policy-schema-parser-test:
+	go test ./internal/localartifact -run 'TestFixtureParsers'
+
+policy-content-plan-test:
+	go test ./internal/localartifact -run 'TestSchemaRankingSelectionFamiliesAndDossier|TestPasswordName'
+
+policy-schema-fuzz:
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzSchemaClassifier$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzSchemaClustering$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzInstancePlanner$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzContentGate$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzPolicyFixtureParser$$' -fuzztime=1s
 
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 

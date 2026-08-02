@@ -163,6 +163,10 @@ sanitization and bundle state. `lab client-artifacts` consumes metadata JSON and
 never makes a raw capture import-ready. See
 [`LOCAL_POLICY_ARTIFACTS.md`](LOCAL_POLICY_ARTIFACTS.md).
 
+Schema ranking and `runtime_metadata_validated` parser status remain separate
+from capture-kit sanitization and review gates. The verified schema analysis
+copied no policy property into a kit.
+
 The local-artifact generator has also completed one authorized Windows Server
 2019 / PowerShell 5.1 runtime. It produced redacted metadata only and made zero
 live policy requests. This does not alter capture-kit review, sanitization,

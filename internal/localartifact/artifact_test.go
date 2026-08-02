@@ -48,6 +48,9 @@ func TestCreatePassivePowerShell51(t *testing.T) {
 	if !strings.Contains(s, `-not $c.CimClassName.StartsWith('__')`) {
 		t.Fatal("intrinsic WMI classes must not consume selected-instance budget")
 	}
+	if !strings.Contains(s, `$row.CimInstanceProperties|Select-Object -First $MaxProperties`) {
+		t.Fatal("concrete instance properties must be inventoried independently of inherited/empty class properties")
+	}
 }
 
 func TestLoadAnalyzeAndDossier(t *testing.T) {
@@ -185,5 +188,128 @@ func FuzzDossierSerializer(f *testing.F) {
 		r := Analyze(syntheticInventory())
 		r.SecretReadiness = "not_ready_no_policy_artifact"
 		_ = GenerateDossier(filepath.Join(t.TempDir(), "d"), r)
+	})
+}
+
+func TestSchemaRankingSelectionFamiliesAndDossier(t *testing.T) {
+	v := syntheticInventory()
+	v.Classes = append(v.Classes, ClassSchema{ID: "intrinsic", Namespace: `root\ccm\Policy`, Name: "__EventFilter", InstanceCount: 5, CountState: "bounded", Properties: []PropertySchema{{Name: "Password", CIMType: "String"}}})
+	a := AnalyzeSchemas(v, SchemaOptions{MaxClasses: 96, MaxInstances: 2000})
+	if len(a.Rankings) != 2 || len(a.Families) != 2 {
+		t.Fatalf("rankings=%d families=%d", len(a.Rankings), len(a.Families))
+	}
+	if !a.Rankings[1].ExcludedByDefault || a.Rankings[1].Classification != "intrinsic_wmi_class" {
+		t.Fatalf("intrinsic=%#v", a.Rankings[1])
+	}
+	if len(a.SelectedInstances) != 1 || a.Readiness != "ready_for_policy_instance_parser" {
+		t.Fatalf("instances=%d readiness=%s", len(a.SelectedInstances), a.Readiness)
+	}
+	if len(a.ContentPlan) != 1 || !a.ContentPlan[0].Eligible || a.ContentPlan[0].Mode != "redacted_preview" {
+		t.Fatalf("content=%#v", a.ContentPlan)
+	}
+	d := filepath.Join(t.TempDir(), "dossier")
+	if e := GenerateSchemaDossier(d, a); e != nil {
+		t.Fatal(e)
+	}
+	entries, _ := os.ReadDir(d)
+	if len(entries) != 11 {
+		t.Fatalf("files=%d", len(entries))
+	}
+	for _, e := range entries {
+		st, _ := os.Stat(filepath.Join(d, e.Name()))
+		if st.Mode().Perm() != 0600 {
+			t.Fatalf("mode %s=%o", e.Name(), st.Mode().Perm())
+		}
+	}
+}
+
+func TestSchemaRankingDoesNotTrustNamesAlone(t *testing.T) {
+	v := syntheticInventory()
+	v.Classes[0].Namespace = `root\ccm`
+	v.Classes[0].Name = "PasswordSecretToken"
+	v.Classes[0].InstanceCount = 0
+	v.Classes[0].CountState = "bounded"
+	v.Instances = nil
+	a := AnalyzeSchemas(v, SchemaOptions{})
+	if a.Rankings[0].Score >= 45 || a.Readiness != "ready_for_policy_schema_parser" {
+		t.Fatalf("ranking=%#v readiness=%s", a.Rankings[0], a.Readiness)
+	}
+}
+
+func TestInstancePlanBoundsAndDeterminism(t *testing.T) {
+	v := syntheticInventory()
+	a := AnalyzeSchemas(v, SchemaOptions{MaxClasses: 1, MaxInstances: 1})
+	b := AnalyzeSchemas(v, SchemaOptions{MaxClasses: 1, MaxInstances: 1})
+	ja, _ := json.Marshal(a)
+	jb, _ := json.Marshal(b)
+	if string(ja) != string(jb) {
+		t.Fatal("analysis nondeterministic")
+	}
+}
+func TestFixtureParsers(t *testing.T) {
+	for _, n := range []string{"policy_authority_v1.json", "policy_assignment_v1.json", "policy_configuration_v1.json", "deployment_state_v1.json"} {
+		b, e := os.ReadFile(filepath.Join("..", "..", "testdata", "localartifact", n))
+		if e != nil {
+			t.Fatal(e)
+		}
+		p, e := ParsePolicyFixture(b)
+		if e != nil || p.Lifecycle != "fixture_validated" {
+			t.Fatalf("%s %#v %v", n, p, e)
+		}
+	}
+	if _, e := ParsePolicyFixture([]byte(`{"schema_version":1}`)); e == nil {
+		t.Fatal("malformed fixture accepted")
+	}
+}
+func FuzzPolicyFixtureParser(f *testing.F) {
+	f.Add([]byte(`{"schema_version":1,"namespace":"root\\ccm","class":"CCM_Authority","properties":{}}`))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if len(b) > 1<<20 {
+			return
+		}
+		_, _ = ParsePolicyFixture(b)
+	})
+}
+
+func FuzzSchemaClassifier(f *testing.F) {
+	f.Add("CCM_Policy", "root\\ccm\\Policy")
+	f.Fuzz(func(t *testing.T, n, ns string) {
+		if len(n) > 128 || len(ns) > 256 {
+			return
+		}
+		_ = rankSchema(ClassSchema{ID: "x", Name: n, Namespace: ns})
+	})
+}
+func FuzzSchemaClustering(f *testing.F) {
+	f.Add("PolicyID", "String")
+	f.Fuzz(func(t *testing.T, n, typ string) {
+		if len(n) > 128 || len(typ) > 64 {
+			return
+		}
+		_ = clusterSchemas([]ClassSchema{{ID: "x", Name: "X", Properties: []PropertySchema{{Name: n, CIMType: typ}}}})
+	})
+}
+func FuzzInstancePlanner(f *testing.F) {
+	f.Add("CCM_Policy", 1)
+	f.Fuzz(func(t *testing.T, n string, count int) {
+		if len(n) > 128 || count < 0 || count > 5000 {
+			return
+		}
+		v := syntheticInventory()
+		v.Classes[0].Name = n
+		v.Classes[0].InstanceCount = count
+		_ = AnalyzeSchemas(v, SchemaOptions{})
+	})
+}
+func FuzzContentGate(f *testing.F) {
+	f.Add("XML_like", "Data")
+	f.Fuzz(func(t *testing.T, shape, name string) {
+		if len(shape) > 64 || len(name) > 128 {
+			return
+		}
+		x := syntheticInventory().Instances[0]
+		x.Properties[0].Shape = shape
+		x.Properties[0].Name = name
+		_ = contentPlans(x, syntheticInventory().Classes[0])
 	})
 }

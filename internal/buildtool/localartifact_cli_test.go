@@ -45,4 +45,14 @@ func TestLocalArtifactCLIOffline(t *testing.T) {
 	if e = json.Unmarshal(pb, &parsed); e != nil {
 		t.Fatal(e)
 	}
+	for _, command := range []string{"rank-schemas", "plan-instances", "parser-status", "content-plan"} {
+		out, stderr, e = runCLI(t, "lab", "client-artifacts", command, "--inventory", inv, "--format", "text")
+		if e != nil || !strings.Contains(out, "Live SCCM policy requests: 0") || !strings.Contains(out, "Content copied: 0") {
+			t.Fatalf("%s: %v %s %s", command, e, out, stderr)
+		}
+	}
+	schemaDossier := filepath.Join(d, "schema-dossier")
+	if _, stderr, e = runCLI(t, "--db", filepath.Join(d, "schema.db"), "lab", "client-artifacts", "inspect-instances", "--inventory", inv, "--output", schemaDossier); e != nil {
+		t.Fatalf("inspect-instances: %v %s", e, stderr)
+	}
 }
