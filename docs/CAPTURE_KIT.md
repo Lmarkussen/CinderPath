@@ -10,6 +10,10 @@ On 2026-08-02, a generated kit was tested on one disposable GOAD MECM client run
 
 The remote test harness used the isolated GOAD lab inventory's existing self-signed WinRM HTTPS exception for only that authorized VM. CinderPath did not create, modify, or generalize that exception. Runtime coverage is limited to this exact environment; other Windows and PowerShell versions remain unverified.
 
+The same client was subsequently observed for exactly ten minutes without triggering policy retrieval or creating artificial traffic. The existing `pktmon` 10.0.17763.3650 captured one active adapter with a 64 MiB circular limit and full packet snapshots. It reported 212 packets and no drops, preserved a 50,331,648-byte ETL, and locally converted it to a 192,444-byte PCAPNG. Offline CinderPath parsing decoded 212 packet records but reconstructed no supported flows or visible HTTP exchanges; opaque-TLS and incomplete/conflicting TCP-reassembly warnings remained. The capture is classified as `sccm_endpoint_metadata_only`, not a policy exchange. Its sentinel, raw ETL, and PCAPNG remain sensitive, unreviewed, outside Git, and ineligible for guided import or evidence-bundle export.
+
+Generated `raw/capture-started-at.txt` and `raw/local-raw-manifest.json` are lifecycle evidence. Validation treats them as preparation and finalization markers, respectively, so a returned finalized kit with blank operator timestamp fields is still `requires_sanitization` rather than `ready_for_capture`.
+
 All names below are synthetic authorized-lab examples:
 
 ```bash

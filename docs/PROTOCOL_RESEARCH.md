@@ -76,3 +76,11 @@ Live SCCM execution remains unsupported and unapproved. Eventual review still
 requires authorized multi-version captures, exact identity/framing/sequence
 evidence, counterexamples, failure behavior, rate limits, and demonstrated
 read-only semantics. Research signatures are evidence, not authorization.
+
+The first ten-minute natural-activity Windows baseline decoded 212 PCAPNG
+packet records but yielded no supported flows or visible HTTP exchanges.
+Opaque-TLS and incomplete/conflicting TCP-reassembly warnings prevent protocol
+claims. This capture is metadata-only evidence and does not change the live
+blocker. A useful next controlled variable is a separately authorized capture
+window around a normal operator-managed client cycle, still without CinderPath
+triggering or replaying policy traffic.

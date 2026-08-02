@@ -167,6 +167,27 @@ func TestStateMachineImportExportAndSentinel(t *testing.T) {
 		t.Fatalf("state=%s", v.State)
 	}
 }
+
+func TestGeneratedWindowsLifecycleMarkersDriveState(t *testing.T) {
+	p := testKit(t)
+	if err := os.WriteFile(filepath.Join(p, "raw", "capture-started-at.txt"), []byte("2026-08-02T10:00:00Z\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := Validate(p)
+	if err != nil || v.State != CaptureInProgress {
+		t.Fatalf("prepared state: err=%v state=%s blockers=%v", err, v.State, v.Blockers)
+	}
+	if err := os.WriteFile(filepath.Join(p, "raw", "sample.pcapng"), []byte("synthetic capture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p, "raw", "local-raw-manifest.json"), []byte(`{"schema_version":1,"raw_sensitive":true,"safe_for_sharing":false,"files":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err = Validate(p)
+	if err != nil || v.State != RequiresSanitization {
+		t.Fatalf("finalized state: err=%v state=%s blockers=%v", err, v.State, v.Blockers)
+	}
+}
 func FuzzMetadataParser(f *testing.F) {
 	f.Add([]byte("schema_version: 1\ncapture:\n  authorized_lab: true\nenvironment:\n  disposable: true\n"))
 	f.Fuzz(func(t *testing.T, b []byte) {

@@ -270,8 +270,13 @@ func Validate(dir string) (Validation, error) {
 		v.Blockers = append(v.Blockers, v.Errors...)
 		return v, nil
 	}
-	started := m.Capture.StartedAt != ""
-	stopped := m.Capture.StoppedAt != ""
+	// The generated Windows scripts record lifecycle evidence in raw/ without
+	// rewriting operator-authored capture metadata. Treat those bounded marker
+	// files as evidence of preparation/finalization so a returned raw kit cannot
+	// be mistaken for a new kit merely because its metadata timestamps remain
+	// blank.
+	started := m.Capture.StartedAt != "" || regularExists(filepath.Join(abs, "raw", "capture-started-at.txt"))
+	stopped := m.Capture.StoppedAt != "" || regularExists(filepath.Join(abs, "raw", "local-raw-manifest.json"))
 	imported := regularExists(filepath.Join(abs, "output", "guided-import.json"))
 	exported := regularExists(filepath.Join(abs, "output", "evidence-bundle.json"))
 	switch {
