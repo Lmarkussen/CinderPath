@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-07-01T10:00:00Z",
+  "action": "machine_policy_cycle",
+  "source_id": "synthetic_controlled_action"
+}

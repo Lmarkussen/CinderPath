@@ -14,6 +14,20 @@ A subsequent ten-minute, manually controlled passive baseline used the already i
 
 A second controlled capture invoked the installed client's standard **Request & Evaluate Machine Policy** control-panel action exactly once while CinderPath only observed. During a 205-second `pktmon` window, 407 packets were recorded with zero reported drops. Two allowlisted logs correlated the action with a machine-assignment request and a no-new-assignments result. Offline parsing reconstructed one partial flow and three visible HTTP exchanges, but those exchanges were unrelated Windows trust-list downloads; SCCM traffic remained opaque and could not be structurally attributed to a policy exchange. Readiness remains `not_ready_no_policy_evidence`.
 
+Offline `capture correlate` places fixture-supported log events, packet metadata,
+flow starts, and a controlled trigger on one UTC timeline. It ranks opaque TLS
+candidates using timing plus independent fingerprinted endpoint/SNI evidence,
+reports contradictions and capture quality, and writes an owner-only redacted
+dossier. Timing alone is always low confidence; correlation neither decrypts
+TLS nor validates a policy contract.
+
+```bash
+# Synthetic local evidence only.
+cinderpath capture correlate --capture synthetic.pcapng \
+  --logs synthetic-logs --trigger policy-trigger.json \
+  --pre-window 30s --post-window 3m --output reports/correlation
+```
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \

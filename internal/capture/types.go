@@ -77,20 +77,25 @@ type Packet struct {
 	Warning        string    `json:"warning,omitempty"`
 }
 type Flow struct {
-	ID                  string   `json:"id"`
-	Client              Endpoint `json:"client"`
-	Server              Endpoint `json:"server"`
-	Transport           string   `json:"transport"`
-	State               string   `json:"state"`
-	PacketIDs           []string `json:"packet_ids"`
-	RequestCount        int      `json:"request_count"`
-	ResponseCount       int      `json:"response_count"`
-	Gaps                int      `json:"gaps"`
-	Duplicates          int      `json:"duplicates"`
-	Retransmissions     int      `json:"retransmissions"`
-	Conflicts           int      `json:"conflicts"`
-	DirectionConfidence string   `json:"direction_confidence"`
-	Warnings            []string `json:"warnings,omitempty"`
+	ID                  string    `json:"id"`
+	Client              Endpoint  `json:"client"`
+	Server              Endpoint  `json:"server"`
+	Transport           string    `json:"transport"`
+	State               string    `json:"state"`
+	PacketIDs           []string  `json:"packet_ids"`
+	RequestCount        int       `json:"request_count"`
+	ResponseCount       int       `json:"response_count"`
+	Gaps                int       `json:"gaps"`
+	Duplicates          int       `json:"duplicates"`
+	Retransmissions     int       `json:"retransmissions"`
+	Conflicts           int       `json:"conflicts"`
+	DirectionConfidence string    `json:"direction_confidence"`
+	Warnings            []string  `json:"warnings,omitempty"`
+	StartedAt           time.Time `json:"started_at,omitempty"`
+	EndedAt             time.Time `json:"ended_at,omitempty"`
+	PacketSizeSequence  []int     `json:"packet_size_sequence,omitempty"`
+	TLS                 bool      `json:"tls"`
+	SNI                 string    `json:"sni_fingerprint,omitempty"`
 }
 type StructuredField struct {
 	Path        string `json:"path"`

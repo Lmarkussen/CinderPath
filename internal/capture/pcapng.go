@@ -32,7 +32,7 @@ func decodePCAPNG(b []byte, l Limits) (NormalizedCapture, error) {
 	blocks := 0
 	var order binary.ByteOrder = binary.LittleEndian
 	var ifaces []ngIface
-	var ethernet [][]byte
+	var ethernet []classicPacket
 	var firstErr error
 	for off < len(b) {
 		if len(b)-off < 12 {
@@ -122,7 +122,7 @@ func decodePCAPNG(b []byte, l Limits) (NormalizedCapture, error) {
 			ts := ngTime(tsraw, ifaces[id].resolution)
 			addNGPacket(&c, data, id, ifaces[id].link, caplen, orig, ts)
 			if ifaces[id].link == 1 {
-				ethernet = append(ethernet, data)
+				ethernet = append(ethernet, classicPacket{data: data, timestamp: ts, originalLength: orig})
 			} else {
 				c.Source.Warnings = append(c.Source.Warnings, fmt.Sprintf("unsupported pcapng link type %d", ifaces[id].link))
 			}
@@ -138,7 +138,7 @@ func decodePCAPNG(b []byte, l Limits) (NormalizedCapture, error) {
 			data := append([]byte(nil), body[4:4+caplen]...)
 			addNGPacket(&c, data, 0, ifaces[0].link, caplen, orig, time.Time{})
 			if ifaces[0].link == 1 {
-				ethernet = append(ethernet, data)
+				ethernet = append(ethernet, classicPacket{data: data, originalLength: orig})
 			}
 		default:
 			c.Source.Warnings = append(c.Source.Warnings, fmt.Sprintf("unsupported pcapng block type 0x%08x", typ))
@@ -194,7 +194,14 @@ func addNGPacket(c *NormalizedCapture, data []byte, id int, link uint16, caplen,
 	idx := len(c.Packets)
 	c.Packets = append(c.Packets, Packet{ID: stableID("packet", fmt.Sprint(idx), fingerprint(data)), Index: idx, InterfaceID: id, Timestamp: ts, CapturedLength: caplen, OriginalLength: orig, Truncated: caplen < orig, LinkType: link, Fingerprint: fingerprint(data)})
 }
-func encodeClassicPCAP(ps [][]byte) []byte {
+
+type classicPacket struct {
+	data           []byte
+	timestamp      time.Time
+	originalLength uint32
+}
+
+func encodeClassicPCAP(ps []classicPacket) []byte {
 	var b bytes.Buffer
 	_ = binary.Write(&b, binary.LittleEndian, uint32(0xa1b2c3d4))
 	_ = binary.Write(&b, binary.LittleEndian, uint16(2))
@@ -204,11 +211,20 @@ func encodeClassicPCAP(ps [][]byte) []byte {
 	_ = binary.Write(&b, binary.LittleEndian, uint32(65535))
 	_ = binary.Write(&b, binary.LittleEndian, uint32(1))
 	for _, p := range ps {
-		_ = binary.Write(&b, binary.LittleEndian, uint32(0))
-		_ = binary.Write(&b, binary.LittleEndian, uint32(0))
-		_ = binary.Write(&b, binary.LittleEndian, uint32(len(p)))
-		_ = binary.Write(&b, binary.LittleEndian, uint32(len(p)))
-		_, _ = b.Write(p)
+		sec, usec := uint32(0), uint32(0)
+		if !p.timestamp.IsZero() {
+			sec = uint32(p.timestamp.Unix())
+			usec = uint32(p.timestamp.Nanosecond() / 1000)
+		}
+		orig := p.originalLength
+		if orig == 0 {
+			orig = uint32(len(p.data))
+		}
+		_ = binary.Write(&b, binary.LittleEndian, sec)
+		_ = binary.Write(&b, binary.LittleEndian, usec)
+		_ = binary.Write(&b, binary.LittleEndian, uint32(len(p.data)))
+		_ = binary.Write(&b, binary.LittleEndian, orig)
+		_, _ = b.Write(p.data)
 	}
 	return b.Bytes()
 }

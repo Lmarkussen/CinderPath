@@ -94,3 +94,51 @@ downloads. Remaining TLS could not be attributed structurally to the policy
 cycle, and duplicate, gap, conflict, and incomplete-response warnings remain.
 The evidence is therefore `machine_policy_trigger_observed_logs_only`, not a
 candidate policy exchange. No sanitized protocol fixture was derived.
+
+## Offline trigger/log/TLS correlation
+
+`cinderpath capture correlate` consumes local PCAP/PCAPNG evidence, a bounded
+log directory, and schema-v1 trigger JSON. It normalizes fixture-supported
+CMTrace and ISO-like timestamps to UTC while preserving original offsets and
+precision. Filenames alone never assign SCCM semantics.
+
+```json
+{"schema_version":1,"timestamp":"2026-07-01T10:00:00Z","action":"machine_policy_cycle"}
+```
+
+```bash
+cinderpath capture correlate --capture synthetic.pcapng --logs synthetic-logs \
+  --trigger trigger.json --pre-window 30s --post-window 3m \
+  --output reports/correlation --format text
+```
+
+Representative redacted synthetic output:
+
+```text
+Offline SCCM capture correlation
+Trigger: 2026-07-01T10:00:00Z (machine_policy_cycle)
+Log events: 2
+Candidate TLS flows: 1
+Capture quality: partial_but_usable
+Correlation: low_confidence_sccm_tls_candidate
+Dossier: correlation
+Live SCCM policy requests: 0
+  tls_candidate_<FINGERPRINT> score=30 confidence=low support=2 contradictions=0
+Safety: offline evidence only; timing alone does not prove SCCM protocol identity.
+```
+
+The scorer considers temporal distance, fingerprinted log endpoints, visible
+ClientHello SNI, and reconstruction gaps. Port 443 and timing alone cannot
+produce high confidence. Even a high-ranked opaque flow is attribution evidence,
+not a recovered policy exchange. The mode-`0700` dossier contains redacted
+timeline, semantic-event, candidate, quality, summary, and gap files; packet
+bodies and complete log lines are excluded. Correlation uses existing schema-v8
+redacted capture observation/dossier persistence, so no migration is required.
+Secret-extraction readiness remains `not_ready_no_policy_evidence`.
+
+Defaults are 30 seconds before and 180 seconds after the trigger, bounded by a
+15-minute maximum. Activity within 2 seconds receives strong temporal weight,
+within 10 seconds medium weight, and within 60 seconds weak weight. These are
+ranking inputs, not proof. Reused connections that begin outside the window,
+missing timestamps, indistinguishable candidates, and capture gaps remain
+explicit contradictions or warnings.

@@ -86,3 +86,10 @@ The scripts were runtime-tested on one disposable GOAD Windows Server 2019 build
 The first controlled natural-activity capture used installed `pktmon` for ten minutes and produced ETL plus PCAPNG with 212 packets and zero tool-reported drops. Offline analysis produced no supported flows or HTTP exchanges and retained opaque-TLS/TCP-reassembly warnings. Treat it as metadata-only evidence; raw lab captures must remain outside Git. Generated start and finalization markers are lifecycle evidence even when operator metadata timestamps are blank.
 
 The second authorized controlled capture invoked the installed client's combined `Request & Evaluate Machine Policy` control-panel action exactly once while CinderPath remained observational. It recorded 407 packets over about 205 seconds with zero reported drops and copied only changed allowlisted `CcmMessaging.log` and `PolicyAgent.log` snapshots. Logs confirm the request and no-new-assignments result, but visible HTTP was unrelated Windows trust-list traffic and SCCM TLS could not be structurally attributed. Treat this as logs-only trigger evidence with readiness `not_ready_no_policy_evidence`; raw artifacts remain outside Git. Arbitrary binary inspection must preserve offsets with ASCII-only marker folding because Unicode case conversion can change byte length.
+
+Offline `capture correlate` provides bounded timestamp-aware correlation of
+fixture-supported CMTrace/ISO log events with packet and opaque-TLS flow
+metadata. Preserve timestamp offsets/precision, fingerprint endpoints, keep
+timing-only candidates low confidence, and expose gaps and overlap conflicts.
+Correlation cannot enable live requests, TLS decryption, policy approval, or
+secret extraction.

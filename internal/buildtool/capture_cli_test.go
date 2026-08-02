@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Lmarkussen/CinderPath/internal/capture"
 )
 
 func runCLI(t *testing.T, args ...string) (string, string, error) {
@@ -17,6 +20,54 @@ func runCLI(t *testing.T, args ...string) (string, string, error) {
 	c.SetArgs(args)
 	e := c.Execute()
 	return out.String(), errOut.String(), e
+}
+
+func TestCaptureCorrelationCLIOffline(t *testing.T) {
+	d := t.TempDir()
+	at := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	c := capture.NormalizedCapture{SchemaVersion: capture.SchemaVersion, AlgorithmVersion: capture.AlgorithmVersion, Source: capture.Source{ID: "capture_synthetic", Format: "normalized_json", Fingerprint: "synthetic"}, Interfaces: []capture.Interface{{ID: 0, LinkType: 1, Supported: true, TimestampResolution: 1_000_000}}, Packets: []capture.Packet{{ID: "packet_synthetic", Timestamp: at, CapturedLength: 64, OriginalLength: 64}}, Flows: []capture.Flow{{ID: "flow_synthetic", TLS: true, StartedAt: at.Add(time.Second), EndedAt: at.Add(2 * time.Second), DirectionConfidence: "medium", PacketIDs: []string{"packet_synthetic"}}}}
+	b, _ := json.Marshal(c)
+	capturePath := filepath.Join(d, "capture.json")
+	if e := os.WriteFile(capturePath, b, 0600); e != nil {
+		t.Fatal(e)
+	}
+	logs := filepath.Join(d, "logs")
+	_ = os.Mkdir(logs, 0700)
+	line := `<![LOG[Requesting machine policy assignments]LOG]!><time="10:00:00.000+000" date="07-01-2026" component="PolicyAgent" context="" type="1" thread="1" file="x">`
+	if e := os.WriteFile(filepath.Join(logs, "synthetic.log"), []byte(line+"\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	trigger := filepath.Join(d, "trigger.json")
+	tb, _ := json.Marshal(capture.Trigger{SchemaVersion: 1, Timestamp: at, Action: "machine_policy_cycle"})
+	if e := os.WriteFile(trigger, tb, 0600); e != nil {
+		t.Fatal(e)
+	}
+	out, stderr, e := runCLI(t, "--db", filepath.Join(d, "correlation.db"), "capture", "correlate", "--capture", capturePath, "--logs", logs, "--trigger", trigger, "--output", filepath.Join(d, "dossier"), "--format", "text")
+	if e != nil {
+		t.Fatalf("correlate: %v stderr=%s", e, stderr)
+	}
+	for _, want := range []string{"Offline SCCM capture correlation", "Candidate TLS flows: 1", "Live SCCM policy requests: 0", "timing alone does not prove"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %s", want, out)
+		}
+	}
+	if strings.Contains(out, "synthetic.invalid") {
+		t.Fatal("endpoint leaked")
+	}
+	jsonOut, _, e := runCLI(t, "--db", filepath.Join(d, "correlation-json.db"), "capture", "correlate", "--capture", capturePath, "--logs", logs, "--trigger", trigger, "--output", filepath.Join(d, "dossier-json"), "--format", "json")
+	if e != nil {
+		t.Fatal(e)
+	}
+	var parsed any
+	if e = json.Unmarshal([]byte(jsonOut), &parsed); e != nil {
+		t.Fatal(e)
+	}
+	dbBytes, _ := os.ReadFile(filepath.Join(d, "correlation.db"))
+	for _, forbidden := range []string{"Requesting machine policy assignments", "Authorization:", "Bearer ", "PRIVATE KEY"} {
+		if bytes.Contains(dbBytes, []byte(forbidden)) {
+			t.Fatalf("correlation persistence leak: %s", forbidden)
+		}
+	}
 }
 func TestCaptureCLIIntegrationOffline(t *testing.T) {
 	d := t.TempDir()

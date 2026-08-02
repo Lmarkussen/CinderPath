@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -228,12 +229,25 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 	} else if magic != 0xa1b2c3d4 && magic != 0xa1b23c4d {
 		return c, errors.New("invalid pcap magic")
 	}
+	read32 := binary.LittleEndian.Uint32
+	if !le {
+		read32 = binary.BigEndian.Uint32
+	}
+	linkType := uint16(read32(b[20:24]))
+	snap := read32(b[16:20])
+	c.Interfaces = append(c.Interfaces, Interface{ID: 0, LinkType: linkType, SnapLength: snap, TimestampResolution: 1_000_000, Supported: linkType == 1})
+	if linkType != 1 && linkType != 0 {
+		c.Source.Warnings = append(c.Source.Warnings, fmt.Sprintf("unsupported pcap link type %d", linkType))
+	}
 	type segment struct {
 		seq     uint32
 		index   int
 		payload []byte
+		packet  string
+		at      time.Time
 	}
 	flows := map[string][]segment{}
+	flowMetadata := map[string]*flowMeta{}
 	o := 24
 	packets := 0
 	for o+16 <= len(b) {
@@ -268,7 +282,30 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 				return c, errors.New("stream limit exceeded")
 			}
 			cp := append([]byte(nil), payload...)
-			flows[flow] = append(flows[flow], segment{seq: seq, index: packets, payload: cp})
+			pid := c.Packets[len(c.Packets)-1].ID
+			at := c.Packets[len(c.Packets)-1].Timestamp
+			flows[flow] = append(flows[flow], segment{seq: seq, index: packets, payload: cp, packet: pid, at: at})
+			key := stableID("stream", canonicalFlowKey(flow))
+			m := flowMetadata[key]
+			if m == nil {
+				m = &flowMeta{}
+				m.client, m.server = fingerprintEndpoints(flow)
+				flowMetadata[key] = m
+			}
+			m.packetIDs = append(m.packetIDs, pid)
+			m.packetSizes = append(m.packetSizes, len(payload))
+			if m.started.IsZero() || (!at.IsZero() && at.Before(m.started)) {
+				m.started = at
+			}
+			if at.After(m.ended) {
+				m.ended = at
+			}
+			if len(payload) >= 3 && payload[0] == 0x16 && payload[1] == 0x03 {
+				m.tls = true
+				if sni := tlsSNIFingerprint(payload); sni != "" {
+					m.sni = sni
+				}
+			}
 		} else if bytes.Contains(packet, []byte{0x16, 0x03}) {
 			c.Source.Warnings = append(c.Source.Warnings, "opaque TLS stream; HTTP content not visible")
 		}
@@ -280,6 +317,7 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		segs := flows[k]
+		meta := flowMetadata[stableID("stream", canonicalFlowKey(k))]
 		original := append([]segment(nil), segs...)
 		sort.SliceStable(segs, func(i, j int) bool { return segs[i].seq < segs[j].seq })
 		var stream []byte
@@ -289,27 +327,25 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 			if i > 0 && x.seq > next {
 				complete = false
 				c.Source.Warnings = append(c.Source.Warnings, "missing TCP segment bytes")
+				meta.gaps++
+				meta.warnings = append(meta.warnings, "missing TCP segment bytes")
 			}
 			if i > 0 && x.seq < next {
-				skip := int(next - x.seq)
-				cmp := skip
-				if cmp > len(x.payload) {
-					cmp = len(x.payload)
-				}
-				start := len(stream) - skip
-				if start < 0 {
-					start = 0
-				}
-				conflict := start+cmp <= len(stream) && !bytes.Equal(stream[start:start+cmp], x.payload[:cmp])
-				if conflict {
+				remaining, overlap := resolveTCPOverlap(stream, next, x.seq, x.payload)
+				if overlap == "conflict" {
 					c.Source.Warnings = append(c.Source.Warnings, "conflicting overlapping TCP segment")
+					meta.conflicts++
+					meta.warnings = append(meta.warnings, "conflicting overlapping TCP segment; first-seen bytes preserved")
 				} else {
 					c.Source.Warnings = append(c.Source.Warnings, "duplicate retransmitted TCP segment")
+					meta.duplicates++
+					meta.retransmissions++
+					meta.warnings = append(meta.warnings, "duplicate retransmitted TCP segment")
 				}
-				if skip >= len(x.payload) {
+				if len(remaining) == 0 {
 					continue
 				}
-				x.payload = x.payload[skip:]
+				x.payload = remaining
 			}
 			if x.index != original[i].index {
 				c.Source.Warnings = append(c.Source.Warnings, "out-of-order TCP segment observed")
@@ -318,7 +354,11 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 				return c, errors.New("reassembled stream limit exceeded")
 			}
 			stream = append(stream, x.payload...)
-			next = x.seq + uint32(len(x.payload))
+			if x.seq < next {
+				next += uint32(len(x.payload))
+			} else {
+				next = x.seq + uint32(len(x.payload))
+			}
 		}
 		if bytes.HasPrefix(stream, []byte("HTTP/")) {
 			br := bufio.NewReader(bytes.NewReader(stream))
@@ -370,8 +410,50 @@ func importPCAP(b []byte, l Limits, ng bool) (NormalizedCapture, error) {
 			c.Source.Warnings = append(c.Source.Warnings, "opaque TLS stream; HTTP content not visible")
 		}
 	}
-	pairDirectional(&c)
+	pairDirectional(&c, flowMetadata)
 	return c, nil
+}
+
+// resolveTCPOverlap preserves first-seen bytes and returns only new suffix bytes.
+// Conflicts are explicit; missing bytes are never fabricated.
+func resolveTCPOverlap(stream []byte, next, seq uint32, payload []byte) ([]byte, string) {
+	if seq >= next {
+		return payload, "none"
+	}
+	skip64 := uint64(next - seq)
+	if skip64 > uint64(len(payload)) {
+		skip64 = uint64(len(payload))
+	}
+	skip := int(skip64)
+	start := len(stream) - skip
+	if start < 0 {
+		start = 0
+	}
+	cmp := skip
+	if start+cmp > len(stream) {
+		cmp = len(stream) - start
+	}
+	kind := "identical"
+	if cmp > 0 && !bytes.Equal(stream[start:start+cmp], payload[:cmp]) {
+		kind = "conflict"
+	}
+	return payload[skip:], kind
+}
+
+type flowMeta struct {
+	packetIDs       []string
+	packetSizes     []int
+	started         time.Time
+	ended           time.Time
+	tls             bool
+	sni             string
+	gaps            int
+	duplicates      int
+	retransmissions int
+	conflicts       int
+	warnings        []string
+	client          Endpoint
+	server          Endpoint
 }
 
 func canonicalFlowKey(k string) string {
@@ -384,7 +466,7 @@ func canonicalFlowKey(k string) string {
 	}
 	return p[0] + "<>" + p[1]
 }
-func pairDirectional(c *NormalizedCapture) {
+func pairDirectional(c *NormalizedCapture, metadata map[string]*flowMeta) {
 	groups := map[string][]Exchange{}
 	for _, e := range c.Exchanges {
 		groups[e.StreamID] = append(groups[e.StreamID], e)
@@ -393,6 +475,11 @@ func pairDirectional(c *NormalizedCapture) {
 	keys := make([]string, 0, len(groups))
 	for k := range groups {
 		keys = append(keys, k)
+	}
+	for k := range metadata {
+		if _, ok := groups[k]; !ok {
+			keys = append(keys, k)
+		}
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
@@ -411,16 +498,13 @@ func pairDirectional(c *NormalizedCapture) {
 			n = len(resps)
 		}
 		f := Flow{ID: k, Transport: "tcp", DirectionConfidence: "medium", RequestCount: len(reqs), ResponseCount: len(resps)}
-		for _, w := range c.Source.Warnings {
-			switch {
-			case strings.Contains(w, "missing TCP"):
-				f.Gaps++
-			case strings.Contains(w, "duplicate"):
-				f.Duplicates++
-				f.Retransmissions++
-			case strings.Contains(w, "overlapping"):
-				f.Conflicts++
-			}
+		if m := metadata[k]; m != nil {
+			f.PacketIDs = append([]string(nil), m.packetIDs...)
+			f.PacketSizeSequence = append([]int(nil), m.packetSizes...)
+			f.StartedAt, f.EndedAt, f.TLS, f.SNI = m.started, m.ended, m.tls, m.sni
+			f.Client, f.Server = m.client, m.server
+			f.Gaps, f.Duplicates, f.Retransmissions, f.Conflicts = m.gaps, m.duplicates, m.retransmissions, m.conflicts
+			f.Warnings = append([]string(nil), m.warnings...)
 		}
 		if f.Gaps > 0 || f.Conflicts > 0 {
 			f.State = "partial"
@@ -449,6 +533,90 @@ func pairDirectional(c *NormalizedCapture) {
 		c.Flows = append(c.Flows, f)
 	}
 	c.Exchanges = out
+}
+
+func fingerprintEndpoints(flow string) (Endpoint, Endpoint) {
+	parts := strings.Split(flow, ">")
+	if len(parts) != 2 {
+		return Endpoint{}, Endpoint{}
+	}
+	parse := func(v string) Endpoint {
+		i := strings.LastIndexByte(v, ':')
+		if i < 1 {
+			return Endpoint{AddressFingerprint: fingerprint([]byte(v))[:16]}
+		}
+		p, _ := strconv.Atoi(v[i+1:])
+		return Endpoint{AddressFingerprint: fingerprint([]byte(v[:i]))[:16], Port: uint16(p)}
+	}
+	a, b := parse(parts[0]), parse(parts[1])
+	if parts[0] > parts[1] {
+		a, b = b, a
+	}
+	return a, b
+}
+
+func tlsSNIFingerprint(b []byte) string {
+	// TLS record + ClientHello, bounded to the first captured record.
+	if len(b) < 9 || b[0] != 0x16 || b[5] != 0x01 {
+		return ""
+	}
+	record := int(binary.BigEndian.Uint16(b[3:5]))
+	if record+5 > len(b) {
+		return ""
+	}
+	p := 9
+	if p+34 > len(b) {
+		return ""
+	}
+	p += 34
+	if p >= len(b) {
+		return ""
+	}
+	session := int(b[p])
+	p++
+	if p+session+2 > len(b) {
+		return ""
+	}
+	p += session
+	ciphers := int(binary.BigEndian.Uint16(b[p : p+2]))
+	p += 2
+	if p+ciphers+1 > len(b) {
+		return ""
+	}
+	p += ciphers
+	compress := int(b[p])
+	p++
+	if p+compress+2 > len(b) {
+		return ""
+	}
+	p += compress
+	extLen := int(binary.BigEndian.Uint16(b[p : p+2]))
+	p += 2
+	end := p + extLen
+	if end > len(b) {
+		end = len(b)
+	}
+	for p+4 <= end {
+		typ := binary.BigEndian.Uint16(b[p : p+2])
+		n := int(binary.BigEndian.Uint16(b[p+2 : p+4]))
+		p += 4
+		if p+n > end {
+			return ""
+		}
+		if typ == 0 && n >= 5 {
+			q := p + 2
+			if q+3 > p+n {
+				return ""
+			}
+			nameLen := int(binary.BigEndian.Uint16(b[q+1 : q+3]))
+			q += 3
+			if q+nameLen <= p+n && nameLen > 0 && nameLen <= 255 {
+				return fingerprint([]byte(strings.ToLower(string(b[q : q+nameLen]))))[:16]
+			}
+		}
+		p += n
+	}
+	return ""
 }
 
 func tcpPayload(p []byte) ([]byte, string, uint32, bool) {

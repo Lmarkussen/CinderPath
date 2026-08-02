@@ -81,3 +81,16 @@ On 2026-08-02 the generated scripts were exercised on one disposable GOAD client
 A later authorized passive baseline used the already installed `pktmon` 10.0.17763.3650 for 600 seconds on one active adapter. No client schedule, control-panel action, service restart, or custom SCCM request was invoked. `pktmon` reported 212 packets and zero drops; its ETL was retained and converted locally to PCAPNG. Offline analysis found no visible HTTP exchange and no structurally supported policy exchange. It did report opaque TLS and incomplete/conflicting TCP reconstruction, so the evidence is classified as `sccm_endpoint_metadata_only`. The raw files remain uncommitted and require sanitization plus manual review.
 
 In a separate explicitly authorized run, the locally enumerated Configuration Manager control-panel action `Request & Evaluate Machine Policy` was invoked once. It is a combined request/evaluation action; no second evaluation or other schedule was invoked. A 205-second `pktmon` capture reported 407 packets and zero drops. `CcmMessaging.log` and `PolicyAgent.log` were the only allowlisted logs changed and copied. The policy log records a machine-assignment request and no new assignments. CinderPath found one partial flow and three visible, ordered HTTP exchanges, but those were unrelated Windows trust-list traffic. SCCM transport remained opaque, so the result is logs-only trigger evidence rather than a policy protocol contract. CinderPath itself sent no policy request, changed no identity, and performed no replay.
+
+Returned evidence can be correlated without contacting Windows:
+
+```bash
+# Synthetic paths and trigger values only.
+cinderpath capture correlate --capture capture.pcapng --logs client-logs \
+  --trigger policy-trigger.json --output reports/correlation
+```
+
+The timeline preserves timestamp offsets and precision. Capture quality reports
+gaps, retransmissions, conflicting overlaps, truncation, link type, direction
+confidence, and timestamp resolution. Zero tool-reported drops cannot erase
+those limitations, and timing or port 443 alone remains low confidence.

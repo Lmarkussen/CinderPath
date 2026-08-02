@@ -35,6 +35,18 @@ Live SCCM execution: blocked
 
 The sentinel, identifiers in copied logs, opaque binary regions, and incomplete TCP reconstruction require sanitization and manual review. Raw captures and logs remain outside Git. This evidence is `machine_policy_trigger_observed_logs_only` and secret-extraction readiness is `not_ready_no_policy_evidence`.
 
+An already returned authorized capture and log set can be correlated in a
+separate offline workspace:
+
+```bash
+cinderpath capture correlate --capture synthetic.pcapng --logs synthetic-logs \
+  --trigger trigger.json --output reports/correlation
+```
+
+The correlation dossier is atomic mode `0700`; its files are mode `0600` and
+contain redacted summaries and endpoint fingerprints only. This operation does
+not change kit review, sanitization, guided-import, or bundle-export gates.
+
 All names below are synthetic authorized-lab examples:
 
 ```bash

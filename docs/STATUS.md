@@ -10,6 +10,16 @@ The first passive natural-activity capture then ran for 600 seconds with the exi
 
 The second controlled capture changed one variable: the installed client control-panel COM action `Request & Evaluate Machine Policy` was positively enumerated and invoked once. No separate evaluation call was made. A 205-second `pktmon` capture produced 407 packets with zero reported drops; only changed allowlisted `CcmMessaging.log` and `PolicyAgent.log` snapshots were collected. The latter records a machine-assignment request followed by no new assignments. CinderPath reconstructed one partial TCP flow and three ordered visible HTTP exchanges, all attributable to unrelated Windows trust-list downloads, while other TLS remained opaque and reassembly warnings persisted. Classification is `machine_policy_trigger_observed_logs_only`; no candidate policy exchange or secret-bearing policy structure was established. The real PCAPNG also exposed a Unicode case-folding offset panic in bounded binary inspection; ASCII-only marker folding and a synthetic regression now preserve byte offsets.
 
+The offline correlation phase adds `capture correlate`: normalized UTC timelines
+for controlled triggers, fixture-supported log semantics, packet metadata, and
+flow starts; redacted opaque-TLS candidate ranking; explicit capture-quality
+metrics; and atomic redacted dossiers. PCAPNG-to-PCAP bridging now preserves
+packet timestamps, flow packet provenance, fingerprinted endpoints, visible SNI
+fingerprints, and per-flow overlap/gap evidence. First-seen bytes win on a
+conflicting overlap and the conflict remains reported. Timing alone is capped at
+low confidence. Correlation persists through existing schema-v8 redacted capture
+records; no schema-v9 migration was necessary. No raw lab evidence is in Git.
+
 ## Unified operator workflow
 
 CinderPath now provides `config init`, `config validate`, `config show`, and a

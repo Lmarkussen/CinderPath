@@ -2,9 +2,11 @@ package capture
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func bounded(b []byte) bool { return len(b) <= 1<<16 }
@@ -14,6 +16,59 @@ func FuzzPCAPNGBlocks(f *testing.F) {
 		if bounded(b) {
 			_, _ = Import(bytes.NewReader(b), "x.pcapng", "pcapng", DefaultLimits())
 		}
+	})
+}
+
+func FuzzLogTimestampParser(f *testing.F) {
+	f.Add(`<![LOG[Requesting machine policy assignments]LOG]!><time="10:20:30.123+000" date="07-01-2026" component="PolicyAgent" context="" type="1" thread="1" file="x">`)
+	f.Fuzz(func(t *testing.T, line string) {
+		if len(line) <= MaxLogLineBytes {
+			_, _ = ParseSemanticLogLine("synthetic.log", 1, line)
+		}
+	})
+}
+
+func FuzzTimelineOrdering(f *testing.F) {
+	f.Add(int64(0), int64(1), "a", "b")
+	f.Fuzz(func(t *testing.T, a, b int64, x, y string) {
+		if len(x)+len(y) > 1024 {
+			return
+		}
+		xs := []TimelineEvent{{EventID: x, Timestamp: time.Unix(0, a)}, {EventID: y, Timestamp: time.Unix(0, b)}}
+		SortTimeline(xs)
+	})
+}
+
+func FuzzFlowCandidateScorer(f *testing.F) {
+	f.Add(int64(0), true)
+	f.Fuzz(func(t *testing.T, delta int64, tls bool) {
+		if delta < -int64(time.Hour) || delta > int64(time.Hour) {
+			return
+		}
+		at := time.Unix(100, 0).UTC()
+		_, _ = Correlate(NormalizedCapture{Packets: []Packet{{ID: "p", Timestamp: at}}, Interfaces: []Interface{{ID: 0, LinkType: 1, Supported: true}}, Flows: []Flow{{ID: "f", TLS: tls, StartedAt: at.Add(time.Duration(delta)), DirectionConfidence: "low"}}}, nil, Trigger{Timestamp: at, Action: "synthetic"}, DefaultCorrelationWindow())
+	})
+}
+
+func FuzzCaptureQualitySerializer(f *testing.F) {
+	f.Add(1, 0, 0)
+	f.Fuzz(func(t *testing.T, p, gaps, conflicts int) {
+		if p < 0 || p > 1000 || gaps < 0 || gaps > 1000 || conflicts < 0 || conflicts > 1000 {
+			return
+		}
+		c := NormalizedCapture{Interfaces: []Interface{{ID: 0, LinkType: 1, Supported: true}}, Flows: []Flow{{ID: "f", Gaps: gaps, Conflicts: conflicts}}}
+		c.Packets = make([]Packet, p)
+		_, _ = json.Marshal(AssessCaptureQuality(c))
+	})
+}
+
+func FuzzTCPOverlapResolver(f *testing.F) {
+	f.Add([]byte("abcdef"), uint32(16), uint32(13), []byte("defXYZ"))
+	f.Fuzz(func(t *testing.T, stream []byte, next, seq uint32, payload []byte) {
+		if len(stream)+len(payload) > 1<<16 {
+			return
+		}
+		_, _ = resolveTCPOverlap(stream, next, seq, payload)
 	})
 }
 func FuzzPacketDecoder(f *testing.F) {

@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/capture"
 	"github.com/Lmarkussen/CinderPath/internal/database"
@@ -155,6 +156,34 @@ func (s *state) persistCapture(c capture.NormalizedCapture) error {
 	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"capture_id": c.Source.ID, "live_requests": 0, "exchanges": len(c.Exchanges), "flows": len(c.Flows)})
 }
 
+func (s *state) persistCorrelation(c capture.NormalizedCapture, r capture.CorrelationResult, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "capture correlate", string(s.cfg.Profile), version.Version, []string{"offline", "redacted", "live_requests=0"})
+	if e != nil {
+		return e
+	}
+	raw, _ := json.Marshal(r)
+	fp := models.StableFingerprint(string(raw))
+	id := models.StableID("capture_correlation", models.StableFingerprint(c.Source.ID, fp))
+	data := map[string]any{"correlation_id": id, "capture_id": c.Source.ID, "classification": r.Classification, "quality": r.Quality, "candidates": r.Candidates, "trigger_timestamp": r.Trigger.Timestamp, "live_policy_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: id, RunID: run.ID, CaptureID: c.Source.ID, Fingerprint: fp, Data: data}); e != nil {
+		_ = db.FinishRun(ctx, run.ID, models.RunFailed, map[string]any{"live_requests": 0})
+		return e
+	}
+	if dossier != "" {
+		did := models.StableID("capture_correlation_dossier", models.StableFingerprint(id, filepath.Base(dossier)))
+		if e = db.UpsertCaptureRecord(ctx, "capture_dossiers", database.CaptureRecord{ID: did, RunID: run.ID, CaptureID: c.Source.ID, Fingerprint: fp, Data: map[string]any{"safe_name": filepath.Base(dossier), "correlation_id": id, "live_policy_requests": 0}}); e != nil {
+			return e
+		}
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"correlation_id": id, "classification": r.Classification, "live_requests": 0})
+}
+
 func (s *state) captureCommand() *cobra.Command {
 	root := &cobra.Command{Use: "capture", Short: "Import and normalize authorized captures offline; never contacts a target"}
 	var input, format, output string
@@ -207,6 +236,59 @@ func (s *state) captureCommand() *cobra.Command {
 		}
 		return json.NewEncoder(s.stdout).Encode(r.Data)
 	}}
+	var correlateCapture, logsDir, triggerPath, correlateOutput, correlateFormat string
+	var preWindow, postWindow time.Duration
+	correlate := &cobra.Command{Use: "correlate", Short: "Correlate an offline capture with bounded redacted SCCM log evidence", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		if correlateFormat != "text" && correlateFormat != "json" {
+			return fmt.Errorf("unsupported output format %q", correlateFormat)
+		}
+		c, e := loadCapture(correlateCapture, "")
+		if e != nil {
+			return e
+		}
+		logs, warnings, e := capture.ReadSemanticLogs(logsDir)
+		if e != nil {
+			return e
+		}
+		trigger, e := capture.LoadTrigger(triggerPath)
+		if e != nil {
+			return e
+		}
+		r, e := capture.Correlate(c, logs, trigger, capture.CorrelationWindow{PreTrigger: preWindow, PostTrigger: postWindow, Maximum: 15 * time.Minute})
+		if e != nil {
+			return e
+		}
+		r.Warnings = append(r.Warnings, warnings...)
+		if e = capture.GenerateCorrelationDossier(correlateOutput, r, false); e != nil {
+			return e
+		}
+		if e = s.persistCorrelation(c, r, correlateOutput); e != nil {
+			return e
+		}
+		if correlateFormat == "json" {
+			return json.NewEncoder(s.stdout).Encode(r)
+		}
+		fmt.Fprintf(s.stdout, "Offline SCCM capture correlation\nTrigger: %s (%s)\nLog events: %d\nCandidate TLS flows: %d\nCapture quality: %s\nCorrelation: %s\nDossier: %s\nLive SCCM policy requests: 0\n", trigger.Timestamp.UTC().Format(time.RFC3339Nano), trigger.Action, len(r.LogEvents), len(r.Candidates), r.Quality.Classification, r.Classification, filepath.Base(correlateOutput))
+		for i, x := range r.Candidates {
+			if i >= 10 {
+				fmt.Fprintln(s.stdout, "Candidate output truncated at 10 rows")
+				break
+			}
+			fmt.Fprintf(s.stdout, "  %s score=%d confidence=%s support=%d contradictions=%d\n", x.CandidateID, x.Score, x.Confidence, len(x.SupportingEvidence), len(x.ContradictingEvidence))
+		}
+		fmt.Fprintln(s.stdout, "Safety: offline evidence only; timing alone does not prove SCCM protocol identity.")
+		return nil
+	}}
+	correlate.Flags().StringVar(&correlateCapture, "capture", "", "PCAP or PCAPNG capture (offline)")
+	correlate.Flags().StringVar(&logsDir, "logs", "", "directory containing bounded local log files")
+	correlate.Flags().StringVar(&triggerPath, "trigger", "", "schema-v1 controlled trigger JSON")
+	correlate.Flags().DurationVar(&preWindow, "pre-window", 30*time.Second, "time before trigger to consider")
+	correlate.Flags().DurationVar(&postWindow, "post-window", 180*time.Second, "time after trigger to consider")
+	correlate.Flags().StringVar(&correlateOutput, "output", "", "new owner-only correlation dossier directory")
+	correlate.Flags().StringVar(&correlateFormat, "format", "text", "output format: text or json")
+	for _, name := range []string{"capture", "logs", "trigger", "output"} {
+		_ = correlate.MarkFlagRequired(name)
+	}
 	for _, c := range []*cobra.Command{imp, inspect, normalize, verify} {
 		c.Flags().StringVar(&input, "input", "", "HAR, PCAP, PCAPNG, or normalized JSON capture")
 		c.Flags().StringVar(&format, "format", "", "input format (auto from extension)")
@@ -214,7 +296,7 @@ func (s *state) captureCommand() *cobra.Command {
 	}
 	normalize.Flags().StringVar(&output, "output", "", "mode-0600 normalized JSON output")
 	_ = normalize.MarkFlagRequired("output")
-	root.AddCommand(imp, inspect, normalize, verify, list, show, s.guidedImportCommand())
+	root.AddCommand(imp, inspect, normalize, verify, list, show, correlate, s.guidedImportCommand())
 	return root
 }
 

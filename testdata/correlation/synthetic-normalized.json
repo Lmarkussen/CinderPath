@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "algorithm_version": "capture-analysis-v1",
+  "source": {
+    "ID": "capture_synthetic_timeline",
+    "Format": "normalized_json",
+    "Fingerprint": "synthetic_fixture_fingerprint",
+    "Provenance": "fully synthetic offline correlation fixture"
+  },
+  "exchanges": [],
+  "sequence": {
+    "ID": "sequence_synthetic",
+    "Classification": "incomplete",
+    "ExchangeIDs": null,
+    "Edges": null,
+    "Warnings": null
+  },
+  "observations": [],
+  "redaction_summary": {},
+  "interfaces": [
+    {
+      "id": 0,
+      "link_type": 1,
+      "snap_length": 65535,
+      "timestamp_resolution": 1000000,
+      "supported": true
+    }
+  ],
+  "packets": [
+    {
+      "id": "packet_synthetic_1",
+      "index": 0,
+      "interface_id": 0,
+      "timestamp": "2026-07-01T10:00:01Z",
+      "captured_length": 96,
+      "original_length": 96,
+      "truncated": false,
+      "link_type": 1,
+      "fingerprint": "synthetic_packet_fingerprint"
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow_synthetic_opaque_tls",
+      "client": {"address_fingerprint": "1111111111111111", "port": 49152},
+      "server": {"address_fingerprint": "2222222222222222", "port": 443},
+      "transport": "tcp",
+      "state": "partial",
+      "packet_ids": ["packet_synthetic_1"],
+      "request_count": 0,
+      "response_count": 0,
+      "gaps": 1,
+      "duplicates": 0,
+      "retransmissions": 0,
+      "conflicts": 0,
+      "direction_confidence": "medium",
+      "started_at": "2026-07-01T10:00:01Z",
+      "ended_at": "2026-07-01T10:00:02Z",
+      "packet_size_sequence": [91],
+      "tls": true
+    }
+  ]
+}

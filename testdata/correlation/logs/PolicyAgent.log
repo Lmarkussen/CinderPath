@@ -1,0 +1,2 @@
+<![LOG[Requesting machine policy assignments]LOG]!><time="10:00:00.250+000" date="07-01-2026" component="PolicyAgent" context="" type="1" thread="42" file="synthetic">
+<![LOG[No new assignments]LOG]!><time="10:00:02.500+000" date="07-01-2026" component="PolicyAgent" context="" type="1" thread="42" file="synthetic">
