@@ -18,6 +18,7 @@ const (
 	ProfileStandard   Profile = "standard"
 	ProfileAggressive Profile = "aggressive"
 	ProfileYolo       Profile = "yolo"
+	ProfileResearch   Profile = "research"
 )
 
 type Config struct {
@@ -143,9 +144,9 @@ func Load(path string, cli Overrides) (Config, error) {
 		return cfg, errors.New("auth_validation.minimum_delay must be a non-negative duration")
 	}
 	switch cfg.Profile {
-	case ProfileSafe, ProfileStandard, ProfileAggressive, ProfileYolo:
+	case ProfileSafe, ProfileStandard, ProfileAggressive, ProfileYolo, ProfileResearch:
 	default:
-		return cfg, fmt.Errorf("invalid profile %q (use safe, standard, aggressive, or yolo)", cfg.Profile)
+		return cfg, fmt.Errorf("invalid profile %q (use safe, standard, aggressive, yolo, or research)", cfg.Profile)
 	}
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug", "info", "warn", "error":

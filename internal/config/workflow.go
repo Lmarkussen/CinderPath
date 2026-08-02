@@ -169,7 +169,7 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 func Validate(c Config) []Diagnostic {
 	var d []Diagnostic
 	add := func(l, m string) { d = append(d, Diagnostic{l, m}) }
-	if c.Profile != ProfileSafe && c.Profile != ProfileStandard && c.Profile != ProfileAggressive && c.Profile != ProfileYolo {
+	if c.Profile != ProfileSafe && c.Profile != ProfileStandard && c.Profile != ProfileAggressive && c.Profile != ProfileYolo && c.Profile != ProfileResearch {
 		add("ERROR", fmt.Sprintf("unknown profile %q", c.Profile))
 	}
 	for label, host := range map[string]string{"domain": c.WorkflowScope.Domain, "domain controller": c.WorkflowScope.DomainController} {

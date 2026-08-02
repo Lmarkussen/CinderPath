@@ -9,16 +9,16 @@ import (
 
 func TestPXECLI(t *testing.T) {
 	d := t.TempDir()
-	out, stderr, e := runCLI(t, "lab", "pxe", "candidates", "--candidate", "synthetic-sccm", "--site-code", "ABC")
+	out, stderr, e := runCLI(t, "research", "pxe", "candidates", "--candidate", "synthetic-sccm", "--site-code", "ABC")
 	if e != nil || !strings.Contains(out, "Live PXE requests: 0") {
 		t.Fatalf("%v %s %s", e, out, stderr)
 	}
 	plan := filepath.Join(d, "plan.json")
-	if out, stderr, e = runCLI(t, "lab", "pxe", "inspect-plan", "--candidate", "synthetic-sccm", "--output", plan); e != nil || !strings.Contains(out, "Maximum targets: 1") {
+	if out, stderr, e = runCLI(t, "research", "pxe", "inspect-plan", "--candidate", "synthetic-sccm", "--output", plan); e != nil || !strings.Contains(out, "Maximum targets: 1") {
 		t.Fatalf("%v %s %s", e, out, stderr)
 	}
 	script := filepath.Join(d, "collector.ps1")
-	if _, stderr, e = runCLI(t, "lab", "pxe", "collector-script", "--output", script); e != nil {
+	if _, stderr, e = runCLI(t, "research", "pxe", "collector-script", "--output", script); e != nil {
 		t.Fatalf("%v %s", e, stderr)
 	}
 	runtime := filepath.Join(d, "runtime.json")
@@ -27,16 +27,16 @@ func TestPXECLI(t *testing.T) {
 		t.Fatal(e)
 	}
 	dossier := filepath.Join(d, "dossier")
-	out, stderr, e = runCLI(t, "--db", filepath.Join(d, "db.sqlite"), "lab", "pxe", "analyze", "--inventory", runtime, "--candidate", "synthetic-sccm", "--output", dossier)
+	out, stderr, e = runCLI(t, "--db", filepath.Join(d, "db.sqlite"), "research", "pxe", "analyze", "--inventory", runtime, "--candidate", "synthetic-sccm", "--output", dossier)
 	if e != nil || !strings.Contains(out, "PXE enabled: true") || !strings.Contains(out, "Live PXE requests: 0") {
 		t.Fatalf("%v %s %s", e, out, stderr)
 	}
 	providerPlan := filepath.Join(d, "provider-plan.json")
-	if out, stderr, e = runCLI(t, "lab", "pxe", "provider-plan", "--server", "synthetic-sccm", "--site-code", "ABC", "--output", providerPlan); e != nil || !strings.Contains(out, "Maximum structurally selected classes: 32") {
+	if out, stderr, e = runCLI(t, "research", "pxe", "provider-plan", "--server", "synthetic-sccm", "--site-code", "ABC", "--output", providerPlan); e != nil || !strings.Contains(out, "Maximum structurally selected classes: 32") {
 		t.Fatalf("%v %s %s", e, out, stderr)
 	}
 	deploymentScript := filepath.Join(d, "deployment.ps1")
-	if _, stderr, e = runCLI(t, "lab", "pxe", "deployment-metadata", "--site-code", "ABC", "--output", deploymentScript); e != nil {
+	if _, stderr, e = runCLI(t, "research", "pxe", "deployment-metadata", "--site-code", "ABC", "--output", deploymentScript); e != nil {
 		t.Fatalf("%v %s", e, stderr)
 	}
 	deploymentRuntime := filepath.Join(d, "deployment.json")
@@ -44,7 +44,7 @@ func TestPXECLI(t *testing.T) {
 	if e = os.WriteFile(deploymentRuntime, []byte(deploymentData), 0600); e != nil {
 		t.Fatal(e)
 	}
-	if out, stderr, e = runCLI(t, "--db", filepath.Join(d, "deployment.sqlite"), "lab", "pxe", "analyze-deployments", "--deployments", deploymentRuntime, "--output", filepath.Join(d, "deployment-dossier")); e != nil || !strings.Contains(out, "Provider available: true") || !strings.Contains(out, "Live PXE requests: 0") {
+	if out, stderr, e = runCLI(t, "--db", filepath.Join(d, "deployment.sqlite"), "research", "pxe", "analyze-deployments", "--deployments", deploymentRuntime, "--output", filepath.Join(d, "deployment-dossier")); e != nil || !strings.Contains(out, "Provider available: true") || !strings.Contains(out, "Live PXE requests: 0") {
 		t.Fatalf("%v %s %s", e, out, stderr)
 	}
 }

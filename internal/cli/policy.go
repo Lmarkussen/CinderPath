@@ -250,7 +250,7 @@ func (s *state) protocolCommand() *cobra.Command {
 	_ = review.MarkFlagRequired("directory")
 	_ = review.MarkFlagRequired("reviewer-reference")
 	bundle := s.bundleCommand()
-	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, review, inspect, serve, bundle, s.signingKeyCommand(), s.researchSetCommand(), s.contractResearchCommand(), s.researchViewCommand("correlations"), s.researchViewCommand("sequences"), s.captureCommand(), s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.captureResearchCommand())
+	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, review, inspect, serve, bundle, s.signingKeyCommand(), s.researchSetCommand(), s.contractResearchCommand(), s.researchViewCommand("correlations"), s.researchViewCommand("sequences"))
 	return root
 }
 

@@ -42,7 +42,7 @@ func TestWriteAtomicSafeAndNoSecrets(t *testing.T) {
 	}
 }
 func TestProfilesAndValidation(t *testing.T) {
-	for _, p := range []Profile{ProfileSafe, ProfileStandard, ProfileAggressive, ProfileYolo} {
+	for _, p := range []Profile{ProfileSafe, ProfileStandard, ProfileAggressive, ProfileYolo, ProfileResearch} {
 		c := NewWorkflow("lab.local", p)
 		ds := Validate(c)
 		if HasErrors(ds) {

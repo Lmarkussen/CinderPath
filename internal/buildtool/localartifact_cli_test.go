@@ -14,7 +14,7 @@ import (
 func TestLocalArtifactCLIOffline(t *testing.T) {
 	d := t.TempDir()
 	kit := filepath.Join(d, "kit")
-	out, stderr, e := runCLI(t, "lab", "client-artifacts", "discover", "--output", kit, "--site-code", "P01", "--client-label", "client-a")
+	out, stderr, e := runCLI(t, "research", "policy", "discover", "--output", kit, "--site-code", "P01", "--client-label", "client-a")
 	if e != nil {
 		t.Fatalf("discover: %v %s", e, stderr)
 	}
@@ -26,7 +26,7 @@ func TestLocalArtifactCLIOffline(t *testing.T) {
 	inv := filepath.Join(d, "inventory.json")
 	_ = os.WriteFile(inv, b, 0600)
 	dossier := filepath.Join(d, "dossier")
-	out, stderr, e = runCLI(t, "--db", filepath.Join(d, "db.sqlite"), "lab", "client-artifacts", "inspect", "--inventory", inv, "--output", dossier)
+	out, stderr, e = runCLI(t, "--db", filepath.Join(d, "db.sqlite"), "research", "policy", "inspect", "--inventory", inv, "--output", dossier)
 	if e != nil {
 		t.Fatalf("inspect: %v %s", e, stderr)
 	}
@@ -34,7 +34,7 @@ func TestLocalArtifactCLIOffline(t *testing.T) {
 		t.Fatal(out)
 	}
 	plan := filepath.Join(d, "plan.json")
-	if _, stderr, e = runCLI(t, "lab", "client-artifacts", "export-plan", "--inventory", inv, "--output", plan); e != nil {
+	if _, stderr, e = runCLI(t, "research", "policy", "export-plan", "--inventory", inv, "--output", plan); e != nil {
 		t.Fatalf("plan: %v %s", e, stderr)
 	}
 	pb, _ := os.ReadFile(plan)
@@ -46,26 +46,26 @@ func TestLocalArtifactCLIOffline(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, command := range []string{"rank-schemas", "plan-instances", "parser-status", "content-plan"} {
-		out, stderr, e = runCLI(t, "lab", "client-artifacts", command, "--inventory", inv, "--format", "text")
+		out, stderr, e = runCLI(t, "research", "policy", command, "--inventory", inv, "--format", "text")
 		if e != nil || !strings.Contains(out, "Live SCCM policy requests: 0") || !strings.Contains(out, "Content copied: 0") {
 			t.Fatalf("%s: %v %s %s", command, e, out, stderr)
 		}
 	}
 	schemaDossier := filepath.Join(d, "schema-dossier")
-	if _, stderr, e = runCLI(t, "--db", filepath.Join(d, "schema.db"), "lab", "client-artifacts", "inspect-instances", "--inventory", inv, "--output", schemaDossier); e != nil {
+	if _, stderr, e = runCLI(t, "--db", filepath.Join(d, "schema.db"), "research", "policy", "inspect-instances", "--inventory", inv, "--output", schemaDossier); e != nil {
 		t.Fatalf("inspect-instances: %v %s", e, stderr)
 	}
 	previewPlan := filepath.Join(d, "preview-plan.json")
 	previewScript := filepath.Join(d, "preview.ps1")
-	if out, stderr, e = runCLI(t, "lab", "client-artifacts", "preview-plan", "--inventory", inv, "--output", previewPlan, "--script-output", previewScript); e != nil || !strings.Contains(out, "Live SCCM policy requests: 0") {
+	if out, stderr, e = runCLI(t, "research", "policy", "preview-plan", "--inventory", inv, "--output", previewPlan, "--script-output", previewScript); e != nil || !strings.Contains(out, "Live SCCM policy requests: 0") {
 		t.Fatalf("preview-plan %v %s %s", e, out, stderr)
 	}
-	if out, stderr, e = runCLI(t, "lab", "client-artifacts", "credential-targets"); e != nil || !strings.Contains(out, "policy") || !strings.Contains(out, "Live SCCM policy requests: 0") {
+	if out, stderr, e = runCLI(t, "research", "policy", "credential-targets"); e != nil || !strings.Contains(out, "policy") || !strings.Contains(out, "Live SCCM policy requests: 0") {
 		t.Fatalf("credential-targets %v %s %s", e, out, stderr)
 	}
 	credentialDossier := filepath.Join(d, "credential-dossier")
 	credentialScript := filepath.Join(d, "credential.ps1")
-	if out, stderr, e = runCLI(t, "--db", filepath.Join(d, "credential.db"), "lab", "client-artifacts", "find-credential-policies", "--inventory", inv, "--output", credentialDossier, "--script-output", credentialScript); e != nil || !strings.Contains(out, "Raw-copy candidates: 0") || !strings.Contains(out, "Live SCCM policy requests: 0") {
+	if out, stderr, e = runCLI(t, "--db", filepath.Join(d, "credential.db"), "research", "policy", "find-credential-policies", "--inventory", inv, "--output", credentialDossier, "--script-output", credentialScript); e != nil || !strings.Contains(out, "Raw-copy candidates: 0") || !strings.Contains(out, "Live SCCM policy requests: 0") {
 		t.Fatalf("credential policies %v %s %s", e, out, stderr)
 	}
 }

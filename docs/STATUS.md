@@ -1,6 +1,6 @@
 # CinderPath status and handover
 
-The operator CLI audit introduces a compact public lifecycle, high-level client-policy and PXE assessment plans, redacted context-source reporting, canonical workflow results, `research` and `debug` namespaces, and a machine-readable Cobra inventory. Fourteen legacy top-level parents remain hidden, deprecated compatibility aliases; no implementation or safety gate was removed. Active validation, exploitation, and cleanup remain unsupported and perform no action. Generic capture observation tables remain intentionally reused for bounded redacted cross-domain records; naming alone does not justify a migration.
+The CLI reduction keeps the compact public lifecycle while removing duplicate Cobra mounts introduced during the local audit. The tree fell from 218 to 151 commands, 580 to 411 local flags, 198 to 126 required flags, and 86 to 42 artifact handoffs. Fourteen unreleased deprecated parents and 138 duplicate hidden nodes are gone; tested implementations remain once under `research`. A canonical SHA-256-verified run artifact registry, shared public workflow flags, automatic profile bounds including offline `research`, and generated complexity budgets are implemented. Active validation, exploitation, and cleanup remain unsupported and perform no action.
 
 ## Passive Windows lab capture kit
 
@@ -41,7 +41,7 @@ authentication attempts, budget consumption, or target observations. The
 generated workflow defaults to the mock provider; live activity remains an
 explicit configuration choice with explicit scope.
 
-Profiles `safe`, `standard`, `aggressive`, and `yolo` resolve operator defaults.
+Profiles `safe`, `standard`, `aggressive`, `yolo`, and offline `research` resolve operator defaults.
 Safe never authenticates. Authentication in other profiles remains subject to
 the existing acknowledgement, identity, exact-route, freshness, and historical
 budget gates. Future policy, DP, PXE, secret-recovery, and live attack-path
@@ -234,7 +234,7 @@ The HTML report is portable with embedded CSS. Reports distinguish mock data, li
 --log-level debug|info|warn|error
 --no-color
 --timeout DURATION
---profile safe|standard|aggressive|yolo
+--profile safe|standard|aggressive|yolo|research
 ```
 
 Configuration precedence is explicit CLI flag, environment variable, YAML file, then default. Profiles select workflow defaults and deliberate secret-display policy, while hard safety gates remain authoritative. Unavailable aggressive/yolo modules are recorded as blocked or not implemented rather than executed.

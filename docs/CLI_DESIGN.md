@@ -22,7 +22,7 @@ cinderpath run --profile safe --dry-run
 cinderpath framework coverage --framework misconfiguration-manager
 ```
 
-The focused assessment commands emit a canonical, redacted workflow result and associate internal stages with one context. They do not pretend an authorized remote connector exists: execution remains blocked until one is supplied through a separately authorized workflow. Normal operators no longer need to understand intermediate inventory, ranking, preview, provider, or dossier filenames.
+The focused assessment commands emit a canonical, redacted workflow result and a complete artifact plan associated with one context. They do not pretend an authorized remote connector exists: execution remains blocked until one is supplied through a separately authorized workflow. Normal operators no longer need to understand intermediate inventory, ranking, preview, provider, or dossier filenames.
 
 ## Research and debug
 
@@ -33,6 +33,8 @@ cinderpath research capture ...
 cinderpath research policy ...
 cinderpath research evidence ...
 cinderpath research analyze-captures ...
+cinderpath research artifact register --run <run-id> --artifact-type <type> --artifact <file>
+cinderpath research artifact resolve --run <run-id> --artifact-type <type>
 cinderpath debug command-inventory --format json
 ```
 
@@ -48,11 +50,13 @@ Important values use this precedence:
 4. environment variable;
 5. safe default.
 
-`--verbose` displays source categories, not sensitive values. Targets are fingerprinted in workflow output. The current model resolves target, framework, database, output directory, and profile. Site code, client label, roles, dossiers, and evidence associations remain domain observations rather than duplicated global flags.
+`--verbose` displays source categories and resolved limits, not sensitive values. Targets are fingerprinted in workflow output. The current model resolves target, framework, database, output directory, and profile. Public assessment workflows share definitions for `--run`, `--target`, and `--format`. Site code, client label, roles, dossiers, and evidence associations remain domain observations rather than duplicated global flags.
 
 ## Canonical result
 
 High-level workflows emit one schema-v1 result containing workflow, redacted target, framework, status, checked stages, findings, blockers, next action, and network behavior. Dossiers and domain evidence remain separate provenance records; this result does not replace raw evidence or parser lifecycle details.
+
+The canonical artifact registry stores run ID, target fingerprint, workflow, stage, artifact type, timestamp, SHA-256 fingerprint, path, sensitivity, review, and superseded state. It resolves the latest unambiguous artifact for a run and type and refuses equal-time ambiguity. Research direct-file mode remains available through generic artifact flags.
 
 ## Profiles
 
@@ -64,6 +68,7 @@ Profiles express policy, not shortcuts around gates:
 | `standard` | explicit live provider only | separately enabled and bounded | blocked unless implemented | blocked | supported stages | recorded when applicable |
 | `aggressive` | explicit scope only | separately acknowledged | implemented gates only | deliberate secure route only | broader implemented stages | required for changes |
 | `yolo` | same explicit scope rules | same acknowledgements | incomplete | deliberate secure route only | not complete | required |
+| `research` | offline by default | blocked unless separately enabled | blocked | redacted by default | larger offline bounds | none |
 
 `yolo` is a placeholder, not a complete automatic attack workflow. Profiles never override scope, lockout, protocol, impact, or cleanup gates.
 
@@ -73,7 +78,7 @@ Profiles express policy, not shortcuts around gates:
 
 ## Metrics
 
-Before this audit, 21 application commands were registered at top level and normal PXE work exposed seven low-level stages with repeated artifact handoffs. Afterward, the visible surface is 13 Cobra commands including help/completion/version, with the engagement lifecycle plus `framework`, `research`, and `debug`. The complete tree remains available and measurable through `debug command-inventory`.
+The cleanup baseline contained 218 command nodes, 580 local flags, 198 required flags, 86 artifact handoffs, 138 hidden pipeline nodes, and 14 deprecated parents. The reduced tree contains 151 command nodes, 411 local flags, 126 required flags, 42 artifact handoffs, zero hidden pipeline nodes, and zero deprecated parents. The visible surface remains 13 Cobra commands including help/completion/version. The complete tree is measurable through `debug command-inventory` and `debug cli-complexity`.
 
 Common PXE usage changes from manually coordinating candidate, plan, collector, posture, provider, deployment, and dossier paths to:
 

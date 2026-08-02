@@ -68,22 +68,8 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
 	f.BoolVar(&s.verbose, "verbose", false, "show resolved context sources and advanced details")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
-	f.StringVar(&s.profile, "profile", string(d.Profile), "assessment profile: safe, standard, aggressive, yolo")
-	legacy := []*cobra.Command{s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runsCommand(), s.protocolCommand(), s.labCommand(), s.clientIdentityCommand(), s.policyCommand(), s.captureCommand(), s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand()}
-	for _, c := range legacy {
-		c.Hidden = true
-		c.Deprecated = "advanced command; use `cinderpath research --help` or the public engagement commands"
-		legacyName := c.Name()
-		c.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-			if err := s.configure(cmd); err != nil {
-				return err
-			}
-			fmt.Fprintf(s.stderr, "`%s` is deprecated as a public path and remains an advanced compatibility command; use `cinderpath research --help` or the public engagement commands.\n", legacyName)
-			return nil
-		}
-	}
+	f.StringVar(&s.profile, "profile", string(d.Profile), "policy profile: safe, standard, aggressive, yolo, or research")
 	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.validationCommand(), s.exploitCommand(), s.cleanupCommand(), s.reportCommand(), s.runCommand(), s.frameworkCommand(), s.researchCommand(), s.debugCommand(root))
-	root.AddCommand(legacy...)
 	return root
 }
 func (s *state) authCommand() *cobra.Command {
@@ -249,6 +235,23 @@ func (s *state) versionCommand() *cobra.Command {
 	return &cobra.Command{Use: "version", Short: "Print version and build information", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { fmt.Fprintln(s.stdout, version.Current().String()); return nil }}
 }
 func (s *state) discoverCommand() *cobra.Command {
+	c := &cobra.Command{Use: "discover", Short: "Discover SCCM with safe profile defaults", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
+		defer cancel()
+		options, err := s.discoverOptions()
+		if err != nil {
+			return err
+		}
+		out, err := s.application.DiscoverWithOptions(ctx, os.Args[1:], options)
+		s.printOutcome(out)
+		return err
+	}}
+	c.Flags().StringVar(&s.discover.provider, "provider", "mock", "mock or explicitly selected live discovery")
+	c.Flags().StringArrayVar(&s.discover.targets, "target", nil, "target hostname, address, or CIDR (repeatable)")
+	return c
+}
+
+func (s *state) advancedDiscoverCommand() *cobra.Command {
 	c := &cobra.Command{Use: "discover", Short: "Run explicit mock or safe live discovery modules", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 		defer cancel()

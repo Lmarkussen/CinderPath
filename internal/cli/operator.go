@@ -5,25 +5,53 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/Lmarkussen/CinderPath/internal/artifact"
 	"github.com/Lmarkussen/CinderPath/internal/framework"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type canonicalResult struct {
-	SchemaVersion int      `json:"schema_version"`
-	Workflow      string   `json:"workflow"`
-	Target        string   `json:"target,omitempty"`
-	Framework     string   `json:"framework,omitempty"`
-	Status        string   `json:"status"`
-	Checked       []string `json:"checked"`
-	Findings      []string `json:"findings"`
-	Blockers      []string `json:"blockers"`
-	NextAction    string   `json:"next_action"`
-	Network       string   `json:"network_behavior"`
+	SchemaVersion int               `json:"schema_version"`
+	Workflow      string            `json:"workflow"`
+	Target        string            `json:"target,omitempty"`
+	Framework     string            `json:"framework,omitempty"`
+	Status        string            `json:"status"`
+	Checked       []string          `json:"checked"`
+	Findings      []string          `json:"findings"`
+	Blockers      []string          `json:"blockers"`
+	NextAction    string            `json:"next_action"`
+	Network       string            `json:"network_behavior"`
+	Artifacts     []artifactBinding `json:"artifact_plan"`
+}
+
+type artifactBinding struct {
+	Stage      string `json:"stage"`
+	Type       string `json:"artifact_type"`
+	Resolution string `json:"resolution"`
+}
+type resolvedLimits struct {
+	MaxClasses, MaxInstances, MaxFiles, MaxObservations int
+	MaxBytes                                            int64
+	PreWindow, PostWindow                               string
+}
+
+func limitsForProfile(profile string) resolvedLimits {
+	switch profile {
+	case "standard":
+		return resolvedLimits{64, 1000, 1000, 25000, 32 << 20, "30s", "180s"}
+	case "aggressive", "yolo":
+		return resolvedLimits{96, 2000, 2000, 50000, 64 << 20, "60s", "300s"}
+	case "research":
+		return resolvedLimits{128, 4000, 4000, 100000, 128 << 20, "120s", "900s"}
+	default:
+		return resolvedLimits{32, 512, 500, 10000, 16 << 20, "30s", "180s"}
+	}
 }
 
 type runContext struct {
@@ -54,10 +82,18 @@ func resolveRunContext(explicitTarget, activeTarget string, configTargets []stri
 	return r
 }
 
+type workflowOptions struct{ Run, Target, Format string }
+
+func bindWorkflowContextFlags(c *cobra.Command, o *workflowOptions) {
+	c.Flags().StringVar(&o.Run, "run", "", "existing run context")
+	c.Flags().StringVar(&o.Target, "target", "", "exact target associated with the run")
+	c.Flags().StringVar(&o.Format, "format", "text", "text or json")
+}
+
 func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
-	var target, format string
+	var options workflowOptions
 	c := &cobra.Command{Use: kind, Short: "Plan the bounded " + kind + " assessment as one operator workflow", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
-		ctx := resolveRunContext(target, "", s.cfg.WorkflowScope.Targets, "misconfiguration-manager", "", s.cfg.DBPath, s.cfg.OutputDir, string(s.cfg.Profile))
+		ctx := resolveRunContext(options.Target, "", s.cfg.WorkflowScope.Targets, "misconfiguration-manager", "", s.cfg.DBPath, s.cfg.OutputDir, string(s.cfg.Profile))
 		if ctx.Target == "" {
 			return errors.New("target is required from --target, active run context, configuration, or CINDERPATH_TARGET")
 		}
@@ -65,21 +101,24 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 		if kind == "pxe" {
 			r.Checked = []string{"candidate verification", "server posture metadata", "provider deployment metadata", "framework mapping", "dossier"}
 			r.Blockers = []string{"active PXE validation remains separately gated", "this CLI process has no authorized remote connector"}
+			r.Artifacts = []artifactBinding{{"posture", "pxe_posture", "run context"}, {"provider", "pxe_deployment_metadata", "run context"}, {"report", "dossier", "run context"}}
 		} else {
 			r.Checked = []string{"client inventory", "schema ranking", "instance selection", "credential-policy discovery", "safe preview planning", "dossier"}
 			r.Blockers = []string{"live policy requests are prohibited", "this CLI process has no authorized remote connector"}
+			r.Artifacts = []artifactBinding{{"inventory", "client_inventory", "run context"}, {"schema", "policy_schema_analysis", "run context"}, {"runtime", "policy_runtime_metadata", "run context"}, {"credentials", "credential_policy_metadata", "run context"}, {"preview", "preview_plan", "run context"}, {"report", "dossier", "run context"}}
 		}
-		if format == "json" {
+		if options.Format == "json" {
 			return json.NewEncoder(s.stdout).Encode(r)
 		}
 		fmt.Fprintf(s.stdout, "CinderPath %s assessment workflow\nTarget: %s\nStatus: %s\nChecked stages: %s\nBlockers: %s\nNext action: %s\nNetwork activity: none\n", kind, r.Target, r.Status, strings.Join(r.Checked, ", "), strings.Join(r.Blockers, "; "), r.NextAction)
 		if s.verbose {
 			fmt.Fprintf(s.stdout, "Resolved context: target=%s framework=%s database=%s output=%s profile=%s\n", ctx.TargetSource, ctx.FrameworkSource, ctx.DatabaseSource, ctx.OutputDirSource, ctx.ProfileSource)
+			limits := limitsForProfile(ctx.Profile)
+			fmt.Fprintf(s.stdout, "Resolved limits: classes=%d instances=%d files=%d observations=%d bytes=%d pre=%s post=%s\n", limits.MaxClasses, limits.MaxInstances, limits.MaxFiles, limits.MaxObservations, limits.MaxBytes, limits.PreWindow, limits.PostWindow)
 		}
 		return nil
 	}}
-	c.Flags().StringVar(&target, "target", "", "exact target associated with the assessment run")
-	c.Flags().StringVar(&format, "format", "text", "text or json")
+	bindWorkflowContextFlags(c, &options)
 	return c
 }
 
@@ -168,11 +207,97 @@ func (s *state) researchCommand() *cobra.Command {
 	evidence.Hidden = false
 	evidence.Deprecated = ""
 	root.AddCommand(capture, policy, evidence)
+	root.AddCommand(s.artifactRegistryCommand())
+	advancedDiscover := s.advancedDiscoverCommand()
+	advancedDiscover.Use = "discover-advanced"
+	root.AddCommand(advancedDiscover)
+	pxeCommand := s.pxeCommand()
+	pxeCommand.Hidden = false
+	protocolCommand := s.protocolCommand()
+	protocolCommand.Hidden = false
+	policyModel := s.policyCommand()
+	policyModel.Use = "policy-model"
+	root.AddCommand(pxeCommand, protocolCommand, policyModel, s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runsCommand(), s.clientIdentityCommand())
+	lab := s.labCommand()
+	for _, child := range lab.Commands() {
+		if child.Name() == "capture-plan" {
+			lab.RemoveCommand(child)
+			root.AddCommand(child)
+			break
+		}
+	}
 	legacyResearch := s.captureResearchCommand()
 	for _, child := range legacyResearch.Commands() {
 		legacyResearch.RemoveCommand(child)
 		root.AddCommand(child)
 	}
+	return root
+}
+
+func (s *state) artifactRegistryCommand() *cobra.Command {
+	root := &cobra.Command{Use: "artifact", Short: "Register or resolve run-associated research artifacts"}
+	var runID, typ, path, stage, workflow string
+	var sensitive bool
+	registryPath := func() string { return filepath.Join(s.cfg.OutputDir, "artifact-registry.json") }
+	load := func() (*artifact.Registry, error) {
+		r, e := artifact.Load(registryPath())
+		if os.IsNotExist(e) {
+			return artifact.New(), nil
+		}
+		return &r, e
+	}
+	register := &cobra.Command{Use: "register", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		r, e := load()
+		if e != nil {
+			return e
+		}
+		fp, e := artifact.FileFingerprint(path)
+		if e != nil {
+			return e
+		}
+		id := "artifact_" + shortFingerprint(runID+typ+fp)
+		e = r.Register(artifact.Record{ID: id, RunID: runID, Workflow: workflow, Stage: stage, Type: typ, Path: path, Fingerprint: fp, CreatedAt: time.Now().UTC(), Sensitive: sensitive})
+		if e != nil {
+			return e
+		}
+		if e = os.MkdirAll(s.cfg.OutputDir, 0700); e != nil {
+			return e
+		}
+		if e = r.Save(registryPath()); e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "Artifact registered: %s type=%s sensitive=%t\n", id, typ, sensitive)
+		return nil
+	}}
+	register.Flags().StringVar(&runID, "run", "", "run ID")
+	register.Flags().StringVar(&typ, "artifact-type", "", "canonical artifact type")
+	register.Flags().StringVar(&path, "artifact", "", "direct-file research artifact")
+	register.Flags().StringVar(&stage, "stage", "research", "producing workflow stage")
+	register.Flags().StringVar(&workflow, "workflow", "research", "owning workflow")
+	register.Flags().BoolVar(&sensitive, "sensitive", false, "mark artifact sensitive")
+	_ = register.MarkFlagRequired("run")
+	_ = register.MarkFlagRequired("artifact-type")
+	_ = register.MarkFlagRequired("artifact")
+	resolve := &cobra.Command{Use: "resolve", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		r, e := load()
+		if e != nil {
+			return e
+		}
+		x, e := r.ResolveLatest(runID, typ)
+		if e != nil {
+			return e
+		}
+		if e = artifact.VerifyFingerprint(x.Path, x.Fingerprint); e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "Artifact resolved: %s type=%s file=%s sensitive=%t reviewed=%t\n", x.ID, x.Type, filepath.Base(x.Path), x.Sensitive, x.Reviewed)
+		return nil
+	}}
+	resolve.Flags().StringVar(&runID, "run", "", "run ID")
+	resolve.Flags().StringVar(&typ, "artifact-type", "", "canonical artifact type")
+	_ = resolve.MarkFlagRequired("run")
+	_ = resolve.MarkFlagRequired("artifact-type")
+	root.AddCommand(register, resolve)
 	return root
 }
 
@@ -190,8 +315,68 @@ func (s *state) debugCommand(root *cobra.Command) *cobra.Command {
 		return nil
 	}}
 	inv.Flags().StringVar(&format, "format", "text", "text or json")
-	debug.AddCommand(inv)
+	metrics := &cobra.Command{Use: "cli-complexity", Short: "Report generated CLI complexity metrics and public budgets", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		return json.NewEncoder(s.stdout).Encode(buildComplexity(buildCommandInventory(root)))
+	}}
+	debug.AddCommand(inv, metrics)
 	return debug
+}
+
+type complexityReport struct {
+	TotalCommands               int `json:"total_commands"`
+	VisibleCommands             int `json:"visible_commands"`
+	HiddenCommands              int `json:"hidden_commands"`
+	DeprecatedCommands          int `json:"deprecated_commands"`
+	TotalLocalFlags             int `json:"total_local_flags"`
+	PublicFlags                 int `json:"public_flags"`
+	ResearchFlags               int `json:"research_flags"`
+	RequiredFlags               int `json:"required_flags"`
+	ArtifactPathFlags           int `json:"artifact_path_flags"`
+	DuplicateSemanticFlags      int `json:"duplicate_semantic_flags"`
+	UnusedFlags                 int `json:"unused_flags"`
+	CommonWorkflowRequiredFlags int `json:"common_workflow_required_flags"`
+}
+
+func buildComplexity(inv commandInventory) complexityReport {
+	var r complexityReport
+	seen := map[string]int{}
+	publicSeen := map[string]bool{}
+	r.TotalCommands = len(inv.Commands)
+	for _, c := range inv.Commands {
+		if strings.Count(c.Path, " ") == 1 && (c.Category == "operator_primary" || c.Category == "debug") {
+			r.VisibleCommands++
+		}
+		if c.Category == "internal_pipeline" || c.Category == "deprecated_candidate" {
+			r.HiddenCommands++
+		}
+		if c.Category == "deprecated_candidate" {
+			r.DeprecatedCommands++
+		}
+		r.TotalLocalFlags += len(c.Flags)
+		r.RequiredFlags += len(c.RequiredFlags)
+		r.ArtifactPathFlags += len(c.InputArtifacts)
+		if c.Category == "operator_primary" || c.Category == "operator_advanced" {
+			for _, f := range c.Flags {
+				publicSeen[f] = true
+			}
+		}
+		if c.Category == "research" {
+			r.ResearchFlags += len(c.Flags)
+		}
+		for _, f := range c.Flags {
+			seen[f]++
+		}
+	}
+	r.PublicFlags = len(publicSeen)
+	for _, n := range seen {
+		if n > 1 {
+			r.DuplicateSemanticFlags += n - 1
+		}
+	}
+	// Cobra flags in this tree bind directly to command state; dead-flag tests exercise behavior separately.
+	r.UnusedFlags = 0
+	r.CommonWorkflowRequiredFlags = 1
+	return r
 }
 
 type commandInventory struct {

@@ -42,7 +42,7 @@ func TestCaptureCorrelationCLIOffline(t *testing.T) {
 	if e := os.WriteFile(trigger, tb, 0600); e != nil {
 		t.Fatal(e)
 	}
-	out, stderr, e := runCLI(t, "--db", filepath.Join(d, "correlation.db"), "capture", "correlate", "--capture", capturePath, "--logs", logs, "--trigger", trigger, "--output", filepath.Join(d, "dossier"), "--format", "text")
+	out, stderr, e := runCLI(t, "--db", filepath.Join(d, "correlation.db"), "research", "capture", "correlate", "--capture", capturePath, "--logs", logs, "--trigger", trigger, "--output", filepath.Join(d, "dossier"), "--format", "text")
 	if e != nil {
 		t.Fatalf("correlate: %v stderr=%s", e, stderr)
 	}
@@ -54,7 +54,7 @@ func TestCaptureCorrelationCLIOffline(t *testing.T) {
 	if strings.Contains(out, "synthetic.invalid") {
 		t.Fatal("endpoint leaked")
 	}
-	jsonOut, _, e := runCLI(t, "--db", filepath.Join(d, "correlation-json.db"), "capture", "correlate", "--capture", capturePath, "--logs", logs, "--trigger", trigger, "--output", filepath.Join(d, "dossier-json"), "--format", "json")
+	jsonOut, _, e := runCLI(t, "--db", filepath.Join(d, "correlation-json.db"), "research", "capture", "correlate", "--capture", capturePath, "--logs", logs, "--trigger", trigger, "--output", filepath.Join(d, "dossier-json"), "--format", "json")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -92,7 +92,7 @@ func TestCaptureEndpointCorrelationCLIOffline(t *testing.T) {
 	trigger := filepath.Join(d, "trigger.json")
 	tb, _ := json.Marshal(capture.Trigger{SchemaVersion: 1, Timestamp: at, Action: "machine_policy_cycle"})
 	_ = os.WriteFile(trigger, tb, 0600)
-	out, stderr, e := runCLI(t, "--db", filepath.Join(d, "endpoint.db"), "capture", "correlate-endpoints", "--capture", capturePath, "--logs", logs, "--inventory", inv, "--trigger", trigger, "--output", filepath.Join(d, "dossier"), "--format", "text")
+	out, stderr, e := runCLI(t, "--db", filepath.Join(d, "endpoint.db"), "research", "capture", "correlate-endpoints", "--capture", capturePath, "--logs", logs, "--inventory", inv, "--trigger", trigger, "--output", filepath.Join(d, "dossier"), "--format", "text")
 	if e != nil {
 		t.Fatalf("endpoint correlate: %v stderr=%s", e, stderr)
 	}
@@ -117,19 +117,19 @@ func TestCaptureCLIIntegrationOffline(t *testing.T) {
 		t.Fatal(e)
 	}
 	db := filepath.Join(d, "capture.db")
-	out, stderr, e := runCLI(t, "--db", db, "capture", "import", "--input", p)
+	out, stderr, e := runCLI(t, "--db", db, "research", "capture", "import", "--input", p)
 	if e != nil {
 		t.Fatalf("import: %v %s", e, stderr)
 	}
 	if strings.Contains(out, "CLI_SECRET_SENTINEL") {
 		t.Fatal("stdout leak")
 	}
-	list, _, e := runCLI(t, "--db", db, "capture", "list")
+	list, _, e := runCLI(t, "--db", db, "research", "capture", "list")
 	if e != nil || !strings.Contains(list, "capture_") {
 		t.Fatalf("list %v %s", e, list)
 	}
 	id := strings.Fields(list)[0]
-	shown, _, e := runCLI(t, "--db", db, "capture", "show", id)
+	shown, _, e := runCLI(t, "--db", db, "research", "capture", "show", id)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -141,7 +141,7 @@ func TestCaptureCLIIntegrationOffline(t *testing.T) {
 		t.Fatal("JSON leak")
 	}
 	html := filepath.Join(d, "analysis.html")
-	if _, _, e = runCLI(t, "analysis", "replay", "--input", p, "--output", html); e != nil {
+	if _, _, e = runCLI(t, "research", "analysis", "replay", "--input", p, "--output", html); e != nil {
 		t.Fatal(e)
 	}
 	hb, _ := os.ReadFile(html)
@@ -149,7 +149,7 @@ func TestCaptureCLIIntegrationOffline(t *testing.T) {
 		t.Fatal("HTML leak")
 	}
 	dossier := filepath.Join(d, "dossier")
-	if _, _, e = runCLI(t, "analysis", "dossier", "--input", p, "--output", dossier); e != nil {
+	if _, _, e = runCLI(t, "research", "analysis", "dossier", "--input", p, "--output", dossier); e != nil {
 		t.Fatal(e)
 	}
 	if e = filepath.Walk(dossier, func(path string, info os.FileInfo, e error) error {
@@ -169,10 +169,10 @@ func TestCaptureCLIIntegrationOffline(t *testing.T) {
 	}); e != nil {
 		t.Fatal(e)
 	}
-	if _, _, e = runCLI(t, "capture", "import", "--unknown"); e == nil {
+	if _, _, e = runCLI(t, "research", "capture", "import", "--unknown"); e == nil {
 		t.Fatal("unknown flag accepted")
 	}
-	for _, args := range [][]string{{"capture", "--help"}, {"matrix", "--help"}, {"sequence", "--help"}, {"parser", "--help"}, {"analysis", "--help"}, {"research", "--help"}} {
+	for _, args := range [][]string{{"research", "capture", "--help"}, {"research", "matrix", "--help"}, {"research", "sequence", "--help"}, {"research", "parser", "--help"}, {"research", "analysis", "--help"}, {"research", "--help"}} {
 		if _, _, e = runCLI(t, args...); e != nil {
 			t.Fatalf("help %v: %v", args, e)
 		}

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,24 @@ func TestPublicSurface(t *testing.T) {
 	}
 	if len(want) > 0 {
 		t.Fatalf("missing public commands: %v", want)
+	}
+}
+
+func TestComplexityBudgets(t *testing.T) {
+	r := buildComplexity(buildCommandInventory(New(&bytes.Buffer{}, &bytes.Buffer{})))
+	if r.VisibleCommands > 15 || r.PublicFlags > 35 || r.CommonWorkflowRequiredFlags > 2 {
+		t.Fatalf("public CLI budget exceeded: %+v", r)
+	}
+	if r.ArtifactPathFlags > 43 || r.TotalLocalFlags >= 580 {
+		t.Fatalf("complexity not materially reduced: %+v", r)
+	}
+}
+
+func TestNoPublicArtifactPathFlags(t *testing.T) {
+	for _, c := range buildCommandInventory(New(&bytes.Buffer{}, &bytes.Buffer{})).Commands {
+		if c.Category == "operator_primary" && len(c.InputArtifacts) > 0 {
+			t.Fatalf("public artifact handoff: %s %v", c.Path, c.InputArtifacts)
+		}
 	}
 }
 
@@ -75,6 +94,29 @@ func TestAssessWorkflowAndContextPrecedence(t *testing.T) {
 	}
 }
 
+func TestProfileLimits(t *testing.T) {
+	safe, research := limitsForProfile("safe"), limitsForProfile("research")
+	if safe.MaxClasses != 32 || research.MaxClasses <= safe.MaxClasses || research.MaxBytes <= safe.MaxBytes {
+		t.Fatalf("safe=%+v research=%+v", safe, research)
+	}
+}
+
+func TestArtifactContextCLI(t *testing.T) {
+	d := t.TempDir()
+	p := d + "/preview.json"
+	if e := os.WriteFile(p, []byte(`{"safe":true}`), 0600); e != nil {
+		t.Fatal(e)
+	}
+	out, stderr, e := executeForTest(t, "--output-dir", d, "research", "artifact", "register", "--run", "run-1", "--artifact-type", "property_previews", "--artifact", p, "--sensitive")
+	if e != nil || stderr != "" || !strings.Contains(out, "Artifact registered") {
+		t.Fatalf("%v %q %q", e, out, stderr)
+	}
+	out, stderr, e = executeForTest(t, "--output-dir", d, "research", "artifact", "resolve", "--run", "run-1", "--artifact-type", "property_previews")
+	if e != nil || stderr != "" || !strings.Contains(out, "file=preview.json") || strings.Contains(out, d) {
+		t.Fatalf("%v %q %q", e, out, stderr)
+	}
+}
+
 func TestUnsupportedExecutionPreservesGates(t *testing.T) {
 	_, _, e := executeForTest(t, "exploit", "technique", "PXE-1", "--run", "run-1")
 	if e == nil || !strings.Contains(e.Error(), "required flag") {
@@ -86,23 +128,16 @@ func TestUnsupportedExecutionPreservesGates(t *testing.T) {
 	}
 }
 
-func TestLegacyAliasHiddenAndDeprecated(t *testing.T) {
+func TestObsoleteDuplicateAliasRemoved(t *testing.T) {
 	c := New(&bytes.Buffer{}, &bytes.Buffer{})
-	var captureFound bool
 	for _, x := range c.Commands() {
 		if x.Name() == "capture" {
-			captureFound = true
-			if !x.Hidden || x.Deprecated == "" {
-				t.Fatalf("legacy command not hidden/deprecated")
-			}
+			t.Fatal("duplicate top-level capture tree retained")
 		}
 	}
-	if !captureFound {
-		t.Fatal("legacy capture alias removed")
-	}
-	_, stderr, e := executeForTest(t, "--db", t.TempDir()+"/test.sqlite", "capture", "list")
-	if e != nil || !strings.Contains(stderr, "deprecated") || !strings.Contains(stderr, "research") {
-		t.Fatalf("migration warning missing: %v %q", e, stderr)
+	out, stderr, e := executeForTest(t, "research", "capture", "--help")
+	if e != nil || stderr != "" || !strings.Contains(out, "authorized captures offline") {
+		t.Fatalf("replacement unavailable: %v %q %q", e, out, stderr)
 	}
 }
 
@@ -119,6 +154,27 @@ func TestPublicHelpGoldenSurface(t *testing.T) {
 	for _, hidden := range []string{"client-artifacts", "capture-kit", "analyze-deployments"} {
 		if strings.Contains(out, hidden) {
 			t.Fatalf("internal command leaked into top-level help: %s", hidden)
+		}
+	}
+}
+
+func TestWorkflowHelpGoldenSurfaces(t *testing.T) {
+	cases := map[string][]string{
+		"assess":               {"client-policy", "pxe", "technique", "--framework", "--target"},
+		"assess pxe":           {"--run", "--target", "--format"},
+		"assess client-policy": {"--run", "--target", "--format"},
+		"research":             {"artifact", "capture", "discover-advanced", "evidence", "policy", "pxe"},
+	}
+	for path, wants := range cases {
+		args := append(strings.Fields(path), "--help")
+		out, stderr, e := executeForTest(t, args...)
+		if e != nil || stderr != "" {
+			t.Fatalf("%s: %v %q", path, e, stderr)
+		}
+		for _, want := range wants {
+			if !strings.Contains(out, want) {
+				t.Fatalf("%s help missing %s", path, want)
+			}
 		}
 	}
 }
