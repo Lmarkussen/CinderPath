@@ -1,5 +1,7 @@
 # CinderPath
 
+CinderPath now presents a compact engagement CLI: `discover`, `assess`, `validate`, `exploit`, `cleanup`, `report`, `run`, and `framework`. Advanced capture, policy-artifact, and evidence primitives remain supported under `research`; redacted command-graph diagnostics live under `debug`. Validation and exploitation are visible but truthfully unsupported unless a technique has separately implemented safety gates. See [CLI design](docs/CLI_DESIGN.md) and [CLI migration](docs/CLI_MIGRATION.md).
+
 CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and attack-path correlation platform. Its long-term goal is to maintain a normalized model of an SCCM environment, understand the capabilities available to an assessor, run applicable modules, preserve evidence, suppress duplicate noise, and prioritize attack paths.
 
 > **CinderPath is intended for authorized security assessments and controlled lab environments. Users are responsible for ensuring they have explicit permission before assessing any system.**

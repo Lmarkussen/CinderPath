@@ -24,7 +24,7 @@ import (
 type state struct {
 	configPath                                string
 	db, outputDir, logLevel, timeout, profile string
-	noColor                                   bool
+	noColor, verbose                          bool
 	cfg                                       config.Config
 	application                               *app.Application
 	stdout, stderr                            io.Writer
@@ -57,16 +57,33 @@ type authFlags struct {
 func New(stdout, stderr io.Writer) *cobra.Command {
 	s := &state{stdout: stdout, stderr: stderr}
 	d := config.Defaults()
-	root := &cobra.Command{Use: "cinderpath", Short: "SCCM discovery, assessment, and attack-path correlation", SilenceUsage: true, SilenceErrors: true, PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return s.configure(cmd) }}
+	root := &cobra.Command{Use: "cinderpath", Short: "Safe SCCM discovery and Misconfiguration Manager assessment", Long: "CinderPath discovers SCCM, assesses supported Misconfiguration Manager techniques, validates findings through explicit safety gates, records cleanup obligations, and generates evidence-backed reports. Advanced offline tooling lives under research; diagnostic tooling lives under debug.", Example: "  cinderpath discover --provider mock\n  cinderpath assess --framework misconfiguration-manager --target lab.example\n  cinderpath assess pxe --target srv01\n  cinderpath report\n  cinderpath research --help", SilenceUsage: true, SilenceErrors: true, PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return s.configure(cmd) }}
+	root.SetOut(stdout)
+	root.SetErr(stderr)
 	f := root.PersistentFlags()
 	f.StringVar(&s.configPath, "config", "", "optional YAML configuration file")
 	f.StringVar(&s.db, "db", d.DBPath, "SQLite database path")
 	f.StringVar(&s.outputDir, "output-dir", d.OutputDir, "report output directory")
 	f.StringVar(&s.logLevel, "log-level", d.LogLevel, "log level: debug, info, warn, error")
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
+	f.BoolVar(&s.verbose, "verbose", false, "show resolved context sources and advanced details")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
 	f.StringVar(&s.profile, "profile", string(d.Profile), "assessment profile: safe, standard, aggressive, yolo")
-	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runCommand(), s.runsCommand(), s.protocolCommand(), s.labCommand(), s.clientIdentityCommand(), s.policyCommand(), s.captureCommand(), s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.captureResearchCommand(), s.frameworkCommand())
+	legacy := []*cobra.Command{s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runsCommand(), s.protocolCommand(), s.labCommand(), s.clientIdentityCommand(), s.policyCommand(), s.captureCommand(), s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand()}
+	for _, c := range legacy {
+		c.Hidden = true
+		c.Deprecated = "advanced command; use `cinderpath research --help` or the public engagement commands"
+		legacyName := c.Name()
+		c.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+			if err := s.configure(cmd); err != nil {
+				return err
+			}
+			fmt.Fprintf(s.stderr, "`%s` is deprecated as a public path and remains an advanced compatibility command; use `cinderpath research --help` or the public engagement commands.\n", legacyName)
+			return nil
+		}
+	}
+	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.validationCommand(), s.exploitCommand(), s.cleanupCommand(), s.reportCommand(), s.runCommand(), s.frameworkCommand(), s.researchCommand(), s.debugCommand(root))
+	root.AddCommand(legacy...)
 	return root
 }
 func (s *state) authCommand() *cobra.Command {
@@ -332,13 +349,22 @@ func (s *state) discoverOptions() (app.DiscoverOptions, error) {
 	return app.DiscoverOptions{Provider: "live", Live: o}, nil
 }
 func (s *state) assessCommand() *cobra.Command {
-	return &cobra.Command{Use: "assess", Short: "Assess discovered assets with safe mock modules", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	var frameworkName string
+	var targets []string
+	c := &cobra.Command{Use: "assess", Short: "Assess supported techniques without active validation", Long: "Assess stored or mock-safe evidence. Framework and target context are associated with one run; unsupported and active stages remain clearly blocked.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 		defer cancel()
 		out, err := s.application.Assess(ctx, os.Args[1:])
 		s.printOutcome(out)
+		if frameworkName != "" {
+			fmt.Fprintf(s.stdout, "Framework: %s\nTargets associated with run: %d\nActive technique validation: blocked by default\n", frameworkName, len(targets))
+		}
 		return err
 	}}
+	c.Flags().StringVar(&frameworkName, "framework", "", "framework snapshot, for example misconfiguration-manager")
+	c.Flags().StringArrayVar(&targets, "target", nil, "assessment target context (repeatable; no discovery traffic)")
+	c.AddCommand(s.assessWorkflowCommand("client-policy"), s.assessWorkflowCommand("pxe"), s.assessTechniqueCommand())
+	return c
 }
 func (s *state) reportCommand() *cobra.Command {
 	return &cobra.Command{Use: "report", Short: "Generate portable JSON and HTML reports", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {

@@ -1,5 +1,7 @@
 # Misconfiguration Manager roadmap
 
+Normal coverage review now starts with `cinderpath assess --framework misconfiguration-manager --target <scope>` or `cinderpath framework coverage`. Only discovery and assessment support recorded in the pinned registry is selected; planned validation or execution remains blocked. Low-level evidence commands remain available under `research`.
+
 NAA, task-sequence credential, and collection/deployment-variable objectives are now `discovery_supported`: targeted metadata-only class and instance discovery exists. The validated lab produced no concrete credential-policy instance, so this does not imply protected-value recovery, safe validation, or execution support. PXE/OSD acquisition and Shadow Credentials remain planned.
 
 `pxe_dp_assessment` is now `assessment_supported` for exact one-target,

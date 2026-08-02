@@ -1,5 +1,7 @@
 # SCCM PXE and OSD posture assessment
 
+Normal operators should start with `cinderpath assess pxe --target <server>`. Candidate, posture, provider, deployment, relationship, framework, and dossier stages are represented as one workflow; the command reports when an authorized remote connector is unavailable. Existing `lab pxe` primitives remain hidden compatibility commands for controlled development workflows.
+
 CinderPath separates PXE discovery, server-local assessment, active validation, and content analysis. This phase implements the first two only. It never sends DHCP, PXE, TFTP, boot-media, WIM, task-sequence, or distribution-point content requests.
 
 ```bash

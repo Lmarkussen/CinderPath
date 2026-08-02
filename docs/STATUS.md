@@ -1,5 +1,7 @@
 # CinderPath status and handover
 
+The operator CLI audit introduces a compact public lifecycle, high-level client-policy and PXE assessment plans, redacted context-source reporting, canonical workflow results, `research` and `debug` namespaces, and a machine-readable Cobra inventory. Fourteen legacy top-level parents remain hidden, deprecated compatibility aliases; no implementation or safety gate was removed. Active validation, exploitation, and cleanup remain unsupported and perform no action. Generic capture observation tables remain intentionally reused for bounded redacted cross-domain records; naming alone does not justify a migration.
+
 ## Passive Windows lab capture kit
 
 A schema-v7 audit plus schema-v8 extension implements the passive capture-kit lifecycle. `lab capture-kit` atomically creates, shows, validates, and locally finalizes owner-only kits; performs bounded redacted generic Windows-log inspection; and exports, inspects, imports, signs, and verifies a separate `capture_evidence` bundle format. Generated PowerShell never starts capture or SCCM actions. `capture guided-import` accepts reviewed local kits or validated capture-evidence bundles, preserves sources, records redacted attribution, and creates a capture-kit dossier. `matrix add-kit` attaches reviewed operator metadata without analysis. Capture-evidence integrity, import, and signing do not validate or approve a protocol contract. Live policy collection remains blocked.

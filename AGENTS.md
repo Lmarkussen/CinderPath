@@ -1,5 +1,7 @@
 # CinderPath contributor guidance
 
+The public CLI is intentionally limited to engagement lifecycle commands plus `research` and `debug`. New internal primitives must not appear at top level. Preserve hidden compatibility aliases for at least one cycle, machine-clean JSON stdout, stderr deprecation guidance, context precedence, canonical workflow blockers, and all safety acknowledgements. Do not advertise unsupported validation, exploitation, cleanup, or YOLO automation.
+
 Targeted credential-policy discovery must use the retained inventory first and an exact generated class allowlist second. A password/account name, encoding shape, or entropy alone is not a credential candidate. The validated run found zero concrete NAA/task-sequence/variable instances and copied zero values. Discovery support does not mean credential recovery or validation support.
 
 PXE/OSD posture assessment requires an exact independently evidenced server and

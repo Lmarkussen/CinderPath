@@ -1,5 +1,7 @@
 # Local SCCM policy-artifact discovery
 
+Normal operators should start with `cinderpath assess client-policy --target <client>`. Schema ranking, instance selection, credential targeting, preview planning, and dossier generation are internal pipeline stages associated through one run context. Advanced fixture and parser work remains under `cinderpath research policy`.
+
 Targeted credential-policy work follows this generic inventory and does not repeat broad exploration. `credential-targets` and `find-credential-policies` require known class/property combinations plus machine-policy provenance; password/account names, entropy, and encoding alone remain weak evidence. See [CREDENTIAL_POLICY_DISCOVERY.md](CREDENTIAL_POLICY_DISCOVERY.md).
 
 Packet capture reached diminishing returns in the authorized disposable lab:

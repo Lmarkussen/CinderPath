@@ -10,6 +10,7 @@ LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/interna
 
 .PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz policy-schema-test policy-instance-selection-test policy-schema-parser-test policy-content-plan-test policy-schema-fuzz policy-preview-test policy-preview-script-test policy-preview-fuzz framework-coverage-test credential-target-test credential-policy-test naa-discovery-test task-sequence-policy-test credential-policy-fuzz pxe-assessment-test pxe-candidate-test pxe-script-test pxe-fuzz capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
 .PHONY: pxe-provider-test pxe-deployment-test pxe-deployment-script-test pxe-deployment-fuzz
+.PHONY: cli-audit-test cli-public-surface-test cli-compatibility-test cli-workflow-test
 
 help:
 	@printf '%s\n' \
@@ -347,6 +348,18 @@ pxe-deployment-script-test:
 
 pxe-deployment-fuzz:
 	go test ./internal/pxe -run '^$$' -fuzz '^FuzzPXEDeploymentRuntime$$' -fuzztime=1s
+
+cli-audit-test:
+	go test ./internal/cli -run 'TestCommandInventory'
+
+cli-public-surface-test:
+	go test ./internal/cli -run 'TestPublicSurface'
+
+cli-compatibility-test:
+	go test ./internal/cli -run 'TestLegacyAlias|TestUnsupportedExecution'
+
+cli-workflow-test:
+	go test ./internal/cli -run 'TestAssessWorkflow|TestCommandInventoryJSON'
 
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 
