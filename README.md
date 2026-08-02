@@ -6,6 +6,17 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 ## Current status
 
+CinderPath now generates and validates a passive cross-platform Windows SCCM lab capture kit. It provides read-only local inventory, preparation and finalization scripts, tool-neutral manual capture guidance, raw/sanitized review gates, guided offline import, and controlled-matrix attachment. It does not start capture, trigger policy retrieval, contact SCCM, or register a client. See [`docs/CAPTURE_KIT.md`](docs/CAPTURE_KIT.md).
+
+```bash
+# Synthetic authorized-lab metadata only.
+cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \
+  --site-code ABC --client-label win11-client-a --capture-label baseline-01
+cinderpath lab capture-kit validate --directory ~/cinderpath-lab-kit
+cinderpath capture guided-import --kit ~/cinderpath-lab-kit --dry-run
+cinderpath matrix add-kit --matrix research-matrix.yaml --kit ~/cinderpath-lab-kit
+```
+
 The offline SCCM protocol-research subsystem now includes durable workflow
 module decisions and standalone dry-run histories, bounded binary inspection,
 three explicit sanitization modes, auditable body-review records, sanitized

@@ -1,5 +1,9 @@
 # CinderPath status and handover
 
+## Passive Windows lab capture kit
+
+A schema-v7 passive capture-kit workflow is implemented. `lab capture-kit` atomically creates, shows, validates, and locally finalizes owner-only kits; generated PowerShell performs bounded read-only inventory/preparation/local hash finalization and never starts capture or SCCM actions. `capture guided-import` accepts only reviewed sanitized formats, preserves raw inputs, records redacted attribution, and can create a dossier. `matrix add-kit` attaches reviewed operator metadata without analysis. Generic kit bundle export remains explicitly unavailable unless the existing protocol-contract workflow applies. Live policy collection remains blocked.
+
 ## Unified operator workflow
 
 CinderPath now provides `config init`, `config validate`, `config show`, and a

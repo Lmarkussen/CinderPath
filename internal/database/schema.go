@@ -1,6 +1,6 @@
 package database
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 var schemaV1 = []string{
 	`CREATE TABLE runs (id TEXT PRIMARY KEY, command TEXT NOT NULL, profile TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, version TEXT NOT NULL, arguments TEXT NOT NULL, summary TEXT NOT NULL)`,
@@ -75,4 +75,15 @@ var schemaV6 = []string{
 	`CREATE TABLE capture_matrix_findings (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 	`CREATE TABLE capture_corpus_results (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 	`CREATE TABLE capture_dossiers (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+}
+var schemaV7 = []string{
+	`CREATE TABLE capture_kits (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_kit_files (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_kit_validation_results (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_kit_reviews (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_kit_imports (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE windows_client_inventories (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_tool_inventories (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_kit_matrix_links (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
+	`CREATE TABLE capture_kit_dossiers (id TEXT PRIMARY KEY, run_id TEXT NOT NULL DEFAULT '', capture_id TEXT NOT NULL, fingerprint TEXT NOT NULL, observed_at TEXT NOT NULL, data TEXT NOT NULL)`,
 }

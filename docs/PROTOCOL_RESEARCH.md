@@ -4,6 +4,9 @@ Capture-level research is documented in [CAPTURE_INGESTION.md](CAPTURE_INGESTION
 [SEQUENCE_RESEARCH.md](SEQUENCE_RESEARCH.md), [STRUCTURED_PARSERS.md](STRUCTURED_PARSERS.md),
 and [CONTROLLED_CAPTURE_MATRIX.md](CONTROLLED_CAPTURE_MATRIX.md). It consumes
 synthetic or authorized-lab files locally and never elevates candidate contracts.
+The passive Windows preparation and guided import workflow is documented in
+[CAPTURE_KIT.md](CAPTURE_KIT.md); kit metadata/review are operator assertions,
+not evidence of registration, retrieval, identity validation, or live approval.
 
 Generic XML, JSON, and multipart parsers emit bounded redacted structure, not
 SCCM semantics. Parser lifecycle states are `observed_structure`,

@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -39,6 +39,12 @@ help:
 	  '  analysis-replay-test deterministic offline re-analysis tests' \
 	  '  capture-dossier-test  atomic redacted dossier tests' \
 	  '  capture-cli-test      command-tree and offline CLI tests' \
+	  '  capture-kit-test      passive kit generation/schema/state tests' \
+	  '  capture-kit-cli-test  capture-kit and guided-import CLI tests' \
+	  '  capture-kit-script-test static passive PowerShell/shell tests' \
+	  '  guided-import-test    reviewed offline guided-import tests' \
+	  '  windows-log-test      bounded Windows log inventory tests' \
+	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
 	  '  capture-fuzz/sequence-fuzz/parser-fuzz bounded offline fuzz smoke tests' \
 	  '  docs-check            high-value CLI/docs/Makefile consistency tests' \
@@ -181,6 +187,21 @@ capture-dossier-test:
 capture-cli-test:
 	go test ./internal/buildtool -run '^TestCaptureCLIIntegrationOffline$$|^TestDocumentationConsistency$$'
 
+capture-kit-test:
+	go test ./internal/capturekit
+
+capture-kit-cli-test:
+	go test ./internal/buildtool -run '^TestCaptureKitCLIOffline$$|^TestDocumentationConsistency$$'
+
+capture-kit-script-test:
+	go test ./internal/capturekit -run '^TestCreateLayoutModesAndPassiveScripts$$'
+
+guided-import-test:
+	go test ./internal/buildtool -run '^TestCaptureKitCLIOffline$$'
+
+windows-log-test:
+	go test ./internal/capturekit -run '^TestCreateLayoutModesAndPassiveScripts$$'
+
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 
 capture-fuzz:
@@ -207,6 +228,10 @@ matrix-fuzz:
 
 analysis-fuzz:
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzCorpusManifest$$' -fuzztime=1s
+
+capture-kit-fuzz:
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzMetadataParser$$' -fuzztime=1s
+	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzSafePath$$' -fuzztime=1s
 
 docs-check:
 	go test ./internal/buildtool -run '^TestDocumentationConsistency$$'

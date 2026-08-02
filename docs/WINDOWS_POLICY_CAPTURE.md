@@ -70,3 +70,6 @@ Reviewed HAR, PCAP, and PCAPNG files may be imported through offline `capture`
 commands. PCAPNG Ethernet decoding does not make TLS plaintext visible, and an
 HTTP/1 reconstruction remains evidence with an explicit completeness state—not
 authorization or technical support for sending that traffic.
+## Generated passive capture kit
+
+Use `cinderpath lab capture-kit create --output DIR` for the guided workflow and read [CAPTURE_KIT.md](CAPTURE_KIT.md). Generated inventory, preparation, and finalization scripts are local and passive. They do not start capture or trigger SCCM behavior. `Get-ComputerInfo`, read-only `Get-CimInstance -Namespace root\ccm -ClassName SMS_Client`, log-directory listing, and certificate metadata listing are examples only; namespaces and classes vary by SCCM version/environment. A policy retrieval must be observed naturally or initiated separately through an approved lab procedure.

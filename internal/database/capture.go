@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var captureTables = map[string]bool{"capture_sources": true, "capture_exchanges": true, "capture_sequences": true, "capture_observations": true, "capture_parser_candidates": true, "capture_matrices": true, "capture_ambiguities": true, "capture_files": true, "capture_interfaces": true, "capture_packets": true, "capture_flows": true, "capture_sequence_edges": true, "parser_validation_results": true, "capture_matrix_cells": true, "capture_matrix_findings": true, "capture_corpus_results": true, "capture_dossiers": true}
+var captureTables = map[string]bool{"capture_sources": true, "capture_exchanges": true, "capture_sequences": true, "capture_observations": true, "capture_parser_candidates": true, "capture_matrices": true, "capture_ambiguities": true, "capture_files": true, "capture_interfaces": true, "capture_packets": true, "capture_flows": true, "capture_sequence_edges": true, "parser_validation_results": true, "capture_matrix_cells": true, "capture_matrix_findings": true, "capture_corpus_results": true, "capture_dossiers": true, "capture_kits": true, "capture_kit_files": true, "capture_kit_validation_results": true, "capture_kit_reviews": true, "capture_kit_imports": true, "windows_client_inventories": true, "capture_tool_inventories": true, "capture_kit_matrix_links": true, "capture_kit_dossiers": true}
 
 type CaptureRecord struct {
 	ID, RunID, CaptureID, Fingerprint string
@@ -30,7 +30,7 @@ func (s *Store) UpsertCaptureRecord(ctx context.Context, table string, r Capture
 	if e != nil {
 		return e
 	}
-	if table == "capture_sources" || table == "capture_matrices" {
+	if table == "capture_sources" || table == "capture_matrices" || table == "capture_kits" {
 		q := fmt.Sprintf(`INSERT INTO %s(id,run_id,fingerprint,observed_at,data) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,observed_at=excluded.observed_at,data=excluded.data`, table)
 		_, e = s.db.ExecContext(ctx, q, r.ID, r.RunID, r.Fingerprint, timeText(r.ObservedAt), string(b))
 	} else {
@@ -44,7 +44,7 @@ func (s *Store) ListCaptureRecords(ctx context.Context, table string) ([]Capture
 		return nil, errors.New("unsupported capture table")
 	}
 	cols := "id,run_id,'' as capture_id,fingerprint,observed_at,data"
-	if table != "capture_sources" && table != "capture_matrices" {
+	if table != "capture_sources" && table != "capture_matrices" && table != "capture_kits" {
 		cols = "id,run_id,capture_id,fingerprint,observed_at,data"
 	}
 	rows, e := s.db.QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s ORDER BY id", cols, table))
@@ -72,7 +72,7 @@ func (s *Store) GetCaptureRecord(ctx context.Context, table, id string) (Capture
 		return CaptureRecord{}, errors.New("unsupported capture table")
 	}
 	cols := "id,run_id,'' as capture_id,fingerprint,observed_at,data"
-	if table != "capture_sources" && table != "capture_matrices" {
+	if table != "capture_sources" && table != "capture_matrices" && table != "capture_kits" {
 		cols = "id,run_id,capture_id,fingerprint,observed_at,data"
 	}
 	var r CaptureRecord

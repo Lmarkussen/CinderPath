@@ -214,7 +214,7 @@ func (s *state) captureCommand() *cobra.Command {
 	}
 	normalize.Flags().StringVar(&output, "output", "", "mode-0600 normalized JSON output")
 	_ = normalize.MarkFlagRequired("output")
-	root.AddCommand(imp, inspect, normalize, verify, list, show)
+	root.AddCommand(imp, inspect, normalize, verify, list, show, s.guidedImportCommand())
 	return root
 }
 
@@ -266,12 +266,18 @@ func (s *state) matrixCommand() *cobra.Command {
 		return nil
 	}}
 	validate.Flags().StringVar(&setPath, "matrix", "", "matrix YAML")
+	var kitPath string
+	addKit := &cobra.Command{Use: "add-kit", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { return addKitToMatrix(setPath, kitPath) }}
+	addKit.Flags().StringVar(&setPath, "matrix", "", "matrix YAML")
+	addKit.Flags().StringVar(&kitPath, "kit", "", "reviewed capture-kit directory")
+	_ = addKit.MarkFlagRequired("matrix")
+	_ = addKit.MarkFlagRequired("kit")
 	for _, c := range []*cobra.Command{add, validate} {
 		_ = c.MarkFlagRequired("matrix")
 	}
 	_ = add.MarkFlagRequired("label")
 	_ = add.MarkFlagRequired("capture")
-	root.AddCommand(create, add, validate)
+	root.AddCommand(create, add, addKit, validate)
 	return root
 }
 func writeYAML(path string, v any) error {

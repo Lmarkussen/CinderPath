@@ -85,6 +85,7 @@ func (s *state) labCommand() *cobra.Command {
 	f.StringVar(&o.ClientIDReference, "client-id-reference", "", "optional existing-client reference")
 	_ = c.MarkFlagRequired("output")
 	root.AddCommand(c)
+	root.AddCommand(s.captureKitCommand())
 	return root
 }
 

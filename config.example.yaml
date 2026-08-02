@@ -88,6 +88,9 @@ policy:
     minimum_repetitions: 2
     signature_policy: warn_unsigned
     algorithm_version: capture-analysis-v1
+# Capture kits use explicit CLI commands. Site, management-point, client,
+# action, and environment fields are unverified operator metadata. No setting
+# starts capture or enables live policy collection.
 # Binary sanitization and research bundles are explicit CLI workflows. The safe
 # default is metadata_only: opaque bodies remain unchanged and require review.
 # No configuration key can set a protocol contract to approved_live.
