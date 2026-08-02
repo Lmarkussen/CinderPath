@@ -86,6 +86,7 @@ func (s *state) labCommand() *cobra.Command {
 	_ = c.MarkFlagRequired("output")
 	root.AddCommand(c)
 	root.AddCommand(s.captureKitCommand())
+	root.AddCommand(s.clientArtifactsCommand())
 	return root
 }
 

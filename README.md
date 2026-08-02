@@ -60,6 +60,20 @@ DNS/address evidence nor the visible SNI connected it to a TLS flow. The result
 does not establish policy framing or improve secret readiness beyond
 `not_ready_no_policy_evidence`. Raw capture and logs remain outside Git.
 
+Because encrypted packet capture has reached diminishing returns, CinderPath
+also generates a bounded read-only local SCCM policy-artifact discovery script.
+`lab client-artifacts discover|inspect|show|export-plan` inventories class
+schemas and redacted value shapes, ranks candidates, writes an advisory export
+plan, and produces an owner-only dossier. It does not invoke client methods,
+copy policy bodies automatically, recover credentials, or send a live request.
+See [`docs/LOCAL_POLICY_ARTIFACTS.md`](docs/LOCAL_POLICY_ARTIFACTS.md). A single
+authorized Windows Server 2019 / PowerShell 5.1 run successfully inventoried 10
+namespace records, 1,024 bounded class schemas, 8 instance records, 85 file
+records, and 33 registry records with zero live requests. It found policy
+schemas but no supported encrypted-value candidate, supporting
+`ready_for_policy_schema_parser` only; no content was copied and no secret or
+decryption claim was made.
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \

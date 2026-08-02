@@ -754,3 +754,16 @@ log evidence identified one management-point endpoint at medium confidence,
 but captured DNS/address and SNI evidence did not link it to a TLS flow. The
 flow result is `endpoint_identified_but_flow_ambiguous`, and secret readiness
 remains `not_ready_no_policy_evidence`. No resolution or network action occurs.
+
+## Local policy-artifact discovery
+
+The `lab client-artifacts` workflow generates a Windows PowerShell 5.1-compatible
+read-only discovery script and parses its schema-v1 metadata offline. Fixed SCCM
+namespaces, schemas, value shapes, approved client paths, and SCCM registry
+metadata are bounded and redacted. Candidate ranking, export planning, generic
+schema-v8 persistence, and an atomic dossier are implemented; automatic content
+copy and secret extraction are absent. One authorized Windows Server 2019 /
+PowerShell 5.1 runtime completed with 10 namespace records, 1,024 bounded class
+schemas, 8 instance records, 85 file records, 33 registry records, and zero
+live requests. Policy schemas were found, but no supported encrypted-value
+candidate; readiness is `ready_for_policy_schema_parser`, not secret recovery.

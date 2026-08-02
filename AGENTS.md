@@ -108,3 +108,15 @@ management-point endpoint from inventory plus logs, but did not link it to a
 TLS flow; preserve `endpoint_identified_but_flow_ambiguous` and
 `not_ready_no_policy_evidence`. Prefer reviewed above-TLS client metadata over
 another capture made solely because TLS is opaque.
+
+The offline `lab client-artifacts` workflow generates a bounded Windows
+PowerShell 5.1 read-only metadata script. Preserve its fixed SCCM namespace,
+path, and registry allowlists; schema-only method inventory; value-shape
+redaction; advisory export plan; and zero automatic content-copy behavior.
+Never infer a secret from a property name, entropy, base64 shape, or timestamp.
+The local-artifact script completed one authorized Windows Server 2019 /
+PowerShell 5.1 runtime with bounded namespace, schema, instance, file, and
+registry metadata and zero live requests. Preserve the runtime fixes for empty
+pipeline counts, locked files, explicit collection enumeration, and nonfatal
+errors. The run supports encrypted-value classifier research only; it copied no
+artifact content and does not establish general Windows compatibility.

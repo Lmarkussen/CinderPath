@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -54,6 +54,10 @@ help:
 	  '  endpoint-attribution-test passive SCCM endpoint scoring tests' \
 	  '  endpoint-graph-test    fingerprint-only endpoint graph tests' \
 	  '  endpoint-correlation-fuzz bounded DNS/endpoint fuzz smoke tests' \
+	  '  local-artifact-test    bounded local SCCM artifact model tests' \
+	  '  local-artifact-cli-test offline local-artifact CLI tests' \
+	  '  local-artifact-script-test passive PowerShell static tests' \
+	  '  local-artifact-fuzz    bounded metadata/parser fuzz smoke tests' \
 	  '  correlation-fuzz       bounded offline correlation fuzz smoke tests' \
 	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
@@ -242,6 +246,15 @@ endpoint-attribution-test:
 endpoint-graph-test:
 	go test ./internal/capture -run 'TestEndpointCorrelation|TestEndpointDossier'
 
+local-artifact-test:
+	go test ./internal/localartifact
+
+local-artifact-cli-test:
+	go test ./internal/buildtool -run '^TestLocalArtifactCLI'
+
+local-artifact-script-test:
+	go test ./internal/localartifact -run '^TestCreatePassivePowerShell51$$'
+
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 
 capture-fuzz:
@@ -283,6 +296,12 @@ endpoint-correlation-fuzz:
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzEndpointCandidateScoring$$' -fuzztime=1s
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzTLSMetadataCorrelation$$' -fuzztime=1s
 	go test ./internal/capture -run '^$$' -fuzz '^FuzzEndpointDossierSerialization$$' -fuzztime=1s
+
+local-artifact-fuzz:
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzInventoryParser$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzValueShapeClassifier$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzCandidateScorer$$' -fuzztime=1s
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzDossierSerializer$$' -fuzztime=1s
 
 capture-kit-fuzz:
 	go test ./internal/capturekit -run '^$$' -fuzz '^FuzzMetadataParser$$' -fuzztime=1s

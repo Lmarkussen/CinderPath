@@ -157,3 +157,14 @@ medium-confidence management-point candidate, while no DNS/address or SNI edge
 linked it to a TLS flow. The distinct flow classification is
 `endpoint_identified_but_flow_ambiguous`; kit review, sanitization, import, and
 export readiness are unchanged.
+
+Local above-TLS artifact discovery is intentionally separate from capture-kit
+sanitization and bundle state. `lab client-artifacts` consumes metadata JSON and
+never makes a raw capture import-ready. See
+[`LOCAL_POLICY_ARTIFACTS.md`](LOCAL_POLICY_ARTIFACTS.md).
+
+The local-artifact generator has also completed one authorized Windows Server
+2019 / PowerShell 5.1 runtime. It produced redacted metadata only and made zero
+live policy requests. This does not alter capture-kit review, sanitization,
+guided-import, or evidence-bundle gates, and no discovered content was copied
+into a capture kit.

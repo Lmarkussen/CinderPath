@@ -110,3 +110,12 @@ associated it with a TLS flow. Thus the flow result is
 and readiness remains `not_ready_no_policy_evidence`. Repeating packet capture
 is not justified merely because TLS is encrypted; reviewed client-side
 above-TLS message or policy-cache metadata is the next useful evidence source.
+
+The next implemented preparation step is the read-only local-artifact workflow
+documented in [`LOCAL_POLICY_ARTIFACTS.md`](LOCAL_POLICY_ARTIFACTS.md). It uses a
+fixed namespace and path allowlist, inventories schemas and value shapes, and
+plans rather than automatically performs content export. The new generated
+script has Linux static/golden coverage and completed one authorized runtime
+on Windows Server 2019 with Windows PowerShell 5.1. It recorded bounded schema,
+instance, file, and registry metadata and zero live requests; missing `Reduced`,
+`DM`, and `User` policy namespaces were nonfatal. No artifact content was copied.

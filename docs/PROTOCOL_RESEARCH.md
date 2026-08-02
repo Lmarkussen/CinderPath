@@ -185,3 +185,18 @@ On retained evidence, inventory plus logs supported a medium-confidence
 management-point endpoint, while DNS/address and SNI did not link that endpoint
 to a TLS flow. The result is `endpoint_identified_but_flow_ambiguous`, not a
 policy contract or secret-extraction prerequisite.
+
+Local above-TLS research now begins with `lab client-artifacts`. It records WMI
+class schemas and bounded instance value shapes without invoking methods, then
+ranks policy candidates and emits an advisory export plan. A property name,
+entropy, base64 shape, or timestamp alone cannot establish a secret. See
+[`LOCAL_POLICY_ARTIFACTS.md`](LOCAL_POLICY_ARTIFACTS.md). No local content copy,
+decryption, or live protocol action is implied.
+
+One authorized Windows Server 2019 / PowerShell 5.1 execution confirmed the
+metadata path against an installed Configuration Manager 5.00.9128.1007 client.
+It observed accessible policy schemas but no structurally supported encrypted
+value, supporting `ready_for_policy_schema_parser`. Intrinsic WMI classes are
+excluded from policy scoring. The run did not copy policy bodies, establish a
+protection mechanism, recover plaintext, trigger policy, or send a live SCCM
+request.
