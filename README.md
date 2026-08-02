@@ -8,6 +8,8 @@ CinderPath is an early-stage SCCM discovery, assessment, topology-mapping, and a
 
 CinderPath now provides a complete passive cross-platform Windows SCCM lab capture-kit lifecycle: read-only local inventory, preparation/finalization scripts, bounded redacted Windows-log inspection, deterministic review states, guided offline import, controlled-matrix attachment, atomic redacted dossiers, and a dedicated signed capture-evidence bundle format. Capture-evidence bundles are separate from protocol-contract research bundles and require no observed contract; importing or signing one never validates live SCCM protocol behavior. CinderPath does not start capture, trigger policy retrieval, contact SCCM, or register a client. See [`docs/CAPTURE_KIT.md`](docs/CAPTURE_KIT.md).
 
+The generated scripts have been runtime-validated on one disposable GOAD client: Windows Server 2019 Standard Evaluation 10.0.17763 (build 17763), Windows PowerShell Desktop 5.1.17763.8510, and Configuration Manager client 5.00.9128.1007. All three scripts completed under an administrator test account with process-scoped execution-policy bypass; this does not establish that administrator privileges are required or claim compatibility with other Windows releases. The isolated test used the lab's pre-existing certificate-ignoring WinRM inventory solely for that VM.
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \

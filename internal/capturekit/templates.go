@@ -66,10 +66,17 @@ $Errors = [System.Collections.Generic.List[object]]::new()
 function Safe-Read([string]$Name, [scriptblock]$Action) {
   try { & $Action } catch { $Errors.Add([ordered]@{ item=$Name; error=$_.Exception.Message.Substring(0,[Math]::Min(256,$_.Exception.Message.Length)) }); $null }
 }
+function Get-SHA256Text([string]$Value) {
+  $SHA = [Security.Cryptography.SHA256]::Create()
+  try { ([BitConverter]::ToString($SHA.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value))).Replace("-","").ToLowerInvariant()) } finally { $SHA.Dispose() }
+}
+function Write-UTF8NoBOM([string]$Path, [string]$Content) {
+  [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
+}
 # OS build is local diagnostic metadata.
 $OS = Safe-Read "windows_version" { Get-CimInstance -ClassName Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber }
 # The hostname is fingerprinted so the clear identifier is not written.
-$HostHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($env:COMPUTERNAME))).ToLowerInvariant()
+$HostHash = Get-SHA256Text $env:COMPUTERNAME
 # Read-only service presence; no service is started, stopped, or restarted.
 $Service = Safe-Read "ccmexec_service" { Get-Service -Name CcmExec -ErrorAction Stop | Select-Object Name,Status }
 # SCCM namespaces/classes differ by version and environment; unavailable is explicit.
@@ -85,9 +92,9 @@ $Tools = @("dumpcap.exe","Wireshark.exe","pktmon.exe","netsh.exe") | ForEach-Obj
 $Logs = Safe-Read "ccm_log_inventory" { @(Get-ChildItem "$env:windir\CCM\Logs" -File -ErrorAction Stop | Select-Object -First 256 Name,Length,LastWriteTimeUtc) }
 $Channels = Safe-Read "event_log_channels" { @(Get-WinEvent -ListLog "Microsoft-Windows-*" -ErrorAction Stop | Select-Object -First 128 LogName,IsEnabled,RecordCount) }
 $Result = [ordered]@{schema_version=1;collected_at=(Get-Date).ToUniversalTime().ToString("o");hostname_sha256=$HostHash;windows=$OS;timezone=[TimeZoneInfo]::Local.Id;ccmexec_service=$Service;sccm_client=$Client;sccm_authority=$Authority;certificates=$Certs;network_adapters=$Adapters;proxy=$Proxy;capture_tools=$Tools;ccm_logs=$Logs;event_log_channels=$Channels;errors=$Errors}
-$Result | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
+Write-UTF8NoBOM $OutputPath ($Result | ConvertTo-Json -Depth 6 -Compress)
 $ToolResult = [ordered]@{schema_version=1;collected_at=(Get-Date).ToUniversalTime().ToString("o");detection="executable_presence_only";tools=$Tools}
-$ToolResult | ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $ToolOutputPath -Encoding utf8NoBOM
+Write-UTF8NoBOM $ToolOutputPath ($ToolResult | ConvertTo-Json -Depth 4 -Compress)
 Write-Host "Passive inventory written locally to metadata/client-inventory.json"
 `
 const preparePS = `# Prepares local directories and instructions only. It never starts capture or SCCM actions.
@@ -117,7 +124,7 @@ if ($IncludeClientLogs) {
 }
 $Files = @(Get-ChildItem $Raw -File -Recurse | Where-Object { $_.Length -le 67108864 } | Select-Object -First 512 | ForEach-Object { [ordered]@{path=$_.FullName.Substring($Root.Length+1);size=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant();extension=$_.Extension;modified_at=$_.LastWriteTimeUtc.ToString("o");source_category=if($_.Extension -eq ".log"){"sccm_client_log"}else{"operator_supplied_raw"};copied=[bool]$IncludeClientLogs;redacted=$false;reviewed=$false} })
 $Manifest = [ordered]@{schema_version=1;stopped_at=(Get-Date).ToUniversalTime().ToString("o");raw_sensitive=$true;safe_for_sharing=$false;files=$Files;warnings=@("Raw evidence may contain identifiers, credentials, cookies, and opaque binary content.")}
-$Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Raw "local-raw-manifest.json") -Encoding utf8NoBOM
+[IO.File]::WriteAllText((Join-Path $Raw "local-raw-manifest.json"), ($Manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
 if ($CreateArchive) { $Archive=Join-Path $Root "output\cinderpath-RAW-SENSITIVE.zip";if(Test-Path $Archive){throw "Raw archive already exists"};Compress-Archive -LiteralPath $Raw -DestinationPath $Archive -CompressionLevel Optimal;Write-Warning "Archive remains RAW AND SENSITIVE; it is not sanitized." }
 Write-Host "Finalized local raw manifest. Uploads: none. Live SCCM policy requests: 0."
 `

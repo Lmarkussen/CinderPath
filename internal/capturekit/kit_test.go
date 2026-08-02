@@ -48,6 +48,14 @@ func TestCreateLayoutModesAndPassiveScripts(t *testing.T) {
 			t.Fatalf("unsafe generated token %q", bad)
 		}
 	}
+	for _, incompatible := range []string{"SHA256]::HashData", "Convert]::ToHexString", "-Encoding utf8NoBOM"} {
+		if strings.Contains(joined, incompatible) {
+			t.Fatalf("Windows PowerShell 5.1-incompatible generated token %q", incompatible)
+		}
+	}
+	if !strings.Contains(joined, "[IO.File]::WriteAllText") || !strings.Contains(joined, "[Text.UTF8Encoding]::new($false)") {
+		t.Fatal("expected Windows PowerShell 5.1-compatible UTF-8-no-BOM writes")
+	}
 	if !strings.Contains(joined, "schema_version=1") || !strings.Contains(joined, "Get-FileHash") || !strings.Contains(joined, "[switch]$IncludeClientLogs") {
 		t.Fatal("expected bounded inventory/finalization features absent")
 	}

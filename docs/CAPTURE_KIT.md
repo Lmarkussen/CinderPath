@@ -2,6 +2,14 @@
 
 The capture kit is an offline preparation and import workflow for an explicitly authorized disposable Windows lab with an already configured SCCM client. It generates instructions, passive inventory scripts, local evidence directories, review forms, and Linux wrappers. It does **not** register a client, change identity, trigger policy retrieval, contact a management point, start packet capture, install tools, weaken TLS, upload data, or approve live execution.
 
+## Verified Windows runtime
+
+On 2026-08-02, a generated kit was tested on one disposable GOAD MECM client running Windows Server 2019 Standard Evaluation 10.0.17763 (build 17763), Windows PowerShell Desktop 5.1.17763.8510, and Configuration Manager client 5.00.9128.1007. The execution account was an administrator and each script used process-scoped `-ExecutionPolicy Bypass`; the test does not establish that administrator privileges are required.
+
+`Collect-CinderPathInventory.ps1` produced valid schema-v1 client and tool JSON. `Prepare-CinderPathCapture.ps1` created `raw/capture`, `raw/capture-started-at.txt`, and the synthetic leakage sentinel without starting capture. `Finalize-CinderPathCapture.ps1`, with both optional flags omitted, produced valid `raw/local-raw-manifest.json`, copied no client logs, created no archive, and retained `raw_sensitive: true` and `safe_for_sharing: false`. Bounded pre/post checks found no changes to the SCCM service/start mode, client version, site assignment, fingerprinted identity candidates, execution-policy scopes, firewall profiles, certificate-store counts/fingerprints, scheduled-task count, installed-software count, or known capture-process set. No script-created network activity was observed by these bounded checks; they are not an exhaustive network trace.
+
+The remote test harness used the isolated GOAD lab inventory's existing self-signed WinRM HTTPS exception for only that authorized VM. CinderPath did not create, modify, or generalize that exception. Runtime coverage is limited to this exact environment; other Windows and PowerShell versions remain unverified.
+
 All names below are synthetic authorized-lab examples:
 
 ```bash
