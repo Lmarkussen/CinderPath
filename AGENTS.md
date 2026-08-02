@@ -124,3 +124,9 @@ Preserve brace-GUID classification before JSON and concrete-instance property
 enumeration. The verified result is only `ready_for_policy_instance_parser`;
 encrypted-value and decoder readiness remain blocked. No artifact content was
 copied, and this does not establish general Windows compatibility.
+
+The preview collector is an exact three-property allowlist with DTD prohibition,
+a null XML resolver, 256-character redacted output, and zero raw copies.
+Preserve `runtime_preview_validated` versus content validation. The roadmap is
+planning metadata; NAA, PXE/OSD, Shadow Credentials, and defensive tracks are
+not implemented capabilities.

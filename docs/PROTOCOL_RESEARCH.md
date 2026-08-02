@@ -206,3 +206,8 @@ value, supporting `ready_for_policy_schema_parser`. Intrinsic WMI classes are
 excluded from policy scoring. The run did not copy policy bodies, establish a
 protection mechanism, recover plaintext, trigger policy, or send a live SCCM
 request.
+
+Reviewed previews resolved the three selected XML candidates without raw
+export. Two are authority capability metadata and one is a deployment-state
+message. Values are length markers, DTD/entity resolution is blocked, and no
+encrypted-value evidence was found.

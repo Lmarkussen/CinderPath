@@ -22,6 +22,19 @@ SCCM client methods invoked: 0
 Live SCCM policy requests: 0
 ```
 
+## Reviewed property previews
+
+The exact-allowlist collector read only two authority `Capabilities` values and
+one deployment-state `MessageDetails` value. All three were well-formed XML.
+Authority values had a `Capabilities` root with `Property` structure; the
+deployment value had a `ClientDeploymentMessage` root. Attribute and text
+values were replaced by length markers.
+
+All results were `schema_fixture_sufficient`; zero raw values were copied.
+Authority-capability and deployment-message parsers reached
+`runtime_preview_validated`. Readiness remains
+`ready_for_policy_instance_parser` because no encrypted field was observed.
+
 `Discover-CinderPathPolicyArtifacts.ps1` is Windows PowerShell 5.1 compatible.
 It examines a fixed list of `root\ccm` namespaces, class schemas, bounded
 instance shapes, known SCCM client directories, and two SCCM registry roots.

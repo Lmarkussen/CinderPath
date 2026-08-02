@@ -117,7 +117,92 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 		return cmd
 	}
 	root.AddCommand(discover, inspect, show, exportPlan, schemaCommand("rank-schemas", false), schemaCommand("plan-instances", false), schemaCommand("inspect-instances", true), schemaCommand("parser-status", false), schemaCommand("content-plan", false))
+	var previewInventory, previewOutput, previewScript string
+	previewPlan := &cobra.Command{Use: "preview-plan", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		v, e := localartifact.Load(previewInventory, localartifact.DefaultLimits())
+		if e != nil {
+			return e
+		}
+		p := localartifact.BuildPreviewPlan(v)
+		if e = localartifact.WritePreviewPlan(previewOutput, previewScript, p); e != nil {
+			return e
+		}
+		fmt.Fprintf(s.stdout, "SCCM policy property preview plan\nCandidates planned: %d\nMaximum preview characters: 256\nRaw-copy eligible: 0\nSCCM client methods invoked: 0\nLive SCCM policy requests: 0\n", len(p.Candidates))
+		return nil
+	}}
+	previewPlan.Flags().StringVar(&previewInventory, "inventory", "", "schema-v1 local-artifacts JSON")
+	previewPlan.Flags().StringVar(&previewOutput, "output", "", "mode-0600 preview plan JSON")
+	previewPlan.Flags().StringVar(&previewScript, "script-output", "", "generated exact-allowlist PowerShell collector")
+	_ = previewPlan.MarkFlagRequired("inventory")
+	_ = previewPlan.MarkFlagRequired("output")
+	_ = previewPlan.MarkFlagRequired("script-output")
+	var previewInput, planInput, previewDossier, previewFormat string
+	inspectPreviews := &cobra.Command{Use: "inspect-previews", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		p, e := localartifact.LoadPreviewPlan(planInput)
+		if e != nil {
+			return e
+		}
+		c, e := localartifact.LoadPreviewCollection(previewInput)
+		if e != nil {
+			return e
+		}
+		a := localartifact.AnalyzePreviews(p, c)
+		if e = localartifact.GeneratePreviewDossier(previewDossier, a); e != nil {
+			return e
+		}
+		if e = s.persistPreviewAnalysis(a, previewDossier); e != nil {
+			return e
+		}
+		if previewFormat == "json" {
+			return json.NewEncoder(s.stdout).Encode(a)
+		}
+		well, emitted, rejected := 0, 0, 0
+		for _, x := range c.Previews {
+			if x.Structure.WellFormed {
+				well++
+			}
+			if x.PreviewEmitted {
+				emitted++
+			}
+			if x.PreviewRejected {
+				rejected++
+			}
+		}
+		fmt.Fprintf(s.stdout, "Reviewed SCCM policy property previews\nCandidates planned: %d\nCandidates found: %d\nProperties read: %d\nWell-formed XML: %d\nMalformed XML: %d\nPreviews emitted: %d\nPreviews rejected: %d\nRaw-copy candidates: 0\nRaw values copied: 0\nSecret readiness: %s\nDossier: %s\n", c.CandidatesPlanned, c.CandidatesFound, c.PropertiesRead, well, len(c.Previews)-well, emitted, rejected, a.Readiness, filepath.Base(previewDossier))
+		for _, x := range a.Classifications {
+			fmt.Fprintf(s.stdout, "  %s classification=%s confidence=%s raw_copy=%s\n", x.CandidateID, x.Classification, x.Confidence, x.RawCopyRecommendation)
+		}
+		fmt.Fprintln(s.stdout, "Safety: structure-only redacted previews; no SCCM methods, policy retrieval, raw copy, credential extraction, or live request.\nLive SCCM policy requests: 0")
+		return nil
+	}}
+	inspectPreviews.Flags().StringVar(&previewInput, "input", "", "schema-v1 property preview JSON")
+	inspectPreviews.Flags().StringVar(&planInput, "plan", "", "matching preview plan JSON")
+	inspectPreviews.Flags().StringVar(&previewDossier, "output", "", "new owner-only preview dossier")
+	inspectPreviews.Flags().StringVar(&previewFormat, "format", "text", "text or json")
+	_ = inspectPreviews.MarkFlagRequired("input")
+	_ = inspectPreviews.MarkFlagRequired("plan")
+	_ = inspectPreviews.MarkFlagRequired("output")
+	root.AddCommand(previewPlan, inspectPreviews)
 	return root
+}
+
+func (s *state) persistPreviewAnalysis(a localartifact.PreviewAnalysis, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "lab client-artifacts inspect-previews", string(s.cfg.Profile), version.Version, []string{"offline", "redacted_preview", "raw_copies=0", "live_requests=0"})
+	if e != nil {
+		return e
+	}
+	finger := models.StableID("policy_preview", a.Plan.InventoryFingerprint)
+	data := map[string]any{"candidate_fingerprints": a.Plan.Candidates, "property_hashes": a.Collection.Previews, "xml_structures": a.Structures, "semantic_classifications": a.Classifications, "parser_lifecycle": a.Parsers, "export_decisions": a.RawExportDecisions, "readiness": a.Readiness, "dossier": filepath.Base(dossier), "raw_values_copied": 0, "live_policy_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: finger, RunID: run.ID, CaptureID: "policy_previews", Fingerprint: a.Plan.InventoryFingerprint, Data: data}); e != nil {
+		return e
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"policy_preview": finger, "live_requests": 0})
 }
 
 func (s *state) persistPolicySchemaAnalysis(a localartifact.SchemaAnalysis, dossier string) error {

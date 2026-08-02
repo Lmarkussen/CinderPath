@@ -55,4 +55,16 @@ func TestLocalArtifactCLIOffline(t *testing.T) {
 	if _, stderr, e = runCLI(t, "--db", filepath.Join(d, "schema.db"), "lab", "client-artifacts", "inspect-instances", "--inventory", inv, "--output", schemaDossier); e != nil {
 		t.Fatalf("inspect-instances: %v %s", e, stderr)
 	}
+	previewPlan := filepath.Join(d, "preview-plan.json")
+	previewScript := filepath.Join(d, "preview.ps1")
+	if out, stderr, e = runCLI(t, "lab", "client-artifacts", "preview-plan", "--inventory", inv, "--output", previewPlan, "--script-output", previewScript); e != nil || !strings.Contains(out, "Live SCCM policy requests: 0") {
+		t.Fatalf("preview-plan %v %s %s", e, out, stderr)
+	}
+}
+
+func TestFrameworkCoverageCLI(t *testing.T) {
+	out, stderr, e := runCLI(t, "framework", "coverage", "--framework", "misconfiguration-manager")
+	if e != nil || !strings.Contains(out, "policy_secrets_naa") || !strings.Contains(out, "planning metadata only") {
+		t.Fatalf("%v %s %s", e, out, stderr)
+	}
 }

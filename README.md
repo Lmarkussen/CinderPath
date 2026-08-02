@@ -602,3 +602,10 @@ The recommended next phase is authentication-provider hardening: OS-backed secre
 * A DP conclusion remains a high- or medium-confidence inference because this phase uses only virtual-directory-root `HEAD` responses.
 * MP-list parsing is intentionally conservative and may reject undocumented or vendor-modified response structures. Current evidence normally leaves SCCM version unknown.
 * There is no TUI, general credential-provider abstraction, evidence encryption, or distributed execution.
+
+Reviewed exact-allowlist previews now summarize two authority `Capabilities`
+properties and one deployment `MessageDetails` property. All were well-formed
+XML and structure-only fixtures were sufficient; no raw value was copied and
+readiness did not advance. Broader planning is exposed truthfully through
+`framework coverage --framework misconfiguration-manager`; see
+[`docs/MISCONFIGURATION_MANAGER_ROADMAP.md`](docs/MISCONFIGURATION_MANAGER_ROADMAP.md).

@@ -66,7 +66,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
 	f.StringVar(&s.profile, "profile", string(d.Profile), "assessment profile: safe, standard, aggressive, yolo")
-	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runCommand(), s.runsCommand(), s.protocolCommand(), s.labCommand(), s.clientIdentityCommand(), s.policyCommand(), s.captureCommand(), s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.captureResearchCommand())
+	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.reportCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runCommand(), s.runsCommand(), s.protocolCommand(), s.labCommand(), s.clientIdentityCommand(), s.policyCommand(), s.captureCommand(), s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.captureResearchCommand(), s.frameworkCommand())
 	return root
 }
 func (s *state) authCommand() *cobra.Command {

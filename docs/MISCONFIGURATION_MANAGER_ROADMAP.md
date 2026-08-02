@@ -1,0 +1,20 @@
+# Misconfiguration Manager roadmap
+
+`cinderpath framework coverage --framework misconfiguration-manager` exposes
+versioned planning metadata. It does not execute techniques or claim planned
+capabilities are implemented.
+
+The `policy_secrets` track plans Network Access Account policy discovery and
+recovery first, then task-sequence credentials and deployment or
+collection-variable secrets. No secret extraction or decryption is implemented.
+
+The `pxe_osd` track plans PXE-enabled DP posture, PXE password and unknown
+computer assessment, separately authorized boot-media acquisition,
+task-sequence media analysis, and offline WIM/image inspection.
+
+The `sccm_identity_attack_paths` track separates SCCM identity-to-AD ACL
+correlation and Shadow Credentials prerequisite detection from explicitly
+authorized Shadow Credentials execution and cleanup. Execution is unavailable.
+
+The `defensive_controls` track plans PREVENT, DETECT, and CANARY mappings.
+Current registry entries are truthfully `planned` or `documented` only.

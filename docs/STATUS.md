@@ -773,3 +773,8 @@ intrinsic/provider noise, records parser lifecycle and instance-of edges, and
 produces a review-only content plan. The revised runtime observed 15 bounded
 instances; offline selection retained 10 concrete records and three XML preview
 candidates, copied nothing, and reached `ready_for_policy_instance_parser`.
+
+Exact-allowlist runtime validation found all three approved properties, emitted
+three value-redacted XML previews, rejected none, and copied zero raw values.
+Two authority capability structures and one deployment-message structure
+support `runtime_preview_validated` parsers. Readiness did not advance.
