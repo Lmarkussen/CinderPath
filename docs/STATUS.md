@@ -778,3 +778,10 @@ Exact-allowlist runtime validation found all three approved properties, emitted
 three value-redacted XML previews, rejected none, and copied zero raw values.
 Two authority capability structures and one deployment-message structure
 support `runtime_preview_validated` parsers. Readiness did not advance.
+
+Targeted credential-policy discovery replaces further broad schema exploration.
+Its registry covers NAA, task-sequence, network-folder, domain-join,
+collection/deployment variables, legacy package accounts, and OSD service
+accounts. Runtime validation selected 18 exact machine-policy classes and
+observed zero concrete instances or protected fields; no value was copied and
+readiness is `no_credential_policy_evidence`.

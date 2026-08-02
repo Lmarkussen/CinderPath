@@ -48,14 +48,17 @@ type ClassSchema struct {
 	Warnings       []string         `json:"warnings,omitempty"`
 }
 type InstanceProperty struct {
-	Name         string   `json:"name"`
-	CIMType      string   `json:"cim_type"`
-	State        string   `json:"state"`
-	Shape        string   `json:"shape"`
-	Fingerprint  string   `json:"fingerprint,omitempty"`
-	LengthBucket string   `json:"length_bucket"`
-	Array        bool     `json:"array"`
-	Warnings     []string `json:"warnings,omitempty"`
+	Name                  string   `json:"name"`
+	CIMType               string   `json:"cim_type"`
+	State                 string   `json:"state"`
+	Shape                 string   `json:"shape"`
+	Fingerprint           string   `json:"fingerprint,omitempty"`
+	LengthBucket          string   `json:"length_bucket"`
+	EntropyBucket         string   `json:"entropy_bucket,omitempty"`
+	PrintableRatioBucket  string   `json:"printable_ratio_bucket,omitempty"`
+	ReferenceFingerprints []string `json:"reference_fingerprints,omitempty"`
+	Array                 bool     `json:"array"`
+	Warnings              []string `json:"warnings,omitempty"`
 }
 type InstanceMetadata struct {
 	ID          string             `json:"id"`

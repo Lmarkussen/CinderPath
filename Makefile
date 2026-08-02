@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '%s' unknown)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE)/internal/version.Commit=$(COMMIT) -X $(MODULE)/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz policy-schema-test policy-instance-selection-test policy-schema-parser-test policy-content-plan-test policy-schema-fuzz policy-preview-test policy-preview-script-test policy-preview-fuzz framework-coverage-test capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
+.PHONY: help build test vet fmt fmt-check check run clean race integration install-local auth-dry-run config-example run-mock run-dry protocol-fixtures protocol-test protocol-report-test protocol-bundle-test protocol-signing-test protocol-research-test protocol-contract-test protocol-dossier-test protocol-expected-results-test policy-offline-test fuzz-policy fuzz-protocol fuzz-protocol-research capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test capture-kit-test capture-kit-cli-test capture-kit-script-test guided-import-test windows-log-test capture-evidence-bundle-test capture-evidence-signing-test correlation-test timeline-test flow-attribution-test capture-quality-test dns-evidence-test endpoint-attribution-test endpoint-graph-test local-artifact-test local-artifact-cli-test local-artifact-script-test local-artifact-fuzz policy-schema-test policy-instance-selection-test policy-schema-parser-test policy-content-plan-test policy-schema-fuzz policy-preview-test policy-preview-script-test policy-preview-fuzz framework-coverage-test credential-target-test credential-policy-test naa-discovery-test task-sequence-policy-test credential-policy-fuzz capture-fuzz pcapng-fuzz exchange-fuzz sequence-fuzz parser-fuzz matrix-fuzz analysis-fuzz capture-kit-fuzz correlation-fuzz endpoint-correlation-fuzz protocol-offline-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -67,6 +67,11 @@ help:
 	  '  policy-preview-script-test exact-allowlist PowerShell safety tests' \
 	  '  policy-preview-fuzz    bounded preview parser fuzz smoke test' \
 	  '  framework-coverage-test truthful roadmap registry and CLI tests' \
+	  '  credential-target-test targeted credential registry tests' \
+	  '  credential-policy-test targeted schema/instance/dossier tests' \
+	  '  naa-discovery-test    NAA candidate evidence tests' \
+	  '  task-sequence-policy-test task-sequence and variable target tests' \
+	  '  credential-policy-fuzz bounded credential metadata fuzz smoke test' \
 	  '  correlation-fuzz       bounded offline correlation fuzz smoke tests' \
 	  '  capture-kit-fuzz      bounded kit metadata/path fuzz smoke tests' \
 	  '  protocol-offline-check all capture research tests (no network)' \
@@ -294,6 +299,21 @@ policy-preview-fuzz:
 
 framework-coverage-test:
 	go test ./internal/framework
+
+credential-target-test:
+	go test ./internal/localartifact -run 'TestCredentialRegistry'
+
+credential-policy-test:
+	go test ./internal/localartifact -run 'TestCredential'
+
+naa-discovery-test:
+	go test ./internal/localartifact -run 'TestCredentialRegistryAndAnalysis'
+
+task-sequence-policy-test:
+	go test ./internal/localartifact -run 'TestCredentialRegistryAndAnalysis'
+
+credential-policy-fuzz:
+	go test ./internal/localartifact -run '^$$' -fuzz '^FuzzCredentialRuntime$$' -fuzztime=1s
 
 protocol-offline-check: capture-test capture-integration pcapng-test exchange-test sequence-test parser-test matrix-test analysis-replay-test capture-dossier-test capture-cli-test
 

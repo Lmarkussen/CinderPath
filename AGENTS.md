@@ -1,5 +1,7 @@
 # CinderPath contributor guidance
 
+Targeted credential-policy discovery must use the retained inventory first and an exact generated class allowlist second. A password/account name, encoding shape, or entropy alone is not a credential candidate. The validated run found zero concrete NAA/task-sequence/variable instances and copied zero values. Discovery support does not mean credential recovery or validation support.
+
 ## Project identity
 
 - Repository and Go module: `github.com/Lmarkussen/CinderPath`

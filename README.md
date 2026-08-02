@@ -603,6 +603,8 @@ The recommended next phase is authentication-provider hardening: OS-backed secre
 * MP-list parsing is intentionally conservative and may reject undocumented or vendor-modified response structures. Current evidence normally leaves SCCM version unknown.
 * There is no TUI, general credential-provider abstraction, evidence encryption, or distributed execution.
 
+Targeted credential-policy discovery now recognizes NAA, task-sequence, network-folder, domain-join, protected-variable, legacy-package, and OSD account schemas through class/property combinations and policy provenance. Names alone never establish a secret. The validated run selected 18 exact classes but observed no concrete credential-policy instances and copied no values. See [the focused guide](docs/CREDENTIAL_POLICY_DISCOVERY.md).
+
 Reviewed exact-allowlist previews now summarize two authority `Capabilities`
 properties and one deployment `MessageDetails` property. All were well-formed
 XML and structure-only fixtures were sufficient; no raw value was copied and

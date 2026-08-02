@@ -1,5 +1,7 @@
 # Misconfiguration Manager roadmap
 
+NAA, task-sequence credential, and collection/deployment-variable objectives are now `discovery_supported`: targeted metadata-only class and instance discovery exists. The validated lab produced no concrete credential-policy instance, so this does not imply protected-value recovery, safe validation, or execution support. PXE/OSD acquisition and Shadow Credentials remain planned.
+
 `cinderpath framework coverage --framework misconfiguration-manager` exposes
 versioned planning metadata. It does not execute techniques or claim planned
 capabilities are implemented.

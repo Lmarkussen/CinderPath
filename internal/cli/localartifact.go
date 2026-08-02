@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/localartifact"
@@ -183,7 +184,99 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 	_ = inspectPreviews.MarkFlagRequired("plan")
 	_ = inspectPreviews.MarkFlagRequired("output")
 	root.AddCommand(previewPlan, inspectPreviews)
+	credentialTargets := &cobra.Command{Use: "credential-targets", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		t := localartifact.CredentialTargets()
+		if format == "json" {
+			return json.NewEncoder(s.stdout).Encode(t)
+		}
+		fmt.Fprintf(s.stdout, "SCCM credential-policy target registry\nRegistry schema: 1\nTargets: %d\n", len(t))
+		for _, x := range t {
+			fmt.Fprintf(s.stdout, "  %s category=%s support=%s\n", x.TargetID, x.Category, x.SupportLevel)
+		}
+		fmt.Fprintln(s.stdout, "Safety: detection metadata only; no decryption, SCCM method, policy retrieval, or live request.\nLive SCCM policy requests: 0")
+		return nil
+	}}
+	credentialTargets.Flags().StringVar(&format, "format", "text", "text or json")
+	var credInventory, credOutput, credFormat, credScript, credRuntime string
+	findCredentials := &cobra.Command{Use: "find-credential-policies", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		v, e := localartifact.Load(credInventory, localartifact.DefaultLimits())
+		if e != nil {
+			return e
+		}
+		if credRuntime != "" {
+			x, le := localartifact.LoadCredentialRuntime(credRuntime)
+			if le != nil {
+				return le
+			}
+			v.Instances = x
+		}
+		a := localartifact.AnalyzeCredentialPolicies(v)
+		if credOutput != "" {
+			if e = localartifact.WriteCredentialAnalysis(credOutput, a); e != nil {
+				return e
+			}
+		}
+		if credScript != "" {
+			if e = atomicCaptureWrite(credScript, []byte(localartifact.CredentialCollectorPowerShell(a))); e != nil {
+				return e
+			}
+		}
+		if e = s.persistCredentialAnalysis(a, credOutput); e != nil {
+			return e
+		}
+		if credFormat == "json" {
+			return json.NewEncoder(s.stdout).Encode(a)
+		}
+		selected, strong, medium, weak, opaque := 0, 0, 0, 0, 0
+		for _, m := range a.SchemaMatches {
+			if m.Selected {
+				selected++
+			}
+			strong += len(m.StrongEvidence)
+			medium += len(m.MediumEvidence)
+			weak += len(m.WeakEvidence)
+		}
+		for _, c := range a.Instances {
+			opaque += c.OpaqueFields
+		}
+		fmt.Fprintf(s.stdout, "Targeted SCCM credential-policy discovery\nTargets evaluated: %d\nSchemas matched: %d\nClasses selected: %d\nInstances observed: %d\nNAA candidates: %d\nTask-sequence candidates: %d\nVariable candidates: %d\nOpaque/protected fields: %d\nPreview candidates: %d\nRaw-copy candidates: 0\nEvidence signals: strong=%d medium=%d weak=%d\nReadiness: %s\n", len(a.Targets), len(a.SchemaMatches), selected, len(a.Instances), len(a.NAACandidates), len(a.TaskSequenceCandidates), len(a.VariableCandidates), opaque, len(a.PreviewPlan), strong, medium, weak, a.Readiness)
+		for i, m := range a.SchemaMatches {
+			if i >= 12 {
+				fmt.Fprintln(s.stdout, "Schema output truncated at 12 rows")
+				break
+			}
+			fmt.Fprintf(s.stdout, "  %s\\%s targets=%s score=%d confidence=%s selected=%t\n", m.Namespace, m.Class, strings.Join(m.TargetIDs, ","), m.Score, m.Confidence, m.Selected)
+		}
+		fmt.Fprintln(s.stdout, "Safety: targeted offline/read-only metadata; no SCCM methods, policy retrieval, raw copy, decryption, or live request.\nLive SCCM policy requests: 0")
+		return nil
+	}}
+	findCredentials.Flags().StringVar(&credInventory, "inventory", "", "schema-v1 retained local-artifact inventory")
+	findCredentials.Flags().StringVar(&credOutput, "output", "", "new owner-only credential-policy dossier")
+	findCredentials.Flags().StringVar(&credScript, "script-output", "", "generated exact-class-allowlist PowerShell metadata collector")
+	findCredentials.Flags().StringVar(&credRuntime, "runtime-metadata", "", "optional schema-v1 exact-allowlist runtime instance metadata")
+	findCredentials.Flags().StringVar(&credFormat, "format", "text", "text or json")
+	_ = findCredentials.MarkFlagRequired("inventory")
+	root.AddCommand(credentialTargets, findCredentials)
 	return root
+}
+
+func (s *state) persistCredentialAnalysis(a localartifact.CredentialAnalysis, dossier string) error {
+	ctx := context.Background()
+	db, e := database.Open(ctx, s.cfg.DBPath)
+	if e != nil {
+		return e
+	}
+	defer db.Close()
+	run, e := db.CreateRun(ctx, "lab client-artifacts find-credential-policies", string(s.cfg.Profile), version.Version, []string{"offline", "targeted", "redacted", "raw_copies=0", "live_requests=0"})
+	if e != nil {
+		return e
+	}
+	id := models.StableID("credential_policy_analysis", a.InventoryFingerprint+"|"+a.AlgorithmVersion)
+	data := map[string]any{"targets": a.Targets, "schema_matches": a.SchemaMatches, "instances": a.Instances, "relationships": a.Relationships, "preview_plan": a.PreviewPlan, "content_plan": a.ContentPlan, "readiness": a.Readiness, "dossier": filepath.Base(dossier), "raw_values_copied": 0, "live_policy_requests": 0}
+	if e = db.UpsertCaptureRecord(ctx, "capture_observations", database.CaptureRecord{ID: id, RunID: run.ID, CaptureID: "credential_policy_analysis", Fingerprint: a.InventoryFingerprint, Data: data}); e != nil {
+		return e
+	}
+	return db.FinishRun(ctx, run.ID, models.RunCompleted, map[string]any{"credential_policy_analysis": id, "live_requests": 0})
 }
 
 func (s *state) persistPreviewAnalysis(a localartifact.PreviewAnalysis, dossier string) error {

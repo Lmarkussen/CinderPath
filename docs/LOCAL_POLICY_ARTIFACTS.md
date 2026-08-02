@@ -1,5 +1,7 @@
 # Local SCCM policy-artifact discovery
 
+Targeted credential-policy work follows this generic inventory and does not repeat broad exploration. `credential-targets` and `find-credential-policies` require known class/property combinations plus machine-policy provenance; password/account names, entropy, and encoding alone remain weak evidence. See [CREDENTIAL_POLICY_DISCOVERY.md](CREDENTIAL_POLICY_DISCOVERY.md).
+
 Packet capture reached diminishing returns in the authorized disposable lab:
 the management-point endpoint could be identified, but policy traffic remained
 inside opaque TLS and no flow could be attributed. Local SCCM client policy

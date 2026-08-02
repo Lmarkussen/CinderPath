@@ -60,6 +60,14 @@ func TestLocalArtifactCLIOffline(t *testing.T) {
 	if out, stderr, e = runCLI(t, "lab", "client-artifacts", "preview-plan", "--inventory", inv, "--output", previewPlan, "--script-output", previewScript); e != nil || !strings.Contains(out, "Live SCCM policy requests: 0") {
 		t.Fatalf("preview-plan %v %s %s", e, out, stderr)
 	}
+	if out, stderr, e = runCLI(t, "lab", "client-artifacts", "credential-targets"); e != nil || !strings.Contains(out, "policy") || !strings.Contains(out, "Live SCCM policy requests: 0") {
+		t.Fatalf("credential-targets %v %s %s", e, out, stderr)
+	}
+	credentialDossier := filepath.Join(d, "credential-dossier")
+	credentialScript := filepath.Join(d, "credential.ps1")
+	if out, stderr, e = runCLI(t, "--db", filepath.Join(d, "credential.db"), "lab", "client-artifacts", "find-credential-policies", "--inventory", inv, "--output", credentialDossier, "--script-output", credentialScript); e != nil || !strings.Contains(out, "Raw-copy candidates: 0") || !strings.Contains(out, "Live SCCM policy requests: 0") {
+		t.Fatalf("credential policies %v %s %s", e, out, stderr)
+	}
 }
 
 func TestFrameworkCoverageCLI(t *testing.T) {
