@@ -86,7 +86,7 @@ func ldapFailure(opts LDAPOptions, err error) *modules.Result {
 	e := models.Evidence{Type: "ldap_connection", Title: "LDAP connection or bind failed", Summary: err.Error(), Data: map[string]any{"server": opts.Server, "bind_type": bindType(opts), "tls_mode": tlsMode(opts), "error": err.Error()}, SourceModule: "live.ldap.rootdse", CredentialID: cred.ID, Sensitivity: models.SensitivityInternal}
 	e.Prepare(time.Now())
 	cap.EvidenceIDs = []string{e.ID}
-	return &modules.Result{Credentials: []models.Credential{cred}, Capabilities: []models.Capability{cap}, Evidence: []models.Evidence{e}, Warnings: []string{err.Error()}}
+	return &modules.Result{Credentials: []models.Credential{cred}, Capabilities: []models.Capability{cap}, Evidence: []models.Evidence{e}, Errors: []modules.ResultError{{Message: err.Error()}}, Warnings: []string{err.Error()}}
 }
 func rootDSEData(r rootDSE) map[string]any {
 	return map[string]any{"default_naming_context": r.DefaultNamingContext, "configuration_naming_context": r.ConfigurationNamingContext, "root_domain_naming_context": r.RootDomainNamingContext, "schema_naming_context": r.SchemaNamingContext, "dns_host_name": r.DNSHostName, "supported_ldap_version": r.SupportedLDAPVersion, "supported_sasl_mechanisms": r.SupportedSASLMechanisms, "domain_functionality": r.DomainFunctionality, "forest_functionality": r.ForestFunctionality, "domain_controller_functionality": r.DomainControllerFunctionality, "is_global_catalog_ready": r.IsGlobalCatalogReady}
@@ -170,7 +170,7 @@ func (m *ldapDirectoryModule) Run(ctx context.Context, run modules.RunContext, _
 		e.Prepare(now)
 		out.Evidence = append(out.Evidence, e)
 		if hasRole(obj.Roles, "site_server") {
-			if siteCode := strings.ToUpper(first(obj.Attributes, "mSMSSiteCode")); siteCode != "" {
+			if siteCode := siteCodeForObject(obj); siteCode != "" {
 				site := models.Asset{Kind: models.AssetSite, SiteCode: siteCode, Domain: strings.ToUpper(m.opts.Domain), Properties: map[string]string{"observation_origin": "live", "directory_reference": models.StableFingerprint(obj.DN), "role_basis": "ldap_sccm_object"}, Source: m.Metadata().Name, Confidence: models.ConfidenceHigh}
 				site.Prepare(now)
 				out.Assets = append(out.Assets, site)
@@ -184,13 +184,13 @@ func (m *ldapDirectoryModule) Run(ctx context.Context, run modules.RunContext, _
 			} else if hasRole(obj.Roles, "site_server") {
 				kind = models.AssetSiteServer
 			}
-			a := models.Asset{Kind: kind, FQDN: host, Hostname: strings.Split(host, ".")[0], Domain: strings.ToUpper(m.opts.Domain), SiteCode: first(obj.Attributes, "mSMSSiteCode"), Roles: obj.Roles, Properties: map[string]string{"observation_origin": "live", "directory_reference": models.StableFingerprint(obj.DN), "role_basis": "ldap_sccm_object"}, Source: m.Metadata().Name, Confidence: models.ConfidenceHigh}
+			a := models.Asset{Kind: kind, FQDN: host, Hostname: strings.Split(host, ".")[0], Domain: strings.ToUpper(m.opts.Domain), SiteCode: siteCodeForObject(obj), Roles: obj.Roles, Properties: map[string]string{"observation_origin": "live", "directory_reference": models.StableFingerprint(obj.DN), "role_basis": "ldap_sccm_object"}, Source: m.Metadata().Name, Confidence: models.ConfidenceHigh}
 			a.Prepare(now)
 			out.Assets = append(out.Assets, a)
 			rel := models.Relationship{FromID: models.StableID("ldapobj", models.StableFingerprint(obj.DN)), ToID: a.ID, Type: models.RelationshipDirectoryReferencesHost, Properties: map[string]string{"origin": "live", "distinguished_name": obj.DN}, EvidenceIDs: []string{e.ID}, Confidence: models.ConfidenceHigh}
 			rel.Prepare()
 			out.Relationships = append(out.Relationships, rel)
-			if siteCode := strings.ToUpper(first(obj.Attributes, "mSMSSiteCode")); siteCode != "" {
+			if siteCode := siteCodeForObject(obj); siteCode != "" {
 				if siteID := siteIDs[siteCode]; siteID != "" {
 					member := models.Relationship{FromID: a.ID, ToID: siteID, Type: models.RelationshipMemberOfSite, Properties: map[string]string{"origin": "live", "site_code": siteCode}, EvidenceIDs: []string{e.ID}, Confidence: models.ConfidenceHigh}
 					member.Prepare()
@@ -225,6 +225,19 @@ func hasRole(xs []string, want string) bool {
 	return false
 }
 
+func siteCodeForObject(obj directoryObject) string {
+	if v := strings.ToUpper(strings.TrimSpace(first(obj.Attributes, "mSMSSiteCode"))); v != "" {
+		return v
+	}
+	for _, v := range []string{first(obj.Attributes, "cn"), first(obj.Attributes, "name")} {
+		parts := strings.Split(strings.TrimSpace(v), "-")
+		if len(parts) == 3 && strings.EqualFold(parts[0], "sms") && strings.EqualFold(parts[1], "site") && len(parts[2]) == 3 {
+			return strings.ToUpper(parts[2])
+		}
+	}
+	return ""
+}
+
 func recon1Evidence(objects []directoryObject, root rootDSE, source string) *modules.Result {
 	if len(objects) == 0 {
 		return &modules.Result{Warnings: []string{"RECON-1 found no SCCM-related LDAP objects within the bounded search"}}
@@ -237,8 +250,8 @@ func recon1Evidence(objects []directoryObject, root rootDSE, source string) *mod
 			systemManagement = true
 		}
 		if hasRole(obj.Roles, "site_server") {
-			if v := first(obj.Attributes, "mSMSSiteCode"); v != "" {
-				sites[strings.ToUpper(v)] = true
+			if v := siteCodeForObject(obj); v != "" {
+				sites[v] = true
 			}
 		}
 		if hasRole(obj.Roles, "management_point") {

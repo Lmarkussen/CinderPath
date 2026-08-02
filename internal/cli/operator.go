@@ -145,11 +145,18 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			defer cancel()
 			opts := recon1LiveOptions(s.cfg, target)
+			if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
+				return err
+			}
 			out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon1", Live: opts})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: completed\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: supported\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+			status := string(out.Run.Status)
+			if status == "" {
+				status = "completed"
+			}
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: %s\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), support, strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 			return nil
 		}
 		if format == "json" {

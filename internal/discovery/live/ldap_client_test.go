@@ -36,6 +36,20 @@ func TestRECON1EvidenceAndSiteDeduplication(t *testing.T) {
 		t.Fatalf("sites=%v", got)
 	}
 }
+
+func TestRECON1SiteCodeFallbackFromCommonCN(t *testing.T) {
+	obj := directoryObject{Attributes: map[string][]string{"cn": {"SMS-Site-P01"}}}
+	if got := siteCodeForObject(obj); got != "P01" {
+		t.Fatalf("site code=%q", got)
+	}
+}
+
+func TestLDAPFailureIsModuleError(t *testing.T) {
+	r := ldapFailure(LDAPOptions{Server: "dc.example.test"}, context.DeadlineExceeded)
+	if len(r.Errors) != 1 || r.Errors[0].Message != context.DeadlineExceeded.Error() {
+		t.Fatalf("errors=%+v", r.Errors)
+	}
+}
 func TestDNSResultNormalization(t *testing.T) {
 	got := mergeUnique([]string{"192.0.2.1", "2001:0db8::1"}, []string{"192.0.2.1"})
 	if len(got) != 2 || got[1] != "2001:db8::1" {
