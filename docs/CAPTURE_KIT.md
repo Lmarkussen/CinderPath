@@ -47,6 +47,12 @@ The correlation dossier is atomic mode `0700`; its files are mode `0600` and
 contain redacted summaries and endpoint fingerprints only. This operation does
 not change kit review, sanitization, guided-import, or bundle-export gates.
 
+The retained kit was correlated offline without contacting Windows. Its 407
+packets yielded ten flows and six opaque-TLS candidates, but known WinRM control
+traffic contradicted the closest timing match and no independent endpoint match
+supported the HTTPS candidate. The result is `no_correlatable_tls_flow`; raw-kit
+review and sanitization blockers remain unchanged.
+
 All names below are synthetic authorized-lab examples:
 
 ```bash

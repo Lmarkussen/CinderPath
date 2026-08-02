@@ -93,3 +93,9 @@ metadata. Preserve timestamp offsets/precision, fingerprint endpoints, keep
 timing-only candidates low confidence, and expose gaps and overlap conflicts.
 Correlation cannot enable live requests, TLS decryption, policy approval, or
 secret extraction.
+
+Real retained evidence verified that CMTrace `+NNN` suffixes are UTC conversion
+biases whose sign is inverse to an RFC3339 offset. Keep the synthetic regression.
+Known WinRM ports 5985/5986 are contradicting SCCM-attribution evidence. The
+retained run classified six candidates as `no_correlatable_tls_flow`; never
+treat timing around remote invocation as SCCM transport evidence.

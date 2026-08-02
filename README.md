@@ -28,6 +28,14 @@ cinderpath capture correlate --capture synthetic.pcapng \
   --pre-window 30s --post-window 3m --output reports/correlation
 ```
 
+Applying the correlator offline to the retained controlled capture produced 908
+timeline events, 431 timestamped log events, ten flows, and six opaque-TLS
+candidates. One assignment request and one no-new-assignments event fell inside
+the trigger window. The nearest timing match used the known WinRM control port
+and was rejected; the HTTPS candidate lacked matching log endpoint evidence.
+Attribution is `no_correlatable_tls_flow`, and secret readiness remains
+`not_ready_no_policy_evidence`.
+
 ```bash
 # Synthetic authorized-lab metadata only.
 cinderpath lab capture-kit create --output ~/cinderpath-lab-kit \

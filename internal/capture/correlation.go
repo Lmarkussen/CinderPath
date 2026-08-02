@@ -208,12 +208,15 @@ func parseCMTraceTime(date, clock, offset string) (time.Time, string, string, er
 	}
 	zone := "local_unspecified"
 	if offset != "" {
-		minutes, err := strconv.Atoi(offset)
+		biasMinutes, err := strconv.Atoi(offset)
 		if err != nil {
 			return time.Time{}, "", "", err
 		}
-		zone = fmt.Sprintf("%+03d:%02d", minutes/60, abs(minutes%60))
-		base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), base.Minute(), base.Second(), nanos, time.FixedZone(zone, minutes*60))
+		// CMTrace records the number of minutes to add to local time to obtain
+		// UTC. Its sign is therefore the inverse of an RFC3339 UTC offset.
+		offsetMinutes := -biasMinutes
+		zone = fmt.Sprintf("%+03d:%02d", offsetMinutes/60, abs(offsetMinutes%60))
+		base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), base.Minute(), base.Second(), nanos, time.FixedZone(zone, offsetMinutes*60))
 	} else {
 		base = time.Date(base.Year(), base.Month(), base.Day(), base.Hour(), base.Minute(), base.Second(), nanos, time.UTC)
 	}
@@ -560,6 +563,10 @@ func scoreTLSCandidates(flows []Flow, logs []SemanticLogEvent, t Trigger, w Corr
 			c.Score += 5
 			c.SupportingEvidence = append(c.SupportingEvidence, "TLS flow uses a common HTTPS port; non-specific supporting evidence")
 		}
+		if f.Client.Port == 5985 || f.Client.Port == 5986 || f.Server.Port == 5985 || f.Server.Port == 5986 {
+			c.Score -= 50
+			c.ContradictingEvidence = append(c.ContradictingEvidence, "flow uses a known remote-management control port")
+		}
 		if f.StartedAt.IsZero() {
 			c.Warnings = append(c.Warnings, "flow timestamp unavailable")
 		}
@@ -617,6 +624,9 @@ func classifyCandidates(cs []TLSFlowCandidate, q CaptureQuality) string {
 		return "insufficient_capture_quality"
 	}
 	if len(cs) == 0 {
+		return "no_correlatable_tls_flow"
+	}
+	if cs[0].Score == 0 {
 		return "no_correlatable_tls_flow"
 	}
 	if len(cs) > 1 && cs[0].Score == cs[1].Score {

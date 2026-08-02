@@ -94,3 +94,9 @@ The timeline preserves timestamp offsets and precision. Capture quality reports
 gaps, retransmissions, conflicting overlaps, truncation, link type, direction
 confidence, and timestamp resolution. Zero tool-reported drops cannot erase
 those limitations, and timing or port 443 alone remains low confidence.
+
+Offline application to the retained controlled capture found six TLS candidates
+but no correlatable SCCM TLS flow. Five candidates used the known WinRM control
+port, including the flow nearest the trigger; the HTTPS/SNI-bearing flow lacked
+matching log endpoint evidence. Correct CMTrace handling treats its numeric
+suffix as a UTC conversion bias. No further client action was performed.

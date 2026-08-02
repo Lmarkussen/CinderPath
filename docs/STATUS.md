@@ -20,6 +20,15 @@ conflicting overlap and the conflict remains reported. Timing alone is capped at
 low confidence. Correlation persists through existing schema-v8 redacted capture
 records; no schema-v9 migration was necessary. No raw lab evidence is in Git.
 
+Running the correlator on the retained evidence exposed two conservative fixes.
+CMTrace `+240` is a UTC conversion bias, not an RFC3339 offset, and the known
+WinRM control ports must contradict SCCM attribution. Corrected output contains
+908 timeline events, 431 log events, 407 packets, ten flows, six opaque-TLS
+candidates, six retransmissions, and 26 overlap conflicts. One request and one
+no-new-assignments log event align with the trigger, but no endpoint evidence
+supports an SCCM TLS flow. Classification is `no_correlatable_tls_flow`, quality
+is `partial_but_usable`, and readiness is `not_ready_no_policy_evidence`.
+
 ## Unified operator workflow
 
 CinderPath now provides `config init`, `config validate`, `config show`, and a

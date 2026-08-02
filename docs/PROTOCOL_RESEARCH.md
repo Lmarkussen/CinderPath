@@ -142,3 +142,22 @@ within 10 seconds medium weight, and within 60 seconds weak weight. These are
 ranking inputs, not proof. Reused connections that begin outside the window,
 missing timestamps, indistinguishable candidates, and capture gaps remain
 explicit contradictions or warnings.
+
+The retained controlled-capture run verified this redacted result:
+
+```text
+Offline SCCM capture correlation
+Log events: 431
+Candidate TLS flows: 6
+Capture quality: partial_but_usable
+Correlation: no_correlatable_tls_flow
+Live SCCM policy requests: 0
+Safety: offline evidence only; timing alone does not prove SCCM protocol identity.
+```
+
+Its timeline contains 908 events. Correcting CMTrace UTC-bias handling placed
+one assignment request and one no-new-assignments event inside the trigger
+window. The closest TLS flow was the known WinRM control channel and is explicit
+contradicting evidence. The HTTPS/SNI-bearing flow lacked a matching log endpoint
+fingerprint. This does not justify policy framing, encrypted-value, or secret
+decoder work.

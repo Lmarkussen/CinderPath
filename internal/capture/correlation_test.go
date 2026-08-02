@@ -19,7 +19,7 @@ func TestSemanticCMTraceLogAndRedaction(t *testing.T) {
 	if !ok || e.SemanticState != "machine_policy_assignment_request" || e.Confidence != "high" {
 		t.Fatalf("unexpected event: %#v", e)
 	}
-	if e.Timestamp.Location() != time.UTC || e.OriginalTimezone != "+01:00" || e.TimestampPrecision != "millisecond" {
+	if e.Timestamp.Location() != time.UTC || e.OriginalTimezone != "-01:00" || e.TimestampPrecision != "millisecond" || e.Timestamp.Hour() != 11 {
 		t.Fatalf("timestamp metadata lost: %#v", e)
 	}
 	b, _ := json.Marshal(e)
@@ -27,6 +27,14 @@ func TestSemanticCMTraceLogAndRedaction(t *testing.T) {
 		if strings.Contains(string(b), secret) {
 			t.Fatalf("identifier leaked: %s", secret)
 		}
+	}
+}
+
+func TestCMTraceBiasConvertsLocalTimeToUTC(t *testing.T) {
+	line := `<![LOG[synthetic timestamp record]LOG]!><time="19:16:29.623+240" date="08-02-2026" component="Synthetic" context="" type="1" thread="7" file="x">`
+	e, ok := ParseSemanticLogLine("synthetic.log", 1, line)
+	if !ok || e.OriginalTimezone != "-04:00" || e.Timestamp.Format(time.RFC3339Nano) != "2026-08-02T23:16:29.623Z" {
+		t.Fatalf("CMTrace bias conversion: %#v", e)
 	}
 }
 
@@ -112,6 +120,18 @@ func TestCorrelationMultipleAndNoCandidates(t *testing.T) {
 	r, e = Correlate(base, nil, trigger, DefaultCorrelationWindow())
 	if e != nil || r.Classification != "multiple_indistinguishable_candidates" {
 		t.Fatalf("multiple: %#v %v", r.Candidates, e)
+	}
+}
+
+func TestRemoteManagementTimingIsContradictory(t *testing.T) {
+	at := time.Date(2026, 8, 2, 23, 16, 29, 0, time.UTC)
+	c := NormalizedCapture{Interfaces: []Interface{{ID: 0, LinkType: 1, Supported: true}}, Packets: []Packet{{ID: "p", Timestamp: at}}, Flows: []Flow{{ID: "remote_control", TLS: true, StartedAt: at.Add(time.Second), DirectionConfidence: "medium", Client: Endpoint{Port: 5986}}}}
+	r, err := Correlate(c, nil, Trigger{Timestamp: at, Action: "machine_policy_cycle"}, DefaultCorrelationWindow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Classification != "no_correlatable_tls_flow" || len(r.Candidates) != 1 || r.Candidates[0].Score != 0 || len(r.Candidates[0].ContradictingEvidence) == 0 {
+		t.Fatalf("remote-management flow trusted: %#v", r)
 	}
 }
 
