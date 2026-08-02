@@ -805,3 +805,8 @@ One helper-class instance query was explicitly marked unavailable. A bounded
 `smspxe.log` template observation alone did not change the assessment or justify
 active validation. Generator fixes cover PowerShell 5.1 method-collection,
 return-token, and reserved `$PID` behavior.
+The Misconfiguration Manager catalog is represented by an embedded offline
+snapshot under `internal/framework/data`. Coverage dimensions are independent;
+the snapshot never enables live validation or execution. The embedded catalog is
+generated from the locally reviewed Misconfiguration Manager revision recorded in
+the snapshot; re-import remains a development-only operation.

@@ -13,6 +13,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/authvalidate"
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
+	"github.com/Lmarkussen/CinderPath/internal/framework"
 	"github.com/Lmarkussen/CinderPath/internal/identity"
 	"github.com/Lmarkussen/CinderPath/internal/logging"
 	"github.com/Lmarkussen/CinderPath/internal/models"
@@ -361,6 +362,19 @@ func (s *state) assessCommand() *cobra.Command {
 		s.printOutcome(out)
 		if frameworkName != "" {
 			fmt.Fprintf(s.stdout, "Framework: %s\nTargets associated with run: %d\nActive technique validation: blocked by default\n", frameworkName, len(targets))
+			if frameworkName == "misconfiguration-manager" {
+				if snapshot, snapshotErr := framework.EmbeddedSnapshot(); snapshotErr == nil {
+					assessable, partial := 0, 0
+					for _, coverage := range snapshot.Coverage {
+						if coverage.Assessment == framework.Supported {
+							assessable++
+						} else if coverage.Assessment == framework.Partial {
+							partial++
+						}
+					}
+					fmt.Fprintf(s.stdout, "Framework revision: %s\nAssessable techniques: %d\nPartially supported techniques: %d\nUnsupported validation/execution: preserved\n", snapshot.UpstreamRevision, assessable, partial)
+				}
+			}
 		}
 		return err
 	}}

@@ -619,3 +619,5 @@ XML and structure-only fixtures were sufficient; no raw value was copied and
 readiness did not advance. Broader planning is exposed truthfully through
 `framework coverage --framework misconfiguration-manager`; see
 [`docs/MISCONFIGURATION_MANAGER_ROADMAP.md`](docs/MISCONFIGURATION_MANAGER_ROADMAP.md).
+The canonical offline technique catalog and its independent support dimensions are
+described in [`docs/FRAMEWORK_COVERAGE.md`](docs/FRAMEWORK_COVERAGE.md).

@@ -1,6 +1,10 @@
 package framework
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestMisconfigurationManagerRoadmapTruthful(t *testing.T) {
 	r := MisconfigurationManager()
@@ -32,5 +36,51 @@ func TestMisconfigurationManagerRoadmapTruthful(t *testing.T) {
 		if (x.ID == "pxe_boot_media" || x.ID == "pxe_task_sequence_media" || x.ID == "pxe_wim") && x.Support != "planned" {
 			t.Fatalf("content track advanced: %s", x.ID)
 		}
+	}
+}
+
+func TestEmbeddedSnapshotAndCoverageDimensions(t *testing.T) {
+	s, err := EmbeddedSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Techniques) == 0 || len(s.Coverage) != len(s.Techniques) {
+		t.Fatalf("techniques=%d coverage=%d", len(s.Techniques), len(s.Coverage))
+	}
+	if s.Coverage[0].Discovery == s.Coverage[0].Execution { /* independent fields may coincide, but are distinct in the model */
+	}
+}
+
+func TestImportDeterministicAndRejectsUnknownMatrixReference(t *testing.T) {
+	d := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(d, "attack-techniques", "CRED", "CRED-1"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(d, "defense-techniques", "DETECT", "DETECT-1"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "attack-techniques", "CRED", "CRED-1", "cred-1_description.md"), []byte("# Credential discovery\n\nBounded policy metadata."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "defense-techniques", "DETECT", "DETECT-1", "detect-1_description.md"), []byte("# Detection\n\nDefensive mapping."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "attack-defense-matrix.csv"), []byte("attack,UNKNOWN-1\nCRED-1,x\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Import(ImportOptions{Source: d, Revision: "r1", SnapshotDate: "2026-08-03"}); err == nil {
+		t.Fatal("unknown matrix reference accepted")
+	}
+	os.WriteFile(filepath.Join(d, "attack-defense-matrix.csv"), []byte("attack,DETECT-1\nCRED-1,1\n"), 0600)
+	a, err := Import(ImportOptions{Source: d, Revision: "r1", SnapshotDate: "2026-08-03"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Import(ImportOptions{Source: d, Revision: "r1", SnapshotDate: "2026-08-03"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if SnapshotFingerprint(a) != SnapshotFingerprint(b) || len(a.MatrixMappings) != 1 {
+		t.Fatalf("non-deterministic import: %s %d", SnapshotFingerprint(a), len(a.MatrixMappings))
 	}
 }

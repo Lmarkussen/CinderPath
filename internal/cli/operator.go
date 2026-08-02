@@ -126,10 +126,12 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 	var target string
 	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
 		support := "unsupported_or_unknown"
-		for _, objective := range frameworkSupport().Objectives {
-			if objective.ID == args[0] {
-				support = objective.Support
-				break
+		if snapshot, err := framework.EmbeddedSnapshot(); err == nil {
+			for _, coverage := range snapshot.Coverage {
+				if coverage.TechniqueID == strings.ToUpper(args[0]) {
+					support = string(coverage.Assessment)
+					break
+				}
 			}
 		}
 		fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nAssessment support: %s\nActive validation: not performed\n", args[0], redactedTarget(target), support)
@@ -207,6 +209,7 @@ func (s *state) researchCommand() *cobra.Command {
 	evidence.Hidden = false
 	evidence.Deprecated = ""
 	root.AddCommand(capture, policy, evidence)
+	root.AddCommand(s.researchFrameworkCommand())
 	root.AddCommand(s.artifactRegistryCommand())
 	advancedDiscover := s.advancedDiscoverCommand()
 	advancedDiscover.Use = "discover-advanced"

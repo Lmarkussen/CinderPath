@@ -76,3 +76,12 @@ func TestFrameworkCoverageCLI(t *testing.T) {
 		t.Fatalf("%v %s %s", e, out, stderr)
 	}
 }
+
+func TestFrameworkSnapshotCommands(t *testing.T) {
+	for _, args := range [][]string{{"framework", "technique", "CRED-1"}, {"framework", "family", "CRED"}, {"framework", "gaps"}, {"research", "framework", "validate", "--snapshot", filepath.Join("..", "framework", "data", "misconfiguration-manager.json")}} {
+		out, stderr, err := runCLI(t, args...)
+		if err != nil || stderr != "" || out == "" {
+			t.Fatalf("%v %q %q", err, out, stderr)
+		}
+	}
+}
