@@ -111,6 +111,23 @@ func TestRECON2ReportsNoConnectorWithoutNetwork(t *testing.T) {
 	}
 }
 
+func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
+	out, stderr, err := executeForTest(t, "assess", "technique", "RECON-3", "--target", "srv01", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if result["status"] != "not_run_no_connector" || result["network_behavior"] != "none" || result["defensive_mappings"].([]any)[0] != "PREVENT-20" {
+		t.Fatalf("result=%v", result)
+	}
+	if strings.Contains(out, "srv01") || !strings.Contains(out, "no HTTP request was sent") {
+		t.Fatalf("unsafe or unredacted output: %s", out)
+	}
+}
+
 func TestProfileLimits(t *testing.T) {
 	safe, research := limitsForProfile("safe"), limitsForProfile("research")
 	if safe.MaxClasses != 32 || research.MaxClasses <= safe.MaxClasses || research.MaxBytes <= safe.MaxBytes {

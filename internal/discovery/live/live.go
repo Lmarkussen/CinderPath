@@ -28,3 +28,10 @@ func LDAPOnly(opts Options) []modules.Module {
 func SMBOnly(opts Options) []modules.Module {
 	return []modules.Module{&smbShareMetadataModule{opts: opts}}
 }
+
+// SCCMHTTPOnly probes only the fixed, anonymous SCCM route allowlist for one
+// explicitly configured target. It does not run DNS, TCP probing, profiling,
+// LDAP, SMB, PXE, or provider modules.
+func SCCMHTTPOnly(opts Options) []modules.Module {
+	return []modules.Module{&sccmHTTPReconModule{opts: opts}}
+}

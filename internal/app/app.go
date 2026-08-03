@@ -28,16 +28,18 @@ type Application struct {
 	Logger *slog.Logger
 }
 type Outcome struct {
-	Run           models.Run
-	ModuleSummary modules.Summary
-	Assets        int
-	Findings      map[models.Severity]int
-	AttackPaths   int
-	DatabasePath  string
-	ReportPaths   report.Paths
-	Provider      string
-	Discovery     DiscoverySummary
-	Events        []progress.Event
+	Run              models.Run
+	ModuleSummary    modules.Summary
+	Assets           int
+	Findings         map[models.Severity]int
+	AttackPaths      int
+	DatabasePath     string
+	ReportPaths      report.Paths
+	Provider         string
+	Discovery        DiscoverySummary
+	Events           []progress.Event
+	TechniqueStatus  string
+	TechniqueSummary map[string]any
 }
 
 type DiscoverySummary struct {
@@ -216,6 +218,11 @@ func (a *Application) DiscoverWithOptions(ctx context.Context, args []string, op
 			return Outcome{}, err
 		}
 		return a.executeModules(ctx, "assess RECON-2", args, "live", live.SMBOnly(options.Live))
+	case "live-recon3":
+		if err := live.ValidateOptions(options.Live); err != nil {
+			return Outcome{}, err
+		}
+		return a.executeModules(ctx, "assess RECON-3", args, "live", live.SCCMHTTPOnly(options.Live))
 	default:
 		return Outcome{}, fmt.Errorf("invalid discovery provider %q (use mock or live)", options.Provider)
 	}
@@ -255,18 +262,26 @@ func (a *Application) executeModules(ctx context.Context, command string, args [
 		status = models.RunCompletedWithErrors
 	}
 	allAssets, _ := store.ListAssets(context.WithoutCancel(ctx))
+	allEvidence, _ := store.ListEvidence(context.WithoutCancel(ctx))
 	findings, _ := store.ListFindings(context.WithoutCancel(ctx))
 	paths, _ := store.ListAttackPaths(context.WithoutCancel(ctx))
 	counts := severityCounts(findings)
 	discoverySummary := summarizeDiscovery(context.WithoutCancel(ctx), store, provider)
 	runSummary := map[string]any{"provider": provider, "modules_executed": summary.Executed, "modules_skipped": summary.Skipped, "modules_failed": summary.Failed, "assets": len(allAssets), "findings": counts, "attack_paths": len(paths), "mock_data": provider == "mock", "scope_targets": discoverySummary.ScopeTargets, "excluded_targets": discoverySummary.Excluded}
+	techniqueStatus := ""
+	var techniqueSummary map[string]any
+	if command == "assess RECON-3" {
+		techniqueStatus = deriveRECON3Status(summary, allEvidence, run.ID)
+		techniqueSummary = recon3SummaryForRun(allEvidence, run.ID)
+		runSummary["technique_status"] = techniqueStatus
+	}
 	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, status, runSummary)
 	now := time.Now().UTC()
 	run.FinishedAt = &now
 	run.Status = status
 	run.Summary = runSummary
 	events.Publish(progress.Event{Type: progress.RunCompleted, RunID: run.ID, Data: map[string]any{"status": status}})
-	out := Outcome{Run: *run, ModuleSummary: summary, Assets: len(allAssets), Findings: counts, AttackPaths: len(paths), DatabasePath: store.Path(), Provider: provider, Discovery: discoverySummary, Events: events.Events()}
+	out := Outcome{Run: *run, ModuleSummary: summary, Assets: len(allAssets), Findings: counts, AttackPaths: len(paths), DatabasePath: store.Path(), Provider: provider, Discovery: discoverySummary, Events: events.Events(), TechniqueStatus: techniqueStatus, TechniqueSummary: techniqueSummary}
 	if execErr != nil {
 		return out, execErr
 	}
@@ -274,6 +289,55 @@ func (a *Application) executeModules(ctx context.Context, command string, args [
 		return out, ctx.Err()
 	}
 	return out, nil
+}
+
+func deriveRECON3Status(summary modules.Summary, evidence []models.Evidence, runID string) string {
+	requestSummary := recon3SummaryForRun(evidence, runID)
+	if requestSummary != nil && evidenceInt(requestSummary["failure_count"]) > 0 && evidenceInt(requestSummary["successful_response_count"]) > 0 {
+		return "completed_with_errors"
+	}
+	if summary.Failed > 0 {
+		text := ""
+		for _, execution := range summary.Executions {
+			text += " " + execution.Error
+		}
+		switch {
+		case strings.Contains(text, "endpoint_resolution_failed"):
+			return "endpoint_resolution_failed"
+		case strings.Contains(text, "connection_failed"):
+			return "connection_failed"
+		default:
+			return "collection_failed"
+		}
+	}
+	for _, item := range evidence {
+		if item.RunID == runID && item.Type == "sccm_http_recon_summary" && evidenceInt(item.Data["relevant_evidence_count"]) > 0 {
+			return "completed_with_sccm_evidence"
+		}
+	}
+	return "completed_no_sccm_evidence"
+}
+
+func recon3SummaryForRun(evidence []models.Evidence, runID string) map[string]any {
+	for _, item := range evidence {
+		if item.RunID == runID && item.Type == "sccm_http_recon_summary" {
+			return item.Data
+		}
+	}
+	return nil
+}
+
+func evidenceInt(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
 }
 
 func summarizeDiscovery(ctx context.Context, store *database.Store, provider string) DiscoverySummary {

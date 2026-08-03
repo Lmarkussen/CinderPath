@@ -821,3 +821,11 @@ runtime-validated through the authorized GOAD controller. `RECON-2` uses a
 bounded authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata module and has been
 runtime-validated through the authorized GOAD controller. The run observed only
 generic administrative shares, so no SCCM-role finding was created.
+
+`RECON-3` now has a targeted adapter over the existing fixed SCCM HTTP route
+allowlist. It plans five routes over HTTP and HTTPS, one method per route, for
+an explicit maximum of 10 network requests (route and access evidence are
+separate records). It remains partial pending authorized runtime validation;
+HTTP authentication is never attempted. All connection-level failures are
+classified as `connection_failed`, name resolution failures as
+`endpoint_resolution_failed`, and mixed outcomes as `completed_with_errors`.

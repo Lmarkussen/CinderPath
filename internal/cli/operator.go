@@ -171,7 +171,10 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				status := string(out.Run.Status)
+				status := out.TechniqueStatus
+				if status == "" {
+					status = string(out.Run.Status)
+				}
 				if format == "json" {
 					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0})
 				}
@@ -187,6 +190,35 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 				})
 			}
 			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no SMB protocol request was sent\n", techniqueID, redactedTarget(target), snapshotRevision(), support, strings.Join(mappings, ", "))
+			return nil
+		}
+		if techniqueID == "RECON-3" {
+			if s.cfg.Workflow.Provider == "live" {
+				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				defer cancel()
+				opts := recon3LiveOptions(s.cfg, target)
+				if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
+					return err
+				}
+				out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon3", Live: opts})
+				if err != nil {
+					return err
+				}
+				status := out.TechniqueStatus
+				if status == "" {
+					status = string(out.Run.Status)
+				}
+				if format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID})
+				}
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nHTTP route evidence: assets=%d findings=%d\nRequests: actual=%v maximum=%v successes=%v failures=%v\nSelected modules: live.sccm.http_recon\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				return nil
+			}
+			mappings := defensiveMappings(techniqueID)
+			if format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": runID})
+			}
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(target), snapshotRevision(), support, strings.Join(mappings, ", "))
 			return nil
 		}
 		if format == "json" {
@@ -257,6 +289,18 @@ func recon2LiveOptions(c config.Config, target string) live.Options {
 		host = 10 * time.Second
 	}
 	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{445}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{Timeout: host, MaxBodyBytes: 1024, MaxRedirects: 0}, SMB: live.SMBOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, Domain: c.WorkflowScope.Domain, Port: 445, ConnectTimeout: 5 * time.Second, OperationTimeout: 10 * time.Second, MaxShares: 128}}
+}
+
+func recon3LiveOptions(c config.Config, target string) live.Options {
+	server := target
+	if server == "" {
+		server = c.WorkflowScope.DomainController
+	}
+	host := mustDuration(c.Discovery.HostTimeout)
+	if host <= 0 {
+		host = 30 * time.Second
+	}
+	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{80, 443}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{UserAgent: c.Discovery.UserAgent, MaxBodyBytes: c.Discovery.HTTPMaxBodyBytes, MaxRedirects: 0, Timeout: host}, LDAP: live.LDAPOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile}}
 }
 
 func redactedTarget(v string) string {

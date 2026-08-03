@@ -15,6 +15,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/modules"
 	"github.com/Lmarkussen/CinderPath/internal/progress"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 )
@@ -121,6 +122,29 @@ func totalFindings(out Outcome) int {
 		total += count
 	}
 	return total
+}
+
+func TestRECON3StatusAggregation(t *testing.T) {
+	runID := "run-recon3"
+	tests := []struct {
+		name       string
+		summary    modules.Summary
+		evidence   []models.Evidence
+		wantStatus string
+	}{
+		{name: "all connection failures", summary: modules.Summary{Failed: 1, Executions: []models.ModuleExecution{{Error: "connection_failed: refused"}}}, evidence: []models.Evidence{{RunID: runID, Type: "sccm_http_recon_summary", Data: map[string]any{"failure_count": 10, "successful_response_count": 0}}}, wantStatus: "connection_failed"},
+		{name: "all resolution failures", summary: modules.Summary{Failed: 1, Executions: []models.ModuleExecution{{Error: "endpoint_resolution_failed: no such host"}}}, evidence: []models.Evidence{{RunID: runID, Type: "sccm_http_recon_summary", Data: map[string]any{"failure_count": 10, "successful_response_count": 0}}}, wantStatus: "endpoint_resolution_failed"},
+		{name: "mixed outcome", summary: modules.Summary{Failed: 1, Executions: []models.ModuleExecution{{Error: "collection_failed: some requests failed"}}}, evidence: []models.Evidence{{RunID: runID, Type: "sccm_http_recon_summary", Data: map[string]any{"failure_count": 2, "successful_response_count": 8}}}, wantStatus: "completed_with_errors"},
+		{name: "no evidence", summary: modules.Summary{}, evidence: []models.Evidence{{RunID: runID, Type: "sccm_http_recon_summary", Data: map[string]any{"failure_count": 0, "successful_response_count": 10, "relevant_evidence_count": 0}}}, wantStatus: "completed_no_sccm_evidence"},
+		{name: "SCCM evidence", summary: modules.Summary{}, evidence: []models.Evidence{{RunID: runID, Type: "sccm_http_recon_summary", Data: map[string]any{"failure_count": 0, "successful_response_count": 10, "relevant_evidence_count": 1}}}, wantStatus: "completed_with_sccm_evidence"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := deriveRECON3Status(tc.summary, tc.evidence, runID); got != tc.wantStatus {
+				t.Fatalf("status=%q want=%q", got, tc.wantStatus)
+			}
+		})
+	}
 }
 
 func TestRepeatedLoopbackLiveDiscoveryDeduplicates(t *testing.T) {

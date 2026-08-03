@@ -621,4 +621,4 @@ readiness did not advance. Broader planning is exposed truthfully through
 [`docs/MISCONFIGURATION_MANAGER_ROADMAP.md`](docs/MISCONFIGURATION_MANAGER_ROADMAP.md).
 The canonical offline technique catalog and its independent support dimensions are
 described in [`docs/FRAMEWORK_COVERAGE.md`](docs/FRAMEWORK_COVERAGE.md).
-The first framework-mapped workflows include LDAP-only [`RECON-1`](docs/TECHNIQUES/RECON-1.md) and bounded authenticated SMB2/3 `srvsvc` share metadata [`RECON-2`](docs/TECHNIQUES/RECON-2.md). RECON-2 never reads files or directories.
+The first framework-mapped workflows include LDAP-only [`RECON-1`](docs/TECHNIQUES/RECON-1.md), bounded authenticated SMB2/3 `srvsvc` share metadata [`RECON-2`](docs/TECHNIQUES/RECON-2.md), and fixed-allowlist HTTP route reconnaissance [`RECON-3`](docs/TECHNIQUES/RECON-3.md). RECON-3 is bounded to five routes across HTTP and HTTPS (10 network requests maximum); each request has separate route and access evidence, so the evidence-row maximum is 20. Connection and resolution failures are reported as failed technique states rather than completed assessments.

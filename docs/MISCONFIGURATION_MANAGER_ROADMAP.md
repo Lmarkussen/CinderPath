@@ -37,4 +37,13 @@ reviewed module performs only authenticated SMB2/3 `IPC$`/`srvsvc`
 `NetShareEnumAll` share-metadata enumeration; it never reads share contents.
 Discovery and assessment remain partial until an authorized runtime validation
 is completed.
+
+`RECON-3` is mapped to the upstream HTTP role-enumeration technique. Its
+targeted adapter reuses the reviewed SCCM route allowlist and performs only
+anonymous GET/HEAD requests to one explicitly selected host. It does not send
+HTTP credentials or retrieve content beyond bounded protocol previews. The
+allowlist is five routes over two schemes, one method per route: at most 10
+network requests (up to 20 bounded route/access evidence records). Resolution,
+connection, collection, and mixed-outcome failures retain their request
+evidence and use distinct technique statuses.
 Provider-backed deployment discovery is implemented, but the validated lab returned zero task-sequence, advertisement, collection, and boot-image instances from the relationship-bearing schemas. Consequently `pxe_unknown_computer` remains `discovery_supported`, while PXE boot-media, task-sequence-media retrieval, and WIM analysis remain `planned`. No active PXE validation is justified.
