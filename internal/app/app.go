@@ -18,6 +18,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/modules"
 	"github.com/Lmarkussen/CinderPath/internal/modules/mock"
+	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/progress"
 	"github.com/Lmarkussen/CinderPath/internal/report"
 	"github.com/Lmarkussen/CinderPath/internal/version"
@@ -438,7 +439,7 @@ func (a *Application) Report(ctx context.Context, args []string) (Outcome, error
 	run.FinishedAt = &now
 	run.Status = models.RunCompleted
 	run.Summary = summary
-	reportPaths, err := report.Generate(ctx, store, a.Config.OutputDir, store.Path(), version.Current().Version, run, a.Config.Staleness)
+	reportPaths, err := report.GenerateWithPolicy(ctx, store, a.Config.OutputDir, store.Path(), version.Current().Version, run, outputpolicy.Policy{RedactSecrets: a.Config.Output.RedactSecrets}, a.Config.Staleness)
 	if err != nil {
 		_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, models.RunFailed, map[string]any{"error": err.Error()})
 		return Outcome{}, err

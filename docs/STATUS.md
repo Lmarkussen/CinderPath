@@ -42,8 +42,8 @@ is `partial_but_usable`, and readiness is `not_ready_no_policy_evidence`.
 
 ## Unified operator workflow
 
-CinderPath now provides `config init`, `config validate`, `config show`, and a
-unified `run` command. Generated configuration is atomic, mode `0600`, and
+CinderPath now provides `research config init`, `research config validate`,
+`research config show`, and a unified `run` command. Generated configuration is atomic, mode `0600`, and
 secret-reference-only. Domain-derived filenames are normalized safely. `run
 --dry-run` builds the full plan without network traffic, secret reads,
 authentication attempts, budget consumption, or target observations. The
@@ -133,8 +133,10 @@ Implemented now:
 - passive `lab capture-plan`; and bounded deterministic policy inventories.
 
 Local replay, manual review, bundle import, and fixture analysis never validate
-a live target or set `approved_live`. Ordinary reports remain redacted and
-state that zero live SCCM policy requests were sent.
+a live target or set `approved_live`. Reports follow the explicit output
+redaction policy and state that zero live SCCM policy requests were sent where
+applicable. Offline fixture and capture sanitization remains conservative and
+separate from operator report rendering.
 
 ## Current architecture
 
@@ -230,6 +232,15 @@ reports/cinderpath-report.html
 
 The HTML report is portable with embedded CSS. Reports distinguish mock data, live observations, user input, inferred conclusions, and confirmed conclusions. Evidence previews are bounded.
 
+Operator-facing reports use the configured output policy. `output.redact_secrets`
+defaults to `false`; `--redact-secrets` overrides it for a run and records
+`redaction.secrets_redacted` in JSON and HTML output. Hostnames, domains,
+addresses, site codes, usernames, and other operational identifiers remain
+readable. Secret values become `<redacted>` only when the policy is enabled.
+JSON and HTML reports are written owner-only. Debug logs and run arguments do
+not contain secret values. Offline capture, fixture, and dossier sanitization
+remain conservative regardless of this operator rendering policy.
+
 ### `cinderpath identity` and `cinderpath capabilities`
 
 `identity inspect` accepts domain/user, machine, current-process, password/hash environment or file references, Kerberos cache references, and public-certificate/private-key path references. It never accepts plaintext secret CLI values and does not read private keys or ticket contents. The separate guarded validator may parse a selected bounded PEM private key solely to verify pairing and construct one TLS client-auth request. `identity list` shows redacted stored models.
@@ -246,7 +257,7 @@ The HTML report is portable with embedded CSS. Reports distinguish mock data, li
 --profile safe|standard|aggressive|yolo|research
 ```
 
-Configuration precedence is explicit CLI flag, environment variable, YAML file, then default. Profiles select workflow defaults and deliberate secret-display policy, while hard safety gates remain authoritative. Unavailable aggressive/yolo modules are recorded as blocked or not implemented rather than executed.
+Configuration precedence is explicit CLI flag, environment variable, YAML file, then default. `--redact-secrets` and `CINDERPATH_REDACT_SECRETS` control output rendering, with the CLI taking precedence over environment and YAML. The default is false for authorized operator output. Profiles select workflow defaults while hard safety gates remain authoritative. Unavailable aggressive/yolo modules are recorded as blocked or not implemented rather than executed.
 
 ## Mock behavior
 
@@ -626,7 +637,7 @@ The current implementation must remain within these boundaries:
 - `--ldap-password-file` performs a bounded read and strips only trailing line endings.
 - The credential model persists only a `SecretReference`, for example `env:CINDERPATH_LDAP_PASSWORD`.
 - `Credential.SecretReference` is omitted from normal JSON serialization.
-- Plaintext values are not logged, placed in run arguments, SQLite JSON, HTML, or JSON reports.
+- Plaintext values are never logged or placed in run arguments. SQLite continues to persist secret references and bounded metadata by default; report JSON and HTML follow the selected output policy and record it in `redaction.secrets_redacted`.
 - Failed binds retain reference metadata but not the secret.
 - Anonymous bind is explicit and never a fallback.
 - Tests use synthetic values and verify that password material is not serialized.

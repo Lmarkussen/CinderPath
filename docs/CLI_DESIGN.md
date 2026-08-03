@@ -22,7 +22,7 @@ cinderpath run --profile safe --dry-run
 cinderpath framework coverage --framework misconfiguration-manager
 ```
 
-The focused assessment commands emit a canonical, redacted workflow result and a complete artifact plan associated with one context. They do not pretend an authorized remote connector exists: execution remains blocked until one is supplied through a separately authorized workflow. Normal operators no longer need to understand intermediate inventory, ranking, preview, provider, or dossier filenames.
+The focused assessment commands emit a canonical workflow result and a complete artifact plan associated with one context. Operational values are readable by default; `--redact-secrets` changes only secret rendering. They do not pretend an authorized remote connector exists: execution remains blocked until one is supplied through a separately authorized workflow. Normal operators no longer need to understand intermediate inventory, ranking, preview, provider, or dossier filenames.
 
 ## Research and debug
 
@@ -50,11 +50,11 @@ Important values use this precedence:
 4. environment variable;
 5. safe default.
 
-`--verbose` displays source categories and resolved limits, not sensitive values. Targets are fingerprinted in workflow output. The current model resolves target, framework, database, output directory, and profile. Public assessment workflows share definitions for `--run`, `--target`, and `--format`. Site code, client label, roles, dossiers, and evidence associations remain domain observations rather than duplicated global flags.
+`--verbose` displays source categories and resolved limits. Targets are readable in workflow output with deterministic IDs retained as supplemental metadata. `--redact-secrets` is an explicit output policy for secret values. The current model resolves target, framework, database, output directory, profile, and redaction policy. Public assessment workflows share definitions for `--run`, `--target`, and `--format`. Site code, client label, roles, dossiers, and evidence associations remain domain observations rather than duplicated global flags.
 
 ## Canonical result
 
-High-level workflows emit one schema-v1 result containing workflow, redacted target, framework, status, checked stages, findings, blockers, next action, and network behavior. Dossiers and domain evidence remain separate provenance records; this result does not replace raw evidence or parser lifecycle details.
+High-level workflows emit one schema-v1 result containing workflow, readable target, supplemental target ID, framework, status, checked stages, findings, blockers, next action, network behavior, and redaction metadata where applicable. Dossiers and domain evidence remain separate provenance records; this result does not replace raw evidence or parser lifecycle details.
 
 The canonical artifact registry stores run ID, target fingerprint, workflow, stage, artifact type, timestamp, SHA-256 fingerprint, path, sensitivity, review, and superseded state. It resolves the latest unambiguous artifact for a run and type and refuses equal-time ambiguity. Research direct-file mode remains available through generic artifact flags.
 

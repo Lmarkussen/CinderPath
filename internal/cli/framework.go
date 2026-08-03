@@ -31,9 +31,9 @@ func (s *state) frameworkCoverageCommand() *cobra.Command {
 			return err
 		}
 		if format == "json" {
-			return json.NewEncoder(s.stdout).Encode(r)
+			return json.NewEncoder(s.stdout).Encode(map[string]any{"framework": framework.SnapshotProvenance(r), "snapshot": r})
 		}
-		printFrameworkCoverage(s.stdout, r)
+		printFrameworkCoverage(s.stdout, r, s.verbose)
 		return nil
 	}}
 	c.Flags().StringVar(&name, "framework", "misconfiguration-manager", "framework identifier")
@@ -41,7 +41,7 @@ func (s *state) frameworkCoverageCommand() *cobra.Command {
 	return c
 }
 
-func printFrameworkCoverage(out io.Writer, r framework.FrameworkSnapshot) {
+func printFrameworkCoverage(out io.Writer, r framework.FrameworkSnapshot, verbose bool) {
 	att, def := 0, 0
 	families := map[string]int{}
 	support := map[string]int{}
@@ -73,13 +73,24 @@ func printFrameworkCoverage(out io.Writer, r framework.FrameworkSnapshot) {
 			support["lab"]++
 		}
 	}
-	fmt.Fprintf(out, "Framework coverage: %s\nUpstream revision: %s\nSnapshot date: %s\nAttack techniques: %d\nDefense techniques: %d\nMatrix mappings: %d\nFamilies: %s\nPrerequisites supported/partial: %d\nDiscovery supported/partial: %d\nAssessment supported/partial: %d\nValidation supported/partial: %d\nExecution supported/partial: %d\nLab-validated: %d\n", r.FrameworkID, r.UpstreamRevision, r.SnapshotDate, att, def, len(r.MatrixMappings), formatFamilies(families), support["prerequisites"], support["discovery"], support["assessment"], support["validation"], support["execution"], support["lab"])
+	p := framework.SnapshotProvenance(r)
+	fmt.Fprintf(out, "Framework coverage: %s\n\n", r.FrameworkID)
+	fmt.Fprintf(out, "Framework: %s\nUpstream project: %s\nUpstream revision: %s\nSnapshot date: %s\nImplementation: %s\n\n", p.Name, p.UpstreamRepository, p.UpstreamRevision, r.SnapshotDate, p.Implementation)
+	fmt.Fprintf(out, "Techniques\n  %d total (%d attack, %d defense)\n  %d matrix mappings\n  Families: %s\n\n", len(r.Techniques), att, def, len(r.MatrixMappings), formatFamilies(families))
+	fmt.Fprintf(out, "Support (supported or partial)\n  Prerequisites: %d\n  Discovery:     %d\n  Assessment:   %d\n  Validation:   %d\n  Execution:    %d\n  Lab-validated: %d\n\n", support["prerequisites"], support["discovery"], support["assessment"], support["validation"], support["execution"], support["lab"])
+	fmt.Fprintln(out, "Notes")
+	fmt.Fprintln(out, "  Planning metadata only; unsupported validation and execution remain blocked.")
+	fmt.Fprintln(out, "  Safety: offline snapshot and planning metadata only; no technique execution.")
+	fmt.Fprintln(out, "  Legacy mappings: policy_secrets_naa -> CRED-1; pxe_dp_assessment -> RECON-1")
 	if len(r.Warnings) > 0 {
-		fmt.Fprintf(out, "Warnings: %s\n", strings.Join(r.Warnings, "; "))
+		fmt.Fprintf(out, "  Import warnings: %d (use --verbose to list)\n", len(r.Warnings))
+		if verbose {
+			fmt.Fprintln(out, "\nImport warnings")
+			for _, warning := range r.Warnings {
+				fmt.Fprintf(out, "  - %s\n", warning)
+			}
+		}
 	}
-	fmt.Fprintln(out, "Legacy objective mapping: policy_secrets_naa -> CRED-1; pxe_dp_assessment -> RECON-1")
-	fmt.Fprintln(out, "Planning metadata only: unsupported validation and execution remain blocked.")
-	fmt.Fprintln(out, "Safety: offline snapshot and planning metadata only; no technique execution.")
 }
 func formatFamilies(m map[string]int) string {
 	keys := make([]string, 0, len(m))
@@ -104,9 +115,10 @@ func (s *state) frameworkTechniqueCommand() *cobra.Command {
 		for _, t := range r.Techniques {
 			if t.ID == strings.ToUpper(args[0]) {
 				if format == "json" {
-					return json.NewEncoder(s.stdout).Encode(t)
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"framework": framework.SnapshotProvenance(r), "technique": t})
 				}
-				fmt.Fprintf(s.stdout, "%s: %s\nFamily: %s\nKind: %s\nSummary: %s\nSource: %s\n", t.ID, t.Title, t.Family, t.Kind, t.Summary, strings.Join(t.SourceFiles, ", "))
+				p := framework.SnapshotProvenance(r)
+				fmt.Fprintf(s.stdout, "%s: %s\nFramework: %s\nUpstream project: %s\nUpstream revision: %s\nImplementation: %s\nFamily: %s\nKind: %s\nSummary: %s\nSource: %s\n", t.ID, t.Title, p.Name, p.UpstreamRepository, p.UpstreamRevision, p.Implementation, t.Family, t.Kind, t.Summary, strings.Join(t.SourceFiles, ", "))
 				for _, m := range r.MatrixMappings {
 					if m.AttackID == t.ID {
 						fmt.Fprintf(s.stdout, "Defense mapping: %s\n", m.DefenseID)
@@ -146,9 +158,10 @@ func (s *state) frameworkFamilyCommand() *cobra.Command {
 			return fmt.Errorf("unknown or empty family %q", args[0])
 		}
 		if format == "json" {
-			return json.NewEncoder(s.stdout).Encode(xs)
+			return json.NewEncoder(s.stdout).Encode(map[string]any{"framework": framework.SnapshotProvenance(r), "family": fam, "techniques": xs})
 		}
-		fmt.Fprintf(s.stdout, "Family %s (%d techniques)\n", fam, len(xs))
+		p := framework.SnapshotProvenance(r)
+		fmt.Fprintf(s.stdout, "Framework: %s\nUpstream project: %s\nUpstream revision: %s\nImplementation: %s\nFamily %s (%d techniques)\n", p.Name, p.UpstreamRepository, p.UpstreamRevision, p.Implementation, fam, len(xs))
 		for _, t := range xs {
 			fmt.Fprintf(s.stdout, "%s %s (%s)\n", t.ID, t.Title, t.Kind)
 		}

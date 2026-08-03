@@ -1,5 +1,10 @@
 # RECON-2 — Enumerate SCCM roles via SMB
 
+This technique definition and its defensive mappings originate from the
+[Misconfiguration Manager project](https://github.com/subat0mik/Misconfiguration-Manager).
+CinderPath’s implementation status, evidence model, and runtime-validation
+results are specific to CinderPath.
+
 The embedded Misconfiguration Manager record defines RECON-2 as an SMB-based
 read-only reconnaissance technique. It requires authorized domain credentials
 and bounded share enumeration on an already identified SCCM site system.

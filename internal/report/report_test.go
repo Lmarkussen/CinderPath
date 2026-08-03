@@ -11,6 +11,7 @@ import (
 
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 )
 
 func TestSCCMEndpointValidationReportsAccessStates(t *testing.T) {
@@ -155,5 +156,54 @@ func TestAuthenticationReportDistinguishesAttemptAndDoesNotLeakSecret(t *testing
 	}
 	if !strings.Contains(combined, "Authentication validation was performed") || !strings.Contains(combined, "invalid_credentials") {
 		t.Fatal("authentication result distinction missing")
+	}
+}
+
+func TestReportSecretPolicyAndMetadata(t *testing.T) {
+	const secret = "ExampleRecoveredPassword!123"
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := database.Open(ctx, filepath.Join(dir, "policy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	asset := models.Asset{Kind: models.AssetManagementPoint, FQDN: "MECM.SCCM.LAB", Hostname: "MECM", Domain: "SCCM.LAB", Properties: map[string]string{"observation_origin": "live"}}
+	if _, err := store.UpsertAsset(ctx, &asset); err != nil {
+		t.Fatal(err)
+	}
+	evidence := models.Evidence{Type: "synthetic_secret_result", Title: "synthetic recovered result", Summary: "fixture", SourceModule: "test", AssetID: asset.ID, Data: map[string]any{"hostname": "MECM.SCCM.LAB", "username": `SCCMLAB\svc-naa`, "password": secret}}
+	evidence.Prepare(time.Now())
+	if _, err := store.UpsertEvidence(ctx, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := GenerateWithPolicy(ctx, store, filepath.Join(dir, "plain"), store.Path(), "test", nil, outputpolicy.Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainJSON, _ := os.ReadFile(plain.JSON)
+	if !strings.Contains(string(plainJSON), secret) || !strings.Contains(string(plainJSON), `"secrets_redacted": false`) {
+		t.Fatalf("default report did not preserve operational result or policy metadata: %s", string(plainJSON))
+	}
+	redacted, err := GenerateWithPolicy(ctx, store, filepath.Join(dir, "redacted"), store.Path(), "test", nil, outputpolicy.Policy{RedactSecrets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	redactedJSON, _ := os.ReadFile(redacted.JSON)
+	redactedHTML, _ := os.ReadFile(redacted.HTML)
+	for _, path := range []string{redacted.JSON, redacted.HTML} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("report %s stat failed: %v", path, err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("report %s is not owner-only: mode=%v", path, info.Mode().Perm())
+		}
+	}
+	if strings.Contains(string(redactedJSON), secret) || strings.Contains(string(redactedHTML), secret) || !strings.Contains(string(redactedJSON), `"secrets_redacted": true`) || !strings.Contains(string(redactedJSON), "MECM.SCCM.LAB") || !strings.Contains(string(redactedJSON), `SCCMLAB\\svc-naa`) {
+		t.Fatal("redacted report policy or non-secret values incorrect")
+	}
+	if !strings.Contains(string(redactedJSON), "<redacted>") || (!strings.Contains(string(redactedHTML), "&lt;redacted&gt;") && !strings.Contains(string(redactedHTML), "<redacted>")) || !strings.Contains(string(redactedHTML), "secrets redacted = true") {
+		t.Fatalf("redaction marker or HTML policy banner missing: json_marker=%t html_marker=%t banner=%t json=%s", strings.Contains(string(redactedJSON), "<redacted>"), strings.Contains(string(redactedHTML), "&lt;redacted&gt;") || strings.Contains(string(redactedHTML), "<redacted>"), strings.Contains(string(redactedHTML), "secrets redacted = true"), string(redactedJSON))
 	}
 }

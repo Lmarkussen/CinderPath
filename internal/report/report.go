@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/modules"
+	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/temporal"
 )
 
@@ -58,6 +60,7 @@ type Summary struct {
 }
 type JSONReport struct {
 	Metadata                        Metadata                       `json:"metadata"`
+	Redaction                       outputpolicy.Metadata          `json:"redaction"`
 	Summary                         Summary                        `json:"summary"`
 	Assets                          []models.Asset                 `json:"assets"`
 	Capabilities                    []models.Capability            `json:"capabilities"`
@@ -179,6 +182,10 @@ type Paths struct {
 }
 
 func Generate(ctx context.Context, store Store, outputDir, dbPath, version string, latest *models.Run, thresholds ...config.StalenessConfig) (Paths, error) {
+	return GenerateWithPolicy(ctx, store, outputDir, dbPath, version, latest, outputpolicy.Policy{}, thresholds...)
+}
+
+func GenerateWithPolicy(ctx context.Context, store Store, outputDir, dbPath, version string, latest *models.Run, policy outputpolicy.Policy, thresholds ...config.StalenessConfig) (Paths, error) {
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return Paths{}, fmt.Errorf("create report directory: %w", err)
 	}
@@ -298,18 +305,35 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 		rr.BundleSignatures, _ = ps.ListResearchRecords(ctx, "bundle_signatures")
 		rr.ExpectedResults, _ = ps.ListResearchRecords(ctx, "expected_analysis_results")
 	}
-	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Identities: nonNil(credentials), NoRemoteAuthenticationStatement: statement, Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints), SCCMTopology: buildSCCMTopology(evidence), AuthenticationAttempts: nonNil(attempts), Temporal: temporalResult, Workflow: wr, PolicyResearch: pr, ProtocolResearch: rr, CaptureKits: kits}
+	r := JSONReport{Metadata: Metadata{GeneratedAt: time.Now().UTC(), GeneratorVersion: version, DatabasePath: dbPath, MockData: mock, LiveData: liveData, UserInputData: userInput, InferredData: inferred, ConfirmedData: confirmed, LatestRun: latest}, Redaction: policy.Metadata(), Summary: summary, Assets: nonNil(assets), Capabilities: nonNil(caps), Identities: nonNil(credentials), NoRemoteAuthenticationStatement: statement, Findings: nonNil(findings), Relationships: nonNil(rels), AttackPaths: nonNil(paths), ModuleExecutions: nonNil(execs), Evidence: nonNil(evidence), Discovery: buildDiscoverySummary(assets, evidence), SCCMEndpoints: nonNil(endpoints), SCCMTopology: buildSCCMTopology(evidence), AuthenticationAttempts: nonNil(attempts), Temporal: temporalResult, Workflow: wr, PolicyResearch: pr, ProtocolResearch: rr, CaptureKits: kits}
+	if policy.RedactSecrets {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return Paths{}, err
+		}
+		var raw any
+		if err := json.Unmarshal(b, &raw); err != nil {
+			return Paths{}, err
+		}
+		b, err = json.Marshal(policy.RedactValue(raw))
+		if err != nil {
+			return Paths{}, err
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return Paths{}, err
+		}
+	}
 	jp := filepath.Join(outputDir, "cinderpath-report.json")
 	hp := filepath.Join(outputDir, "cinderpath-report.html")
-	b, err := json.MarshalIndent(r, "", "  ")
+	b, err := marshalIndentJSON(r)
 	if err != nil {
 		return Paths{}, err
 	}
-	if err := os.WriteFile(jp, append(b, '\n'), 0o640); err != nil {
+	if err := os.WriteFile(jp, append(b, '\n'), 0o600); err != nil {
 		return Paths{}, fmt.Errorf("write JSON report: %w", err)
 	}
-	view := htmlView{Report: r, Evidence: makeEvidenceViews(evidence), SeverityOrder: []models.Severity{models.SeverityCritical, models.SeverityHigh, models.SeverityMedium, models.SeverityLow, models.SeverityInformational}}
-	f, err := os.OpenFile(hp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
+	view := htmlView{Report: r, Evidence: makeEvidenceViews(r.Evidence), SeverityOrder: []models.Severity{models.SeverityCritical, models.SeverityHigh, models.SeverityMedium, models.SeverityLow, models.SeverityInformational}}
+	f, err := os.OpenFile(hp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return Paths{}, err
 	}
@@ -318,6 +342,17 @@ func Generate(ctx context.Context, store Store, outputDir, dbPath, version strin
 		return Paths{}, fmt.Errorf("render HTML report: %w", err)
 	}
 	return Paths{JSON: jp, HTML: hp}, nil
+}
+
+func marshalIndentJSON(value any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte{'\n'}), nil
 }
 
 func buildSCCMTopology(evidence []models.Evidence) []SCCMTopologyHost {
@@ -499,7 +534,7 @@ type evidenceView struct{ ID, Title, Summary, Data string }
 func makeEvidenceViews(items []models.Evidence) []evidenceView {
 	out := make([]evidenceView, 0, len(items))
 	for _, e := range items {
-		b, _ := json.Marshal(e.Data)
+		b, _ := marshalIndentJSON(e.Data)
 		data := string(b)
 		if len(data) > 1000 {
 			data = data[:1000] + "… [truncated]"
@@ -537,6 +572,7 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{"
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CinderPath Assessment Report</title>
 <style>:root{--bg:#0c111b;--panel:#151d2b;--text:#e8edf5;--muted:#9ba9bd;--accent:#ff7733;--border:#2b3749}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:2rem}.hero{border-left:5px solid var(--accent);padding-left:1rem}.banner{background:#5b2d09;border:1px solid #ff9b59;padding:1rem;margin:1rem 0;font-weight:700}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}.card,section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1rem 0}.metric{font-size:2rem;font-weight:700}.muted{color:var(--muted)}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:.55rem;border-bottom:1px solid var(--border);vertical-align:top}.sev-critical{color:#ff4d6d}.sev-high{color:#ff7733}.sev-medium{color:#ffc857}.sev-low{color:#72a7ff}.sev-informational{color:#9ba9bd}code{overflow-wrap:anywhere}details{margin:.5rem 0}h1,h2,h3{line-height:1.2}footer{color:var(--muted);margin-top:2rem}</style></head><body><main>
 <header class="hero"><h1>CinderPath Assessment Report</h1><div class="muted">Generated {{.Report.Metadata.GeneratedAt}} · Version {{.Report.Metadata.GeneratorVersion}}</div></header>
+<div class="banner">Output policy: secrets redacted = {{.Report.Redaction.SecretsRedacted}}. Protect this owner-only report and any terminal transcript containing recovered values.</div>
 {{if .Report.Metadata.MockData}}<div class="banner">MOCK DATA — This report contains only synthetic demonstration data. It is not evidence from a live SCCM environment.</div>{{end}}
 {{if .Report.Metadata.LiveData}}<div class="banner" style="background:#123a2d;border-color:#38c98b">LIVE OBSERVATIONS — Safe, read-only metadata from explicitly scoped targets. Inferred roles remain unconfirmed unless stated otherwise.</div>{{end}}
 <div class="banner" style="background:#123a2d;border-color:#38c98b">{{.Report.NoRemoteAuthenticationStatement}}</div>

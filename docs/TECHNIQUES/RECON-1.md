@@ -1,5 +1,10 @@
 # RECON-1 — Enumerate SCCM site information via LDAP
 
+This technique definition and its defensive mappings originate from the
+[Misconfiguration Manager project](https://github.com/subat0mik/Misconfiguration-Manager).
+CinderPath’s implementation status, evidence model, and runtime-validation
+results are specific to CinderPath.
+
 `RECON-1` uses the existing bounded LDAP discovery modules to read RootDSE and
 SCCM-published directory objects. It is LDAP-only: no DNS, HTTP, SMB, PXE,
 SMS Provider, or SCCM client action is part of this technique.

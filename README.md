@@ -163,11 +163,11 @@ Go 1.25 or newer is required.
 make build
 ./bin/cinderpath version
 ./bin/cinderpath framework coverage
-./bin/cinderpath config init
+./bin/cinderpath research config init
 ./bin/cinderpath run --config example.yaml --dry-run
 ```
 
-`config init` writes an owner-only configuration; use the path it reports in place of `example.yaml`. The repository also includes [config.example.yaml](config.example.yaml) as a safe mock configuration.
+`research config init` writes an owner-only configuration; use the path it reports in place of `example.yaml`. The repository also includes [config.example.yaml](config.example.yaml) as a safe mock configuration.
 
 Assess one technique after configuring an explicitly authorized connector:
 
@@ -204,11 +204,25 @@ CinderPath is intended for authorized security assessments and controlled labs. 
 - Exclusions and target-expansion limits are enforced before network activity.
 - Protocol operations are bounded by context, concurrency, timeouts, response limits, and exact route or class allowlists.
 - Reachability and naming patterns are supporting evidence, not vulnerabilities or confirmed SCCM roles.
-- Secret references, not secret values, are persisted; ordinary reports remain redacted.
+- Secret references and bounded metadata are persisted by default; reports follow the selected output policy and are owner-only.
 - Validation is separately gated. State-changing execution and cleanup are not generally implemented.
 - Research signatures, candidate contracts, capture bundles, and offline parser results never authorize live execution.
 
 The detailed current boundary is documented in [docs/STATUS.md](docs/STATUS.md) and enforced in code and tests.
+
+## Output and secret redaction
+
+CinderPath is designed for authorized operator use. Interactive output shows operational target values and recovered results by default, including hostnames, domains, addresses, site codes, usernames, and any secret value that an implemented workflow actually recovers. Stable IDs remain available as supplemental correlation metadata.
+
+Use `--redact-secrets` when sharing terminal output, reports, screenshots, tickets, or transcripts with people who should not receive recovered secret material:
+
+```bash
+./bin/cinderpath assess technique CRED-1 --target SCCM.LAB --redact-secrets
+```
+
+The flag changes rendering, not the underlying assessment result. It replaces secret values with `<redacted>` while leaving normal operational values such as hostnames, site codes, usernames, and share names visible. Reports use the same policy, include `redaction.secrets_redacted`, and are written owner-only. Debug logs never print secret values. Offline capture and fixture sanitization remain separate conservative workflows.
+
+Terminal scrollback, shell multiplexers, CI logs, and copied output can retain visible secrets. Protect unredacted output accordingly.
 
 ## Project maturity and limitations
 

@@ -17,23 +17,26 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/framework"
 	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type canonicalResult struct {
-	SchemaVersion int               `json:"schema_version"`
-	Workflow      string            `json:"workflow"`
-	Target        string            `json:"target,omitempty"`
-	Framework     string            `json:"framework,omitempty"`
-	Status        string            `json:"status"`
-	Checked       []string          `json:"checked"`
-	Findings      []string          `json:"findings"`
-	Blockers      []string          `json:"blockers"`
-	NextAction    string            `json:"next_action"`
-	Network       string            `json:"network_behavior"`
-	Artifacts     []artifactBinding `json:"artifact_plan"`
+	SchemaVersion int                   `json:"schema_version"`
+	Workflow      string                `json:"workflow"`
+	Target        string                `json:"target,omitempty"`
+	TargetID      string                `json:"target_id,omitempty"`
+	Framework     string                `json:"framework,omitempty"`
+	Status        string                `json:"status"`
+	Checked       []string              `json:"checked"`
+	Findings      []string              `json:"findings"`
+	Blockers      []string              `json:"blockers"`
+	NextAction    string                `json:"next_action"`
+	Network       string                `json:"network_behavior"`
+	Redaction     outputpolicy.Metadata `json:"redaction"`
+	Artifacts     []artifactBinding     `json:"artifact_plan"`
 }
 
 type artifactBinding struct {
@@ -103,7 +106,7 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 		if ctx.Target == "" {
 			return errors.New("target is required from --target, active run context, configuration, or CINDERPATH_TARGET")
 		}
-		r := canonicalResult{SchemaVersion: 1, Workflow: "assess_" + strings.ReplaceAll(kind, "-", "_"), Target: redactedTarget(ctx.Target), Framework: ctx.Framework, Status: "plan_ready_execution_requires_authorized_connector", Findings: []string{}, Network: "none", NextAction: "run through an explicitly authorized connector; intermediate artifacts are associated by run context"}
+		r := canonicalResult{SchemaVersion: 1, Workflow: "assess_" + strings.ReplaceAll(kind, "-", "_"), Target: redactedTarget(ctx.Target), TargetID: targetID(ctx.Target), Framework: ctx.Framework, Status: "plan_ready_execution_requires_authorized_connector", Findings: []string{}, Network: "none", Redaction: s.outputPolicy().Metadata(), NextAction: "run through an explicitly authorized connector; intermediate artifacts are associated by run context"}
 		if kind == "pxe" {
 			r.Checked = []string{"candidate verification", "server posture metadata", "provider deployment metadata", "framework mapping", "dossier"}
 			r.Blockers = []string{"active PXE validation remains separately gated", "this CLI process has no authorized remote connector"}
@@ -116,7 +119,10 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 		if options.Format == "json" {
 			return json.NewEncoder(s.stdout).Encode(r)
 		}
-		fmt.Fprintf(s.stdout, "CinderPath %s assessment workflow\nTarget: %s\nStatus: %s\nChecked stages: %s\nBlockers: %s\nNext action: %s\nNetwork activity: none\n", kind, r.Target, r.Status, strings.Join(r.Checked, ", "), strings.Join(r.Blockers, "; "), r.NextAction)
+		fmt.Fprintf(s.stdout, "CinderPath %s assessment workflow\nTarget: %s\nTarget ID: %s\nStatus: %s\nResult: no assessment performed\nChecked stages: %s\nBlockers: %s\nNext action: %s\nNetwork activity: none\n", kind, r.Target, targetID(ctx.Target), r.Status, strings.Join(r.Checked, ", "), strings.Join(r.Blockers, "; "), r.NextAction)
+		if kind == "pxe" {
+			fmt.Fprintln(s.stdout, "Would inspect: one authorized server's WDS/PXE posture, unknown-computer support, boot-image metadata, and bounded SMS Provider deployment metadata.")
+		}
 		if s.verbose {
 			fmt.Fprintf(s.stdout, "Resolved context: target=%s framework=%s database=%s output=%s profile=%s\n", ctx.TargetSource, ctx.FrameworkSource, ctx.DatabaseSource, ctx.OutputDirSource, ctx.ProfileSource)
 			limits := limitsForProfile(ctx.Profile)
@@ -156,7 +162,7 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 			if status == "" {
 				status = "completed"
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: %s\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), support, strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: %s\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), support, strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 			return nil
 		}
 		if techniqueID == "RECON-2" {
@@ -176,20 +182,20 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 					status = string(out.Run.Status)
 				}
 				if format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0})
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
 				}
-				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nSMB share evidence: assets=%d findings=%d\nSelected modules: live.smb.share_metadata\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nSMB share evidence: assets=%d findings=%d\nSelected modules: live.smb.share_metadata\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 				return nil
 			}
 			mappings := defensiveMappings(techniqueID)
 			if format == "json" {
 				return json.NewEncoder(s.stdout).Encode(map[string]any{
-					"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target),
+					"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "redaction": s.outputPolicy().Metadata(),
 					"assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings,
 					"limitations": []string{"configure the existing authorized live connector for bounded authenticated SMB share metadata", "no SMB protocol request was sent"}, "live_policy_requests": 0, "run_id": runID,
 				})
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no SMB protocol request was sent\n", techniqueID, redactedTarget(target), snapshotRevision(), support, strings.Join(mappings, ", "))
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: authenticated SMB2/3 IPC$ and srvsvc share metadata, then classify generic versus SCCM shares\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no SMB protocol request was sent\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), support, strings.Join(mappings, ", "))
 			return nil
 		}
 		if techniqueID == "RECON-3" {
@@ -209,23 +215,23 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 					status = string(out.Run.Status)
 				}
 				if format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID})
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
 				}
-				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: %s\nHTTP route evidence: assets=%d findings=%d\nRequests: actual=%v maximum=%v successes=%v failures=%v\nSelected modules: live.sccm.http_recon\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nHTTP route evidence: assets=%d findings=%d\nRequests: actual=%v maximum=%v successes=%v failures=%v\nSelected modules: live.sccm.http_recon\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 				return nil
 			}
 			mappings := defensiveMappings(techniqueID)
 			if format == "json" {
-				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": runID})
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": runID, "redaction": s.outputPolicy().Metadata()})
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(target), snapshotRevision(), support, strings.Join(mappings, ", "))
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: one explicit host using the fixed anonymous SCCM HTTP GET/HEAD route allowlist\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), support, strings.Join(mappings, ", "))
 			return nil
 		}
 		if format == "json" {
-			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "next_actions": []string{"configure the existing authorized live connector with LDAP enabled"}, "live_policy_requests": 0}
+			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "next_actions": []string{"configure the existing authorized live connector with LDAP enabled"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
 			return json.NewEncoder(s.stdout).Encode(result)
 		}
-		fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nAssessment support: %s\nNetwork behavior: none\nActive validation: not performed\nNext action: configure the existing authorized live connector with LDAP enabled; no network activity occurred\n", techniqueID, redactedTarget(target), snapshotRevision(), support)
+		fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: authenticated RootDSE, System Management, SCCM AD publishing, site code, and management-point discovery\nNetwork behavior: none\nActive validation: not performed\nNext action: configure the existing authorized live connector with LDAP enabled; no network activity occurred\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), support)
 		return nil
 	}}
 	c.Flags().StringVar(&target, "target", "", "target associated with the technique assessment")
@@ -306,6 +312,13 @@ func recon3LiveOptions(c config.Config, target string) live.Options {
 func redactedTarget(v string) string {
 	if v == "" {
 		return "[from active run context]"
+	}
+	return v
+}
+
+func targetID(v string) string {
+	if v == "" {
+		return ""
 	}
 	return "target_" + shortFingerprint(v)
 }

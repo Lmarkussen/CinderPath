@@ -49,6 +49,7 @@ output:
   html: true
   json: true
   secrets_file: false
+  redact_secrets: false
 
 # Offline fixture analysis only. Live policy collection is deliberately blocked.
 policy:

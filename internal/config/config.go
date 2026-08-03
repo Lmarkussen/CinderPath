@@ -83,7 +83,7 @@ type LDAPConfig struct {
 
 type Overrides struct {
 	DBPath, OutputDir, LogLevel, Timeout, Profile string
-	NoColor                                       bool
+	NoColor, RedactSecrets                        bool
 	Set                                           map[string]bool
 }
 
@@ -177,6 +177,11 @@ func applyEnvironment(cfg *Config) {
 			cfg.NoColor = b
 		}
 	}
+	if v := os.Getenv("CINDERPATH_REDACT_SECRETS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Output.RedactSecrets = b
+		}
+	}
 }
 
 func applyCLI(cfg *Config, cli Overrides) {
@@ -197,5 +202,8 @@ func applyCLI(cfg *Config, cli Overrides) {
 	}
 	if cli.Set["no-color"] {
 		cfg.NoColor = cli.NoColor
+	}
+	if cli.Set["redact-secrets"] {
+		cfg.Output.RedactSecrets = cli.RedactSecrets
 	}
 }

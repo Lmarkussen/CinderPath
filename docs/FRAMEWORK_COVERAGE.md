@@ -1,5 +1,12 @@
 # Misconfiguration Manager coverage
 
+CinderPath’s catalog is based on the research and organizational model of the
+[Misconfiguration Manager project](https://github.com/subat0mik/Misconfiguration-Manager).
+The embedded snapshot represents upstream revision
+`394c53baf98c4eeb5ba001d195c4653216ac3141`. Technique definitions and
+attack-defense mappings originate upstream; support dimensions and runtime
+validation results describe the independent CinderPath implementation only.
+
 CinderPath uses an embedded, offline framework snapshot. Normal runtime never downloads upstream content. A snapshot records its upstream revision, snapshot date, matrix fingerprint, technique summaries, attack/defense mappings, and independent coverage dimensions.
 
 Inspect coverage with:
@@ -20,4 +27,8 @@ cinderpath research framework import --source /path/to/Misconfiguration-Manager 
 cinderpath research framework validate --snapshot internal/framework/data/misconfiguration-manager.json
 ```
 
-The embedded snapshot is currently imported from the local Misconfiguration Manager revision recorded in the file. Re-importing is a development operation; runtime remains fully offline.
+The embedded snapshot is currently imported from the local Misconfiguration
+Manager revision recorded in the file. Re-importing is a development operation;
+runtime remains fully offline. CinderPath is not an official Misconfiguration
+Manager implementation and the upstream project does not endorse or own
+CinderPath behavior.

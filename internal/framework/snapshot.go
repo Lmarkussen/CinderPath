@@ -79,6 +79,25 @@ type FrameworkSnapshot struct {
 	Warnings          []string         `json:"warnings,omitempty"`
 }
 
+// Provenance describes the independent implementation's relationship to the
+// upstream framework without changing the embedded snapshot schema.
+type Provenance struct {
+	Name               string `json:"name"`
+	UpstreamRepository string `json:"upstream_repository"`
+	UpstreamRevision   string `json:"upstream_revision"`
+	Implementation     string `json:"implementation"`
+}
+
+const misconfigurationManagerRepository = "https://github.com/subat0mik/Misconfiguration-Manager"
+
+func SnapshotProvenance(s FrameworkSnapshot) Provenance {
+	name := s.FrameworkID
+	if s.FrameworkID == "misconfiguration-manager" {
+		name = "Misconfiguration Manager"
+	}
+	return Provenance{Name: name, UpstreamRepository: misconfigurationManagerRepository, UpstreamRevision: s.UpstreamRevision, Implementation: "CinderPath independent adapter"}
+}
+
 func EmbeddedSnapshot() (FrameworkSnapshot, error) {
 	b, err := snapshotFS.ReadFile("data/misconfiguration-manager.json")
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/identity"
 	"github.com/Lmarkussen/CinderPath/internal/logging"
 	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/Lmarkussen/CinderPath/internal/version"
 	"github.com/spf13/cobra"
@@ -26,6 +27,7 @@ type state struct {
 	configPath                                string
 	db, outputDir, logLevel, timeout, profile string
 	noColor, verbose                          bool
+	redactSecrets                             bool
 	cfg                                       config.Config
 	application                               *app.Application
 	stdout, stderr                            io.Writer
@@ -68,6 +70,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.StringVar(&s.logLevel, "log-level", d.LogLevel, "log level: debug, info, warn, error")
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
 	f.BoolVar(&s.verbose, "verbose", false, "show resolved context sources and advanced details")
+	f.BoolVar(&s.redactSecrets, "redact-secrets", false, "redact secret values in operator output and reports")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
 	f.StringVar(&s.profile, "profile", string(d.Profile), "policy profile: safe, standard, aggressive, yolo, or research")
 	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.validationCommand(), s.exploitCommand(), s.cleanupCommand(), s.reportCommand(), s.runCommand(), s.frameworkCommand(), s.researchCommand(), s.debugCommand(root))
@@ -145,7 +148,7 @@ func (s *state) identityCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		printIdentity(s.stdout, out.Identity)
+		printIdentity(s.stdout, out.Identity, s.outputPolicy())
 		fmt.Fprintf(s.stdout, "\nRemote authentication attempted: no\nRemote authentication validated: no\nDatabase: %s\n", out.DatabasePath)
 		if len(out.Capabilities) > 0 {
 			fmt.Fprintln(s.stdout, "\nPotential capabilities:")
@@ -174,7 +177,7 @@ func (s *state) identityCommand() *cobra.Command {
 			return err
 		}
 		for _, id := range out.Identities {
-			printIdentity(s.stdout, id)
+			printIdentity(s.stdout, id, s.outputPolicy())
 			fmt.Fprintln(s.stdout)
 		}
 		return nil
@@ -193,7 +196,7 @@ func (s *state) capabilitiesCommand() *cobra.Command {
 		return nil
 	}}
 }
-func printIdentity(w io.Writer, id models.Credential) {
+func printIdentity(w io.Writer, id models.Credential, p outputpolicy.Policy) {
 	name := id.Principal
 	if name == "" {
 		name = id.Username
@@ -207,7 +210,7 @@ func printIdentity(w io.Writer, id models.Credential) {
 	if name == "" {
 		name = string(id.Kind)
 	}
-	fmt.Fprintf(w, "Identity: %s\nIdentity ID: %s\nKind: %s\nReference: %s\nReference available: %t\nMetadata validated locally: %t\nValidation: %s\n", name, id.ID, id.Kind, id.RedactedReference, id.Validated, id.Validated, id.ValidationReason)
+	fmt.Fprintf(w, "Identity: %s\nIdentity ID: %s\nKind: %s\nReference: %s\nReference available: %t\nMetadata validated locally: %t\nValidation: %s\nRedaction: secrets_redacted=%t\n", name, id.ID, id.Kind, id.RedactedReference, id.Validated, id.Validated, id.ValidationReason, p.RedactSecrets)
 }
 func printCapabilities(w io.Writer, caps []models.Capability) {
 	for _, c := range caps {
@@ -221,16 +224,20 @@ func (s *state) configure(cmd *cobra.Command) error {
 		path = os.Getenv("CINDERPATH_CONFIG")
 	}
 	set := map[string]bool{}
-	for _, name := range []string{"db", "output-dir", "log-level", "no-color", "timeout", "profile"} {
+	for _, name := range []string{"db", "output-dir", "log-level", "no-color", "timeout", "profile", "redact-secrets"} {
 		set[name] = cmd.Flags().Changed(name)
 	}
-	cfg, err := config.Load(path, config.Overrides{DBPath: s.db, OutputDir: s.outputDir, LogLevel: s.logLevel, NoColor: s.noColor, Timeout: s.timeout, Profile: s.profile, Set: set})
+	cfg, err := config.Load(path, config.Overrides{DBPath: s.db, OutputDir: s.outputDir, LogLevel: s.logLevel, NoColor: s.noColor, RedactSecrets: s.redactSecrets, Timeout: s.timeout, Profile: s.profile, Set: set})
 	if err != nil {
 		return err
 	}
 	s.cfg = cfg
 	s.application = &app.Application{Config: cfg, Logger: logging.New(s.stderr, cfg.LogLevel, cfg.NoColor)}
 	return nil
+}
+
+func (s *state) outputPolicy() outputpolicy.Policy {
+	return outputpolicy.Policy{RedactSecrets: s.cfg.Output.RedactSecrets}
 }
 func (s *state) versionCommand() *cobra.Command {
 	return &cobra.Command{Use: "version", Short: "Print version and build information", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { fmt.Fprintln(s.stdout, version.Current().String()); return nil }}
@@ -372,7 +379,8 @@ func (s *state) assessCommand() *cobra.Command {
 							partial++
 						}
 					}
-					fmt.Fprintf(s.stdout, "Framework revision: %s\nAssessable techniques: %d\nPartially supported techniques: %d\nUnsupported validation/execution: preserved\n", snapshot.UpstreamRevision, assessable, partial)
+					p := framework.SnapshotProvenance(snapshot)
+					fmt.Fprintf(s.stdout, "Framework: %s\nUpstream project: %s\nFramework revision: %s\nImplementation: %s\nAssessable techniques: %d\nPartially supported techniques: %d\nUnsupported validation/execution: preserved\n", p.Name, p.UpstreamRepository, p.UpstreamRevision, p.Implementation, assessable, partial)
 				}
 			}
 		}

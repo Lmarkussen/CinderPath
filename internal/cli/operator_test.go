@@ -89,7 +89,7 @@ func TestAssessWorkflowAndContextPrecedence(t *testing.T) {
 	if e != nil || errout != "" {
 		t.Fatalf("%v %q", e, errout)
 	}
-	if strings.Contains(out, "srv01") || !strings.Contains(out, "plan_ready_execution_requires_authorized_connector") || !strings.Contains(out, "\"network_behavior\":\"none\"") {
+	if !strings.Contains(out, "srv01") || !strings.Contains(out, "target_id") || !strings.Contains(out, "plan_ready_execution_requires_authorized_connector") || !strings.Contains(out, "\"network_behavior\":\"none\"") {
 		t.Fatal(out)
 	}
 }
@@ -106,8 +106,18 @@ func TestRECON2ReportsNoConnectorWithoutNetwork(t *testing.T) {
 	if result["status"] != "not_run_no_connector" || result["network_behavior"] != "none" {
 		t.Fatalf("result=%v", result)
 	}
-	if strings.Contains(out, "srv01") || !strings.Contains(out, "no SMB protocol request was sent") {
+	if !strings.Contains(out, "srv01") || !strings.Contains(out, "target_id") || !strings.Contains(out, "no SMB protocol request was sent") {
 		t.Fatalf("unsafe or unredacted output: %s", out)
+	}
+}
+
+func TestRedactSecretsFlagIsReportedInJSON(t *testing.T) {
+	out, stderr, err := executeForTest(t, "--redact-secrets", "assess", "technique", "RECON-2", "--target", "SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	if !strings.Contains(out, `"target":"SCCM.LAB"`) || !strings.Contains(out, `"target_id":"target_`) || !strings.Contains(out, `"secrets_redacted":true`) {
+		t.Fatalf("operator output policy metadata missing: %s", out)
 	}
 }
 
@@ -123,8 +133,48 @@ func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
 	if result["status"] != "not_run_no_connector" || result["network_behavior"] != "none" || result["defensive_mappings"].([]any)[0] != "PREVENT-20" {
 		t.Fatalf("result=%v", result)
 	}
-	if strings.Contains(out, "srv01") || !strings.Contains(out, "no HTTP request was sent") {
+	if !strings.Contains(out, "srv01") || !strings.Contains(out, "target_id") || !strings.Contains(out, "no HTTP request was sent") {
 		t.Fatalf("unsafe or unredacted output: %s", out)
+	}
+}
+
+func TestFrameworkProvenanceText(t *testing.T) {
+	out, stderr, err := executeForTest(t, "framework", "coverage", "--framework", "misconfiguration-manager")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	for _, want := range []string{"Framework: Misconfiguration Manager", "Upstream project: https://github.com/subat0mik/Misconfiguration-Manager", "Upstream revision: 394c53baf98c4eeb5ba001d195c4653216ac3141", "Implementation: CinderPath independent adapter"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %s", want, out)
+		}
+	}
+	if strings.Contains(out, "Warnings: unknown section") || !strings.Contains(out, "Import warnings:") {
+		t.Fatalf("coverage output should summarize importer warnings: %s", out)
+	}
+}
+
+func TestFrameworkCoverageVerboseWarnings(t *testing.T) {
+	out, stderr, err := executeForTest(t, "--verbose", "framework", "coverage", "--framework", "misconfiguration-manager")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	if !strings.Contains(out, "Import warnings\n  - unknown section") {
+		t.Fatalf("verbose coverage output omitted warning details: %s", out)
+	}
+}
+
+func TestFrameworkProvenanceJSON(t *testing.T) {
+	out, stderr, err := executeForTest(t, "framework", "technique", "RECON-1", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	p, ok := result["framework"].(map[string]any)
+	if !ok || p["name"] != "Misconfiguration Manager" || p["upstream_revision"] != "394c53baf98c4eeb5ba001d195c4653216ac3141" || p["implementation"] != "CinderPath independent adapter" {
+		t.Fatalf("unexpected provenance: %#v", result["framework"])
 	}
 }
 

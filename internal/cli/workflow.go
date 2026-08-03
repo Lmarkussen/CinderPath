@@ -283,6 +283,11 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 		ports, _ := live.ParsePorts(c.Discovery.Ports)
 		host := mustDuration(c.Discovery.HostTimeout)
 		o.Live = live.Options{Domain: c.WorkflowScope.Domain, DC: c.WorkflowScope.DomainController, DNSServer: c.WorkflowScope.DNSServer, Ports: ports, Concurrency: c.Discovery.Concurrency, ConnectTimeout: mustDuration(c.Discovery.ConnectTimeout), HostTimeout: host, Scope: scopeInput(c), HTTP: live.HTTPOptions{UserAgent: c.Discovery.UserAgent, MaxBodyBytes: c.Discovery.HTTPMaxBodyBytes, MaxRedirects: c.Discovery.HTTPMaxRedirects, Timeout: host}, LDAP: live.LDAPOptions{Enabled: c.Workflow.LDAP, Server: c.WorkflowScope.DomainController, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, PageSize: c.LDAP.PageSize, MaxEntries: c.LDAP.MaxEntries, SearchTimeout: mustDuration(c.LDAP.SearchTimeout)}}
+		if o.Live.LDAP.Enabled {
+			if err := live.ResolveLDAPPassword(&o.Live.LDAP); err != nil {
+				return err
+			}
+		}
 	}
 	disc, e := s.application.DiscoverWithOptions(ctx, []string{"run"}, o)
 	if e != nil {

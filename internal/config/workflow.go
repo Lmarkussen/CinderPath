@@ -58,10 +58,11 @@ type SafetyConfig struct {
 	AllowRemoteExecution    bool `yaml:"allow_remote_execution" json:"allow_remote_execution"`
 }
 type OutputConfig struct {
-	Directory   string `yaml:"directory,omitempty" json:"directory,omitempty"`
-	HTML        bool   `yaml:"html" json:"html"`
-	JSON        bool   `yaml:"json" json:"json"`
-	SecretsFile bool   `yaml:"secrets_file" json:"secrets_file"`
+	Directory     string `yaml:"directory,omitempty" json:"directory,omitempty"`
+	HTML          bool   `yaml:"html" json:"html"`
+	JSON          bool   `yaml:"json" json:"json"`
+	SecretsFile   bool   `yaml:"secrets_file" json:"secrets_file"`
+	RedactSecrets bool   `yaml:"redact_secrets" json:"redact_secrets"`
 }
 type PolicyConfig struct {
 	LiveCollection bool `yaml:"live_collection" json:"live_collection"`
