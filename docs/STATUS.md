@@ -2,6 +2,15 @@
 
 The CLI reduction keeps the compact public lifecycle while removing duplicate Cobra mounts introduced during the local audit. The tree fell from 218 to 151 commands, 580 to 411 local flags, 198 to 126 required flags, and 86 to 42 artifact handoffs. Fourteen unreleased deprecated parents and 138 duplicate hidden nodes are gone; tested implementations remain once under `research`. A canonical SHA-256-verified run artifact registry, shared public workflow flags, automatic profile bounds including offline `research`, and generated complexity budgets are implemented. Active validation, exploitation, and cleanup remain unsupported and perform no action.
 
+## Framework provenance
+
+The embedded Misconfiguration Manager catalog originates from the
+[Misconfiguration Manager project](https://github.com/subat0mik/Misconfiguration-Manager)
+at upstream revision `394c53baf98c4eeb5ba001d195c4653216ac3141`. Snapshot
+generation records the upstream revision, date, matrix fingerprint, and source
+provenance. Upstream technique definitions and defensive mappings are distinct
+from CinderPath support states, evidence, and runtime-validation claims.
+
 ## Passive Windows lab capture kit
 
 A schema-v7 audit plus schema-v8 extension implements the passive capture-kit lifecycle. `lab capture-kit` atomically creates, shows, validates, and locally finalizes owner-only kits; performs bounded redacted generic Windows-log inspection; and exports, inspects, imports, signs, and verifies a separate `capture_evidence` bundle format. Generated PowerShell never starts capture or SCCM actions. `capture guided-import` accepts reviewed local kits or validated capture-evidence bundles, preserves sources, records redacted attribution, and creates a capture-kit dossier. `matrix add-kit` attaches reviewed operator metadata without analysis. Capture-evidence integrity, import, and signing do not validate or approve a protocol contract. Live policy collection remains blocked.
@@ -602,7 +611,9 @@ The current implementation must remain within these boundaries:
 - No NTLM relay.
 - No package/content download during discovery.
 - No deployment creation or modification.
-- No SMB authentication or share enumeration.
+- Generic discovery performs no SMB authentication or share enumeration. The
+  separate RECON-2 workflow permits one bounded authenticated SMB2/3
+  `IPC$`/`srvsvc` share-metadata enumeration on an exact selected host.
 - No SQL authentication, query, or modification.
 - No WMI, remote command execution, payload execution, persistence, or availability testing.
 - Network, response, search, paging, redirect, body, entry, and concurrency limits are mandatory.
@@ -740,7 +751,13 @@ identified structured and request-sequence parsers. Preserve the live policy
 block and do not add registration, content requests, protected-secret
 decryption, identity generation, or state changes.
 
-Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`, token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration, certificate enrollment, machine identity creation, Network Access Account/task-sequence recovery, package or DP enumeration/download, PXE collection, NTLM/Kerberos authentication, relay, deployments, execution, SQL, and SMB authentication.
+Explicitly continue to defer `ContentLocationRequest`, `CCM_System/request`,
+token authentication, `.sms_pol`/`.sms_dcm`, policy assignments, registration,
+certificate enrollment, machine identity creation, Network Access
+Account/task-sequence recovery, package or DP enumeration/download, PXE
+collection, relay, deployments, execution, SQL authentication/querying, and
+SMB operations beyond RECON-2's exact bounded `IPC$`/`srvsvc` share-metadata
+enumeration.
 
 Suggested commit message for the completed phase:
 
@@ -825,7 +842,10 @@ generic administrative shares, so no SCCM-role finding was created.
 `RECON-3` now has a targeted adapter over the existing fixed SCCM HTTP route
 allowlist. It plans five routes over HTTP and HTTPS, one method per route, for
 an explicit maximum of 10 network requests (route and access evidence are
-separate records). It remains partial pending authorized runtime validation;
-HTTP authentication is never attempted. All connection-level failures are
+separate records). Authorized GOAD collection reached the exact selected
+target, but ports 80 and 443 refused connections. This exercised bounded
+request planning, transport-failure classification, and evidence persistence,
+but not route-response parsing, so runtime validation remains partial. HTTP
+authentication is never attempted. All connection-level failures are
 classified as `connection_failed`, name resolution failures as
 `endpoint_resolution_failed`, and mixed outcomes as `completed_with_errors`.
