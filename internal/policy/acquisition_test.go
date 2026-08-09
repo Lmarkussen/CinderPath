@@ -9,7 +9,7 @@ import (
 func TestCRED2ContractStaysBlockedWithCompleteReferences(t *testing.T) {
 	c := ClientIdentity{Kind: "existing_sccm_client", ClientID: "{11111111-1111-1111-1111-111111111111}"}
 	p := PlanCRED2Acquisition("MECM.SCCM.LAB", "P01", c)
-	if p.State != BlockedMissingPrerequisite || !strings.Contains(p.Reason, "unverified") || p.Method != "CCM_POST" || p.Route != "/ccm_system/request" {
+	if p.State != BlockedLivePolicyContract || !strings.Contains(p.Reason, "unverified") || p.Method != "CCM_POST" || p.Route != "/ccm_system/request" {
 		t.Fatalf("%+v", p)
 	}
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,8 +10,10 @@ import (
 	"testing"
 
 	"github.com/Lmarkussen/CinderPath/internal/app"
+	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/planner"
+	"github.com/Lmarkussen/CinderPath/internal/policy"
 	"github.com/Lmarkussen/CinderPath/internal/terminal"
 )
 
@@ -227,6 +230,27 @@ func TestPrerequisiteProvenanceRendering(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "run_prior") || !strings.Contains(got, "14m0s") || !strings.Contains(got, "\x1b[2m") {
 		t.Fatalf("provenance not rendered: %q", got)
+	}
+}
+
+func TestImportedClientIdentityFeedsCRED2Planner(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.DBPath = filepath.Join(t.TempDir(), "identity.db")
+	cfg.WorkflowScope.Domain = "SCCM.LAB"
+	a := &app.Application{Config: cfg}
+	identity, err := policy.ParseClientIdentity([]byte("kind: existing_sccm_client\nclient_id: 11111111-2222-3333-4444-555555555555\ndomain: SCCM.LAB\nsource:\n  type: local_sccm_client_artifact\n  verified: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.ImportClientIdentity(context.Background(), identity); err != nil {
+		t.Fatal(err)
+	}
+	s := &state{cfg: cfg, application: a}
+	plan := s.techniquePlan("CRED-2", "SCCM.LAB", "")
+	for _, decision := range plan.Prerequisites {
+		if decision.Fact == planner.ClientIdentity && decision.State != planner.Current {
+			t.Fatalf("client identity=%+v", decision)
+		}
 	}
 }
 

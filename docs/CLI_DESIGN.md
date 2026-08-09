@@ -105,6 +105,13 @@ available.
 Explicit RECON-2 is SMB-only and explicit RECON-3 is HTTP-only. Unsupported
 CRED paths may show a plan but never collect policies or recover credentials.
 
+For the offline CRED-2 identity prerequisite, use the hidden research command
+`research client-identity import --metadata FILE`. It persists sanitized,
+domain-scoped metadata for an already-existing client and makes no network
+request. Only one fresh, domain-compatible, source-verified GUID can satisfy a
+CRED-2 plan; ambiguous, stale, unverified, or cross-domain records remain
+blockers.
+
 Technique one-off values may use `--provider`, `--domain-controller`,
 `--username`, `--password-env`, and `--password-file`; module limits remain
 configuration/profile values. Interactive text uses semantic colors

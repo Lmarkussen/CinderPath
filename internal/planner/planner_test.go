@@ -1,9 +1,11 @@
 package planner
 
 import (
-	"github.com/Lmarkussen/CinderPath/internal/models"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Lmarkussen/CinderPath/internal/models"
 )
 
 func TestCredentialPlanSchedulesLDAPWhenFactsMissing(t *testing.T) {
@@ -82,6 +84,15 @@ func TestExplicitlyDisabledLDAPBlocksSafeCollection(t *testing.T) {
 		}
 		if decision.State == Collect {
 			t.Fatalf("unexpected collection with LDAP disabled: %+v", p)
+		}
+	}
+}
+
+func TestImportedClientIdentitySatisfiesCRED2Prerequisite(t *testing.T) {
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC.SCCM.LAB", Username: "user", ClientID: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", ClientIdentitySource: "local_sccm_client_artifact", Now: time.Now()})
+	for _, decision := range p.Prerequisites {
+		if decision.Fact == ClientIdentity && (decision.State != Current || !strings.Contains(decision.Reason, "local_sccm_client_artifact")) {
+			t.Fatalf("client identity=%+v", decision)
 		}
 	}
 }

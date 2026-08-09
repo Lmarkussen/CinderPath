@@ -180,6 +180,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		s.application.Config = s.cfg
 		techniqueID := strings.ToUpper(args[0])
 		plan := s.techniquePlan(techniqueID, o.target, o.runID)
+		maxAge := time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour
 		support := "unsupported_or_unknown"
 		if snapshot, err := framework.EmbeddedSnapshot(); err == nil {
 			for _, coverage := range snapshot.Coverage {
@@ -292,6 +293,9 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			}
 		}
 		status := techniquePlanStatus(plan)
+		if techniqueID == "CRED-2" && status == "not_run_no_connector" {
+			status = "blocked_by_safety_gate"
+		}
 		if o.format == "json" {
 			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"safe prerequisites are resolved automatically when authorized"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
 			if len(prerequisiteRuns) > 0 {
@@ -299,6 +303,10 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			}
 			if techniqueID == "CRED-2" {
 				result["policy_acquisition"] = policy.CRED2AcquisitionContract()
+				if artifact, err := s.application.StoredClientNAAArtifact(context.Background(), s.cfg.WorkflowScope.Domain, maxAge); err == nil {
+					result["naa_policy_artifact"] = artifact.Artifact
+					result["naa_policy_summary"] = map[string]any{"artifact_present": true, "credential_type": "network_access_account", "username_material": artifact.Artifact.Username.State, "password_material": artifact.Artifact.Password.State, "plaintext_recovered": false, "recovery_state": "not_recovered"}
+				}
 			}
 			return json.NewEncoder(s.stdout).Encode(result)
 		}
@@ -313,6 +321,9 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		printPrerequisites(s.stdout, s.renderer, plan)
 		if techniqueID == "CRED-2" {
 			contract := policy.CRED2AcquisitionContract()
+			if artifact, err := s.application.StoredClientNAAArtifact(context.Background(), s.cfg.WorkflowScope.Domain, maxAge); err == nil {
+				fmt.Fprintf(s.stdout, "Network Access Account policy\n  Source: %s\n  Artifact: %s\n  Username material: %s\n  Password material: %s\n  Plaintext recovered: no\n", artifact.Artifact.SourceHost, artifact.Artifact.Class, artifact.Artifact.Username.State, artifact.Artifact.Password.State)
+			}
 			fmt.Fprintf(s.stdout, "Policy acquisition: %s\nPolicy request: %s %s\nLive policy requests: 0\nLimitation: %s\n", s.renderer.Warning(string(contract.State)), s.renderer.Target(contract.Method), s.renderer.Target(contract.Route), contract.Reason)
 		}
 		return nil
@@ -352,7 +363,17 @@ func (s *state) techniquePlan(technique, target, runID string) planner.Plan {
 			_ = store.Close()
 		}
 	}
-	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, AllowSafeLDAP: &s.cfg.Workflow.LDAP, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour})
+	maxAge := time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour
+	clientID, clientSource, clientReason := "", "", ""
+	if strings.EqualFold(technique, "CRED-2") {
+		identity, err := s.application.StoredClientIdentity(context.Background(), s.cfg.WorkflowScope.Domain, maxAge)
+		if err != nil {
+			clientReason = err.Error()
+		} else {
+			clientID, clientSource = identity.Identity.ClientID, identity.Identity.Source.Type
+		}
+	}
+	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, ClientID: clientID, ClientIdentitySource: clientSource, ClientIdentityReason: clientReason, AllowSafeLDAP: &s.cfg.Workflow.LDAP, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: maxAge})
 }
 
 func (s *state) evidenceForRun(runID string) []models.Evidence {
@@ -723,7 +744,7 @@ func (s *state) researchCommand() *cobra.Command {
 	protocolCommand.Hidden = false
 	policyModel := s.policyCommand()
 	policyModel.Use = "policy-model"
-	root.AddCommand(pxeCommand, protocolCommand, policyModel, s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runsCommand(), s.clientIdentityCommand())
+	root.AddCommand(pxeCommand, protocolCommand, policyModel, s.matrixCommand(), s.sequenceCaptureCommand(), s.parserCommand(), s.analysisCommand(), s.identityCommand(), s.capabilitiesCommand(), s.authCommand(), s.configCommand(), s.runsCommand(), s.clientIdentityCommand(), s.clientNAAArtifactCommand())
 	lab := s.labCommand()
 	for _, child := range lab.Commands() {
 		if child.Name() == "capture-plan" {

@@ -335,7 +335,7 @@ func (s *state) bundleCommand() *cobra.Command {
 func (s *state) clientIdentityCommand() *cobra.Command {
 	root := &cobra.Command{Use: "client-identity", Short: "Import existing SCCM client identity metadata without registration"}
 	var metadata string
-	imp := &cobra.Command{Use: "import", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+	imp := &cobra.Command{Use: "import", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		b, e := os.ReadFile(metadata)
 		if e != nil {
 			return e
@@ -344,10 +344,13 @@ func (s *state) clientIdentityCommand() *cobra.Command {
 		if e != nil {
 			return e
 		}
+		if e = s.application.ImportClientIdentity(cmd.Context(), id); e != nil {
+			return e
+		}
 		safe := struct {
-			Kind, ClientID, SiteCode, ManagementPoint, CertificateReference, SourceType string
-			Verified                                                                    bool
-		}{id.Kind, id.ClientID, id.SiteCode, id.ManagementPoint, filepath.Base(id.Certificate.Reference), id.Source.Type, id.Source.Verified}
+			Kind, ClientID, Domain, SiteCode, ManagementPoint, CertificateReference, SourceType string
+			Verified                                                                            bool
+		}{id.Kind, id.ClientID, id.Domain, id.SiteCode, id.ManagementPoint, filepath.Base(id.Certificate.Reference), id.Source.Type, id.Source.Verified}
 		data, _ := json.MarshalIndent(safe, "", "  ")
 		path := filepath.Join(filepath.Dir(s.cfg.DBPath), ".cinderpath", "client-identities", strings.ReplaceAll(id.ClientID, ":", "_")+".json")
 		if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
@@ -363,6 +366,37 @@ func (s *state) clientIdentityCommand() *cobra.Command {
 	_ = imp.MarkFlagRequired("metadata")
 	root.AddCommand(imp)
 	return root
+}
+
+func (s *state) clientNAAArtifactCommand() *cobra.Command {
+	root := &cobra.Command{Use: "client-artifact", Short: "Import reviewed, metadata-only SCCM client policy artifacts"}
+	var metadata string
+	imp := &cobra.Command{Use: "import-naa", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		b, err := os.ReadFile(metadata)
+		if err != nil {
+			return err
+		}
+		a, err := policy.ParseClientNAAArtifact(b)
+		if err != nil {
+			return err
+		}
+		if err = s.application.ImportClientNAAArtifact(cmd.Context(), a); err != nil {
+			return err
+		}
+		fmt.Fprintf(s.stdout, "Imported Network Access Account client-artifact metadata\nSource: %s\nArtifact: %s\nUsername material: %s\nPassword material: %s\nPlaintext recovered: no\nLive SCCM policy requests: 0\n", a.SourceHost, a.Class, materialState(a.Username), materialState(a.Password))
+		return nil
+	}}
+	imp.Flags().StringVar(&metadata, "metadata", "", "reviewed metadata-only NAA client artifact YAML")
+	_ = imp.MarkFlagRequired("metadata")
+	root.AddCommand(imp)
+	return root
+}
+
+func materialState(m policy.ProtectedMaterial) string {
+	if !m.Present {
+		return "absent"
+	}
+	return m.State
 }
 
 func (s *state) policyCommand() *cobra.Command {

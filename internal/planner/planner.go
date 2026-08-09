@@ -49,12 +49,12 @@ type Decision struct {
 	Age       string `json:"age,omitempty"`
 }
 type Input struct {
-	Technique, Provider, Target, DomainController, Username, CurrentRun string
-	ClientID, ManagementPoint                                           string
-	AllowSafeLDAP                                                       *bool
-	Evidence                                                            []models.Evidence
-	Now                                                                 time.Time
-	EvidenceMaxAge                                                      time.Duration
+	Technique, Provider, Target, DomainController, Username, CurrentRun   string
+	ClientID, ClientIdentitySource, ClientIdentityReason, ManagementPoint string
+	AllowSafeLDAP                                                         *bool
+	Evidence                                                              []models.Evidence
+	Now                                                                   time.Time
+	EvidenceMaxAge                                                        time.Duration
 }
 type Plan struct {
 	Technique     string     `json:"technique"`
@@ -128,9 +128,15 @@ func resolve(r Requirement, in Input) Decision {
 	}
 	if r.Fact == ClientIdentity {
 		if in.ClientID != "" {
-			d.State, d.Reason = Current, "existing client identity reference"
+			d.State, d.Reason = Current, "imported existing SCCM client identity"
+			if in.ClientIdentitySource != "" {
+				d.Reason += " from " + in.ClientIdentitySource
+			}
 		} else {
 			d.State, d.Reason = OperatorInput, "existing SCCM client GUID is required"
+			if in.ClientIdentityReason != "" {
+				d.Reason = in.ClientIdentityReason
+			}
 		}
 		return d
 	}

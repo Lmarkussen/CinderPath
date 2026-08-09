@@ -886,6 +886,14 @@ blockers. The current automatic set is bounded LDAP RootDSE and SCCM-directory
 collection only. It never authorizes a CRED-2 policy request; missing client
 identity, stale evidence, or failed collection stops the assessment truthfully.
 
+Existing-client metadata can now be imported offline through `research
+client-identity import`. A normalized GUID, domain, source type, and explicit
+source-verification assertion are persisted in the existing metadata table and
+are considered only when fresh and domain-compatible. This represents an
+already-existing client reference, not registration, certificate import, or
+policy authentication. Even with every prerequisite satisfied, CRED-2 remains
+blocked by the unverified live policy contract.
+
 `RECON-3` now has a targeted adapter over the existing fixed SCCM HTTP route
 allowlist. It plans five routes over HTTP and HTTPS, one method per route, for
 an explicit maximum of 10 network requests (route and access evidence are

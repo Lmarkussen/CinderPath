@@ -633,7 +633,7 @@ func Replay(ctx context.Context, c Contract, f Fixture, endpoint string) ([]byte
 	return io.ReadAll(io.LimitReader(resp.Body, MaxFixtureBytes+1))
 }
 
-var guidRE = regexp.MustCompile(`(?i)(?:GUID:)?\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?`)
+var guidRE = regexp.MustCompile(`(?i)^(?:GUID:)?\{?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}?$`)
 var sidRE = regexp.MustCompile(`S-1-[0-9-]{6,}`)
 var ipv4RE = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
 
@@ -643,12 +643,23 @@ func Sanitize(input, output string) error {
 }
 
 type ClientIdentity struct {
-	Kind, ClientID, SiteCode, ManagementPoint string
-	Certificate                               struct{ Reference, Fingerprint, Subject, NotBefore, NotAfter string }
-	Source                                    struct {
-		Type, CapturedAt string
-		Verified         bool
-	}
+	Kind            string `yaml:"kind" json:"kind"`
+	ClientID        string `yaml:"client_id" json:"client_id"`
+	Domain          string `yaml:"domain" json:"domain"`
+	SiteCode        string `yaml:"site_code" json:"site_code,omitempty"`
+	ManagementPoint string `yaml:"management_point" json:"management_point,omitempty"`
+	Certificate     struct {
+		Reference   string `yaml:"reference" json:"reference,omitempty"`
+		Fingerprint string `yaml:"fingerprint" json:"fingerprint,omitempty"`
+		Subject     string `yaml:"subject" json:"subject,omitempty"`
+		NotBefore   string `yaml:"not_before" json:"not_before,omitempty"`
+		NotAfter    string `yaml:"not_after" json:"not_after,omitempty"`
+	} `yaml:"certificate" json:"certificate,omitempty"`
+	Source struct {
+		Type       string `yaml:"type" json:"type"`
+		CapturedAt string `yaml:"captured_at" json:"captured_at,omitempty"`
+		Verified   bool   `yaml:"verified" json:"verified"`
+	} `yaml:"source" json:"source"`
 }
 
 func ParseClientIdentity(b []byte) (ClientIdentity, error) {
@@ -659,9 +670,11 @@ func ParseClientIdentity(b []byte) (ClientIdentity, error) {
 	if x.Kind != "existing_sccm_client" {
 		return x, errors.New("kind must be existing_sccm_client")
 	}
-	if !guidRE.MatchString(x.ClientID) {
+	matches := guidRE.FindStringSubmatch(strings.TrimSpace(x.ClientID))
+	if len(matches) != 2 {
 		return x, errors.New("client_id must be an existing GUID reference")
 	}
+	x.ClientID = strings.ToUpper(matches[1])
 	if x.Certificate.Reference != "" && strings.Contains(x.Certificate.Reference, "PRIVATE KEY") {
 		return x, errors.New("certificate must be a reference, not private key contents")
 	}

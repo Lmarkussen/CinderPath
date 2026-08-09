@@ -13,6 +13,15 @@ LDAP manually. Existing compatible evidence is reused with its source run and
 age when available. Missing client identity remains a blocker and does not
 authorize policy collection.
 
+An already-existing client identity can be imported offline with
+`cinderpath research client-identity import --metadata client.yaml`. Metadata
+must identify `kind: existing_sccm_client`, a canonical GUID, its domain, and
+a source type. CRED-2 only accepts a fresh, domain-compatible record whose
+source is explicitly marked verified; import never registers, authenticates,
+or contacts a SCCM client. The current acquisition contract requires the GUID
+only. Machine credentials, certificates, tokens, and request-body fields remain
+unevidenced and are not inferred from the imported record.
+
 The CRED-2 contract records the only retained observed transport facts:
 `CCM_POST /ccm_system/request` and an `application/octet-stream` request
 content type. The retained request body is synthetic, client identity details

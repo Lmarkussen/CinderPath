@@ -25,6 +25,7 @@ const (
 	RecoveredCredential        AcquisitionState = "recovered_credential"
 	ParserFailed               AcquisitionState = "parser_failed"
 	UnsupportedProtection      AcquisitionState = "unsupported_protection_format"
+	BlockedLivePolicyContract  AcquisitionState = "blocked_live_policy_contract_unverified"
 )
 
 // AcquisitionContract records only the exact fields observed in retained
@@ -44,7 +45,7 @@ func CRED2AcquisitionContract() AcquisitionContract {
 		ContentType: "application/octet-stream", MaximumRequestBytes: MaxFixtureBytes,
 		MaximumResponseBytes: MaxFixtureBytes,
 		RequiredIdentity:     []string{"existing SCCM client GUID"},
-		State:                BlockedMissingPrerequisite,
+		State:                BlockedLivePolicyContract,
 		Reason:               "retained fixtures prove only a synthetic request; request envelope, certificate use, and required headers are not structurally evidenced",
 	}
 }
@@ -52,14 +53,17 @@ func CRED2AcquisitionContract() AcquisitionContract {
 func PlanCRED2Acquisition(managementPoint, siteCode string, client ClientIdentity) AcquisitionContract {
 	p := CRED2AcquisitionContract()
 	if strings.TrimSpace(managementPoint) == "" {
+		p.State = BlockedMissingPrerequisite
 		p.Reason = "exact management point is required"
 		return p
 	}
 	if strings.TrimSpace(siteCode) == "" {
+		p.State = BlockedMissingPrerequisite
 		p.Reason = "site code is required"
 		return p
 	}
 	if strings.TrimSpace(client.ClientID) == "" {
+		p.State = BlockedMissingPrerequisite
 		p.Reason = "existing SCCM client GUID is required"
 		return p
 	}
