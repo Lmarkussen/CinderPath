@@ -880,6 +880,12 @@ collection and deobfuscation remain blocked.
 The embedded CRED-2 coverage remains `partial` for prerequisites, discovery,
 assessment, and lab validation; validation and execution remain unsupported.
 
+Planner-selected safe prerequisites now execute through a dedicated persisted
+prerequisite run and trigger re-planning before CRED-2 renders remaining
+blockers. The current automatic set is bounded LDAP RootDSE and SCCM-directory
+collection only. It never authorizes a CRED-2 policy request; missing client
+identity, stale evidence, or failed collection stops the assessment truthfully.
+
 `RECON-3` now has a targeted adapter over the existing fixed SCCM HTTP route
 allowlist. It plans five routes over HTTP and HTTPS, one method per route, for
 an explicit maximum of 10 network requests (route and access evidence are

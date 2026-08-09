@@ -45,6 +45,10 @@ execution remain not applicable.
 Prerequisite planning is fact-based. CRED-2 is the client-policy path and can
 expose bounded LDAP prerequisites for domain/site/management-point context,
 then requires an existing SCCM client identity and exact policy endpoint.
+When live scope and identity are resolved, selected safe LDAP prerequisites are
+collected automatically and persisted before CRED-2 is re-planned. Reused
+evidence retains run provenance; blocked, stale, or missing facts stop the
+technique without a policy request.
 Offline response classification is implemented, including protected-material
 detection. Live policy collection, deobfuscation, credential recovery,
 validation, and execution remain blocked because the retained request envelope

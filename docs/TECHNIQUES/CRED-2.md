@@ -6,6 +6,13 @@ computer identity (or the ability to create one), rather than an arbitrary user
 credential; PKI certificates are not required by default. CinderPath currently
 supports bounded offline analysis of an already obtained policy response.
 
+When a live CRED-2 plan needs domain, RootDSE, site, or management-point facts,
+CinderPath automatically executes only the declared safe LDAP prerequisites,
+persists a dedicated prerequisite run, and re-plans. Operators do not enable
+LDAP manually. Existing compatible evidence is reused with its source run and
+age when available. Missing client identity remains a blocker and does not
+authorize policy collection.
+
 The CRED-2 contract records the only retained observed transport facts:
 `CCM_POST /ccm_system/request` and an `application/octet-stream` request
 content type. The retained request body is synthetic, client identity details

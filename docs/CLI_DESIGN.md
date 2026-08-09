@@ -98,6 +98,10 @@ The resolver evaluates domain context, RootDSE, site, management point, identity
 SMB target, and HTTP target facts against compatible retained evidence and its
 configured age. It schedules LDAP only when a technique declares LDAP facts and
 the live connector has an exact domain controller and authorized identity.
+Planner-selected safe prerequisites execute automatically through a dedicated
+persisted prerequisite run, then the technique is re-planned against that run's
+evidence. Retained evidence includes source-run and age provenance where
+available.
 Explicit RECON-2 is SMB-only and explicit RECON-3 is HTTP-only. Unsupported
 CRED paths may show a plan but never collect policies or recover credentials.
 

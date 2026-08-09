@@ -42,13 +42,16 @@ type Requirement struct {
 }
 type Decision struct {
 	Requirement
-	State  State  `json:"state"`
-	Reason string `json:"reason"`
-	Module string `json:"module,omitempty"`
+	State     State  `json:"state"`
+	Reason    string `json:"reason"`
+	Module    string `json:"module,omitempty"`
+	SourceRun string `json:"source_run,omitempty"`
+	Age       string `json:"age,omitempty"`
 }
 type Input struct {
 	Technique, Provider, Target, DomainController, Username, CurrentRun string
 	ClientID, ManagementPoint                                           string
+	AllowSafeLDAP                                                       *bool
 	Evidence                                                            []models.Evidence
 	Now                                                                 time.Time
 	EvidenceMaxAge                                                      time.Duration
@@ -134,9 +137,19 @@ func resolve(r Requirement, in Input) Decision {
 	if r.Fact == PolicyEndpoint {
 		if in.ManagementPoint != "" {
 			d.State, d.Reason = Current, "explicit management point"
-		} else {
-			d.State, d.Reason = OperatorInput, "exact management point is required"
+			return d
 		}
+		match := evidenceFor(ManagementPt, in)
+		if match.current != nil {
+			return evidenceDecision(d, Current, "management point evidence collected in the current run", match.current, in.Now)
+		}
+		if match.fresh != nil {
+			return evidenceDecision(d, Recent, "compatible management point evidence", match.fresh, in.Now)
+		}
+		if match.stale != nil {
+			return evidenceDecision(d, Stale, "management point evidence exceeds configured age", match.stale, in.Now)
+		}
+		d.State, d.Reason = OperatorInput, "exact management point is required"
 		return d
 	}
 	if r.Fact == SMBTarget || r.Fact == HTTPTarget {
@@ -151,21 +164,18 @@ func resolve(r Requirement, in Input) Decision {
 		d.State, d.Reason = Current, "configured domain controller"
 		return d
 	}
-	current, matched, stale := evidenceFor(r.Fact, in)
-	if current {
-		d.State, d.Reason = Current, "evidence from the selected run"
-		return d
+	match := evidenceFor(r.Fact, in)
+	if match.current != nil {
+		return evidenceDecision(d, Current, "evidence collected in the current run", match.current, in.Now)
 	}
-	if matched {
-		d.State, d.Reason = Recent, "compatible retained evidence"
-		return d
+	if match.fresh != nil {
+		return evidenceDecision(d, Recent, "compatible retained evidence", match.fresh, in.Now)
 	}
-	if stale {
-		d.State, d.Reason = Stale, "matching evidence exceeds configured age"
-		return d
+	if match.stale != nil {
+		return evidenceDecision(d, Stale, "matching evidence exceeds configured age", match.stale, in.Now)
 	}
 	d.Reason = "no compatible evidence"
-	if in.Provider == "live" && in.DomainController != "" && in.Username != "" {
+	if in.Provider == "live" && in.DomainController != "" && in.Username != "" && safeLDAPCollectionAllowed(in) {
 		d.State, d.Module = Collect, "live.ldap.rootdse"
 		if r.Fact == SiteCode || r.Fact == ManagementPt {
 			d.Module = "live.ldap.sccm_directory"
@@ -173,33 +183,78 @@ func resolve(r Requirement, in Input) Decision {
 		d.Reason = "bounded LDAP collection is justified by this technique"
 	} else if in.Provider != "live" {
 		d.State, d.Reason = Blocked, "live connector is not selected"
+	} else if !safeLDAPCollectionAllowed(in) {
+		d.State, d.Reason = Blocked, "LDAP collection is explicitly disabled by configuration"
 	} else {
 		d.State, d.Reason = OperatorInput, "domain controller and authorized identity are required"
 	}
 	return d
 }
 
-func evidenceFor(f Fact, in Input) (bool, bool, bool) {
-	var current, fresh, stale bool
+func safeLDAPCollectionAllowed(in Input) bool {
+	return in.AllowSafeLDAP == nil || *in.AllowSafeLDAP
+}
+
+type evidenceMatch struct{ current, fresh, stale *models.Evidence }
+
+func evidenceFor(f Fact, in Input) evidenceMatch {
+	var out evidenceMatch
 	for _, e := range in.Evidence {
 		if e.CollectedAt.IsZero() || !matches(f, e) {
 			continue
 		}
-		if in.Target != "" {
-			value := strings.ToLower(strings.TrimSpace(stringValue(e.Data["server"])))
-			if value != "" && value != strings.ToLower(in.Target) {
-				continue
-			}
+		if !evidenceMatchesScope(f, e, in) {
+			continue
 		}
 		if in.CurrentRun != "" && e.RunID == in.CurrentRun {
-			current = true
+			if out.current == nil || e.CollectedAt.After(out.current.CollectedAt) {
+				copy := e
+				out.current = &copy
+			}
 		} else if in.Now.Sub(e.CollectedAt) <= in.EvidenceMaxAge {
-			fresh = true
+			if out.fresh == nil || e.CollectedAt.After(out.fresh.CollectedAt) {
+				copy := e
+				out.fresh = &copy
+			}
 		} else {
-			stale = true
+			if out.stale == nil || e.CollectedAt.After(out.stale.CollectedAt) {
+				copy := e
+				out.stale = &copy
+			}
 		}
 	}
-	return current, fresh, stale
+	return out
+}
+
+func evidenceMatchesScope(f Fact, evidence models.Evidence, in Input) bool {
+	if in.DomainController == "" {
+		return true
+	}
+	if f == RootDSE {
+		server := strings.ToLower(strings.TrimSpace(stringValue(evidence.Data["server"])))
+		return server == "" || server == strings.ToLower(in.DomainController)
+	}
+	if f != SiteCode && f != ManagementPt && f != PolicyEndpoint {
+		return true
+	}
+	for _, candidate := range in.Evidence {
+		if candidate.RunID != evidence.RunID || candidate.Type != "ldap_rootdse" {
+			continue
+		}
+		server := strings.ToLower(strings.TrimSpace(stringValue(candidate.Data["server"])))
+		if server != "" && server == strings.ToLower(in.DomainController) {
+			return true
+		}
+	}
+	return false
+}
+
+func evidenceDecision(d Decision, state State, reason string, evidence *models.Evidence, now time.Time) Decision {
+	d.State, d.Reason, d.SourceRun = state, reason, evidence.RunID
+	if !evidence.CollectedAt.IsZero() {
+		d.Age = now.Sub(evidence.CollectedAt).Round(time.Minute).String()
+	}
+	return d
 }
 func matches(f Fact, e models.Evidence) bool {
 	switch f {

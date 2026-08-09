@@ -14,7 +14,7 @@ func TestCredentialPlanSchedulesLDAPWhenFactsMissing(t *testing.T) {
 }
 func TestCurrentEvidenceSkipsLDAP(t *testing.T) {
 	now := time.Now()
-	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC", Username: "user", Now: now, Evidence: []models.Evidence{{Type: "ldap_rootdse", CollectedAt: now}, {Type: "ldap_sccm_object", CollectedAt: now}}})
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC", Username: "user", Now: now, Evidence: []models.Evidence{{Type: "ldap_rootdse", RunID: "run-current", CollectedAt: now, Data: map[string]any{"server": "DC"}}, {Type: "ldap_sccm_object", RunID: "run-current", CollectedAt: now}}})
 	for _, d := range p.Prerequisites {
 		if d.State == Collect {
 			t.Fatalf("unexpected collection: %+v", p)
@@ -34,9 +34,26 @@ func TestCredentialPlanRequiresExistingClientIdentityAndPolicyEndpoint(t *testin
 
 func TestCurrentRunEvidenceIsDistinguished(t *testing.T) {
 	now := time.Now()
-	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC", Username: "user", CurrentRun: "run-current", Now: now, Evidence: []models.Evidence{{Type: "ldap_rootdse", RunID: "run-current", CollectedAt: now}, {Type: "ldap_sccm_object", RunID: "run-current", CollectedAt: now}}})
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC", Username: "user", CurrentRun: "run-current", Now: now, Evidence: []models.Evidence{{Type: "ldap_rootdse", RunID: "run-current", CollectedAt: now, Data: map[string]any{"server": "DC"}}, {Type: "ldap_sccm_object", RunID: "run-current", CollectedAt: now}}})
 	if p.Prerequisites[1].State != Current {
 		t.Fatalf("%+v", p.Prerequisites)
+	}
+}
+
+func TestReplannedEvidenceIncludesProvenanceAndPolicyEndpoint(t *testing.T) {
+	now := time.Now()
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", Target: "SCCM.LAB", DomainController: "DC.SCCM.LAB", Username: "user", CurrentRun: "run-prerequisite", Now: now, Evidence: []models.Evidence{
+		{Type: "ldap_rootdse", RunID: "run-prerequisite", CollectedAt: now, Data: map[string]any{"server": "DC.SCCM.LAB"}},
+		{Type: "ldap_sccm_object", RunID: "run-prerequisite", CollectedAt: now, Data: map[string]any{"referenced_hosts": []string{"MECM.SCCM.LAB"}}},
+	}})
+	states := map[Fact]Decision{}
+	for _, decision := range p.Prerequisites {
+		states[decision.Fact] = decision
+	}
+	for _, fact := range []Fact{RootDSE, SiteCode, ManagementPt, PolicyEndpoint} {
+		if states[fact].State != Current || states[fact].SourceRun != "run-prerequisite" {
+			t.Fatalf("%s: %+v", fact, states[fact])
+		}
 	}
 }
 func TestStaleEvidenceIsTruthful(t *testing.T) {
@@ -51,6 +68,34 @@ func TestExplicitReconTargetsDoNotNeedLDAP(t *testing.T) {
 		for _, d := range p.Prerequisites {
 			if d.Module != "" {
 				t.Fatalf("%s: %+v", id, p)
+			}
+		}
+	}
+}
+
+func TestExplicitlyDisabledLDAPBlocksSafeCollection(t *testing.T) {
+	disabled := false
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC.SCCM.LAB", Username: "user", AllowSafeLDAP: &disabled, Now: time.Now()})
+	for _, decision := range p.Prerequisites {
+		if decision.Fact == RootDSE && decision.State != Blocked {
+			t.Fatalf("RootDSE=%+v", decision)
+		}
+		if decision.State == Collect {
+			t.Fatalf("unexpected collection with LDAP disabled: %+v", p)
+		}
+	}
+}
+
+func TestDirectoryEvidenceFromAnotherControllerIsNotReused(t *testing.T) {
+	now := time.Now()
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC.SCCM.LAB", Username: "user", Now: now, Evidence: []models.Evidence{
+		{Type: "ldap_rootdse", RunID: "run-other", CollectedAt: now, Data: map[string]any{"server": "OTHER.SCCM.LAB"}},
+		{Type: "ldap_sccm_object", RunID: "run-other", CollectedAt: now},
+	}})
+	for _, decision := range p.Prerequisites {
+		if decision.Fact == SiteCode || decision.Fact == ManagementPt {
+			if decision.State != Collect {
+				t.Fatalf("%s reused mismatched evidence: %+v", decision.Fact, decision)
 			}
 		}
 	}

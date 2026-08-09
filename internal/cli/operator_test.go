@@ -10,6 +10,7 @@ import (
 
 	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/terminal"
 )
 
@@ -145,8 +146,8 @@ func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
 
 func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-2", "--target", "SCCM.LAB", "--provider", "live", "--domain-controller", "DC.SCCM.LAB", "--username", "operator", "--format", "json")
-	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "live.ldap.rootdse") || !strings.Contains(out, "policy_acquisition") {
+	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-2", "--target", "SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "policy_acquisition") {
 		t.Fatalf("err=%v stderr=%q output=%q", err, stderr, out)
 	}
 	out, _, err = executeForTest(t, "--color", "always", "assess", "technique", "RECON-1", "--target", "SCCM.LAB")
@@ -216,6 +217,16 @@ func TestBoundedTechniqueSummariesUseExistingEvidence(t *testing.T) {
 	}}}})
 	if len(shares) != 2 || shares[0].Name != "IPC$" || shares[1].Classification != "sccm_content_share" {
 		t.Fatalf("RECON-2 shares=%+v", shares)
+	}
+}
+
+func TestPrerequisiteProvenanceRendering(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	var out bytes.Buffer
+	printPrerequisites(&out, terminal.New(terminal.Always, &out), planner.Plan{Prerequisites: []planner.Decision{{Requirement: planner.Requirement{Fact: planner.RootDSE, Label: "RootDSE"}, State: planner.Recent, Reason: "compatible retained evidence", SourceRun: "run_prior", Age: "14m0s"}}})
+	got := out.String()
+	if !strings.Contains(got, "run_prior") || !strings.Contains(got, "14m0s") || !strings.Contains(got, "\x1b[2m") {
+		t.Fatalf("provenance not rendered: %q", got)
 	}
 }
 

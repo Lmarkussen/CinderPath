@@ -266,22 +266,81 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: one explicit host using the fixed anonymous SCCM HTTP GET/HEAD route allowlist\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), support, strings.Join(mappings, ", "))
 			return nil
 		}
+		var prerequisiteRuns []app.Outcome
+		var executedPrerequisites []string
+		if s.cfg.Workflow.Provider == "live" && planHasCollection(plan) {
+			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			defer cancel()
+			opts := safePrerequisiteOptions(s.cfg, o.target)
+			if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
+				return err
+			}
+			result, err := s.application.ResolveSafePrerequisites(ctx, app.PrerequisiteResolutionRequest{PrerequisiteExecutionRequest: app.PrerequisiteExecutionRequest{TechniqueID: techniqueID, Live: opts, Args: []string{"assess", techniqueID, "prerequisites"}}, Plan: plan, Replan: func(runID string) planner.Plan { return s.techniquePlan(techniqueID, o.target, runID) }})
+			prerequisiteRuns, executedPrerequisites, plan = result.Runs, result.ExecutedModules, result.Plan
+			if err != nil {
+				status := "prerequisite_collection_failed"
+				var runID string
+				if len(prerequisiteRuns) > 0 {
+					runID = prerequisiteRuns[len(prerequisiteRuns)-1].Run.ID
+				}
+				if o.format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "status": status, "prerequisites": plan.Prerequisites, "prerequisite_collection": prerequisiteRuns, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
+				}
+				s.printTechniqueText(techniqueID, o.target, status, "Result: safe prerequisite collection did not complete; no technique assessment was performed", executedPrerequisites, runID, support)
+				printPrerequisites(s.stdout, s.renderer, plan)
+				return err
+			}
+		}
+		status := techniquePlanStatus(plan)
 		if o.format == "json" {
-			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"configure an authorized live connector; prerequisites are resolved automatically when safe"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
+			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"safe prerequisites are resolved automatically when authorized"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
+			if len(prerequisiteRuns) > 0 {
+				result["prerequisite_collection"] = map[string]any{"runs": prerequisiteRuns, "modules": executedPrerequisites}
+			}
 			if techniqueID == "CRED-2" {
 				result["policy_acquisition"] = policy.CRED2AcquisitionContract()
 			}
 			return json.NewEncoder(s.stdout).Encode(result)
 		}
-		s.printTechniqueText(techniqueID, o.target, "not_run_no_connector", "Result: no assessment performed; no findings are available", plan.Modules, o.runID, support)
+		detail := "Result: no assessment performed; no findings are available"
+		if len(prerequisiteRuns) > 0 {
+			detail = "Result: safe prerequisites were collected; remaining prerequisites block technique assessment"
+		}
+		s.printTechniqueText(techniqueID, o.target, status, detail, plan.Modules, o.runID, support)
+		if len(prerequisiteRuns) > 0 {
+			fmt.Fprintf(s.stdout, "Prerequisite collection\n  Run ID                  %s\n  Modules                 %s\n", s.renderer.Dim(prerequisiteRuns[len(prerequisiteRuns)-1].Run.ID), s.renderer.Target(strings.Join(executedPrerequisites, ", ")))
+		}
 		printPrerequisites(s.stdout, s.renderer, plan)
 		if techniqueID == "CRED-2" {
 			contract := policy.CRED2AcquisitionContract()
-			fmt.Fprintf(s.stdout, "Policy acquisition: %s\nPolicy request: %s %s\nLimitation: %s\n", s.renderer.Warning(string(contract.State)), s.renderer.Target(contract.Method), s.renderer.Target(contract.Route), contract.Reason)
+			fmt.Fprintf(s.stdout, "Policy acquisition: %s\nPolicy request: %s %s\nLive policy requests: 0\nLimitation: %s\n", s.renderer.Warning(string(contract.State)), s.renderer.Target(contract.Method), s.renderer.Target(contract.Route), contract.Reason)
 		}
 		return nil
 	}}
 	return c
+}
+
+func techniquePlanStatus(plan planner.Plan) string {
+	for _, decision := range plan.Prerequisites {
+		switch decision.State {
+		case planner.OperatorInput, planner.Missing, planner.Stale:
+			return "blocked_missing_prerequisite"
+		case planner.Blocked, planner.Unsupported:
+			return "blocked_by_safety_gate"
+		case planner.Collect:
+			return "prerequisite_collection_required"
+		}
+	}
+	return "not_run_no_connector"
+}
+
+func planHasCollection(plan planner.Plan) bool {
+	for _, decision := range plan.Prerequisites {
+		if decision.State == planner.Collect && decision.Module != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *state) techniquePlan(technique, target, runID string) planner.Plan {
@@ -293,7 +352,7 @@ func (s *state) techniquePlan(technique, target, runID string) planner.Plan {
 			_ = store.Close()
 		}
 	}
-	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour})
+	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, AllowSafeLDAP: &s.cfg.Workflow.LDAP, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour})
 }
 
 func (s *state) evidenceForRun(runID string) []models.Evidence {
@@ -481,7 +540,14 @@ func printPrerequisites(w io.Writer, r terminal.Renderer, p planner.Plan) {
 		if d.State == planner.Collect {
 			marker = r.Target("→")
 		}
-		fmt.Fprintf(w, "  %s %-26s %s\n", marker, d.Label, d.Reason)
+		provenance := d.Reason
+		if d.SourceRun != "" {
+			provenance += " · " + r.Dim(d.SourceRun)
+			if d.Age != "" {
+				provenance += " · " + r.Dim(d.Age)
+			}
+		}
+		fmt.Fprintf(w, "  %s %-26s %s\n", marker, d.Label, provenance)
 	}
 }
 func (s *state) printTechniqueText(id, target, status, detail string, modules []string, runID, support string) {
@@ -520,6 +586,10 @@ func sumFindings(m map[models.Severity]int) int {
 	return n
 }
 func recon1LiveOptions(c config.Config, target string) live.Options {
+	return safePrerequisiteOptions(c, target)
+}
+
+func safePrerequisiteOptions(c config.Config, target string) live.Options {
 	server := c.WorkflowScope.DomainController
 	if server == "" {
 		server = target
@@ -532,7 +602,7 @@ func recon1LiveOptions(c config.Config, target string) live.Options {
 	if search <= 0 {
 		search = 30 * time.Second
 	}
-	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{389, 636}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{Timeout: host, MaxBodyBytes: 1024, MaxRedirects: 0}, LDAP: live.LDAPOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, PageSize: c.LDAP.PageSize, MaxEntries: c.LDAP.MaxEntries, SearchTimeout: search}}
+	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{389, 636}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{Timeout: host, MaxBodyBytes: 1024, MaxRedirects: 0}, LDAP: live.LDAPOptions{Enabled: c.Workflow.LDAP, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile, PageSize: c.LDAP.PageSize, MaxEntries: c.LDAP.MaxEntries, SearchTimeout: search}}
 }
 
 func recon2LiveOptions(c config.Config, target string) live.Options {

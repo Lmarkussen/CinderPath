@@ -25,8 +25,9 @@ import (
 )
 
 type Application struct {
-	Config config.Config
-	Logger *slog.Logger
+	Config                config.Config
+	Logger                *slog.Logger
+	prerequisiteModuleSet func(live.Options) []modules.Module
 }
 type Outcome struct {
 	Run              models.Run
