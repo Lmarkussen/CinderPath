@@ -19,6 +19,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
+	"github.com/Lmarkussen/CinderPath/internal/terminal"
 	"github.com/Lmarkussen/CinderPath/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +28,8 @@ type state struct {
 	configPath                                string
 	db, outputDir, logLevel, timeout, profile string
 	noColor, verbose                          bool
+	color                                     string
+	renderer                                  terminal.Renderer
 	redactSecrets                             bool
 	cfg                                       config.Config
 	application                               *app.Application
@@ -69,6 +72,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.StringVar(&s.outputDir, "output-dir", d.OutputDir, "report output directory")
 	f.StringVar(&s.logLevel, "log-level", d.LogLevel, "log level: debug, info, warn, error")
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
+	f.StringVar(&s.color, "color", "auto", "color output: auto, always, or never")
 	f.BoolVar(&s.verbose, "verbose", false, "show resolved context sources and advanced details")
 	f.BoolVar(&s.redactSecrets, "redact-secrets", false, "redact secret values in operator output and reports")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
@@ -232,6 +236,14 @@ func (s *state) configure(cmd *cobra.Command) error {
 		return err
 	}
 	s.cfg = cfg
+	mode := terminal.Mode(s.color)
+	if mode != terminal.Auto && mode != terminal.Always && mode != terminal.Never {
+		return fmt.Errorf("invalid --color %q (use auto, always, or never)", s.color)
+	}
+	if cfg.NoColor {
+		mode = terminal.Never
+	}
+	s.renderer = terminal.New(mode, s.stdout)
 	s.application = &app.Application{Config: cfg, Logger: logging.New(s.stderr, cfg.LogLevel, cfg.NoColor)}
 	return nil
 }

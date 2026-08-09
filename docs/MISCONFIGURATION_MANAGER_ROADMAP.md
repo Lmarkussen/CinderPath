@@ -42,6 +42,10 @@ Current registry entries are truthfully `planned` or `documented` only.
 runtime-validated through the authorized GOAD controller; validation and
 execution remain not applicable.
 
+Prerequisite planning is fact-based. CRED-1 and CRED-2 can expose a bounded
+LDAP prerequisite plan for domain/site/management-point context, but this does
+not implement policy collection, credential recovery, validation, or execution.
+
 `RECON-2` is mapped to the upstream SMB role-enumeration technique. Its
 reviewed module performs only authenticated SMB2/3 `IPC$`/`srvsvc`
 `NetShareEnumAll` share-metadata enumeration; it never reads share contents.

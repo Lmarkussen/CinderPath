@@ -843,7 +843,12 @@ generated from the locally reviewed Misconfiguration Manager revision recorded i
 the snapshot; re-import remains a development-only operation.
 
 `RECON-1` routes through the existing bounded LDAP modules when an explicitly
-configured live connector is present. It records SCCM publishing evidence, site
+configured live connector is present. Technique planning now selects those
+modules automatically from RECON-1 intent; `workflow.ldap` is not an additional
+operator gate. Retained compatible LDAP evidence is reused within the configured
+evidence-age boundary; stale evidence is reported rather than silently mixed.
+Explicit RECON-2 and RECON-3 targets remain SMB-only and HTTP-only respectively.
+It records SCCM publishing evidence, site
 and management-point assets, and evidence-backed relationships; the workflow was
 runtime-validated through the authorized GOAD controller. `RECON-2` uses a
 bounded authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata module and has been

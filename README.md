@@ -175,6 +175,17 @@ Assess one technique after configuring an explicitly authorized connector:
 ./bin/cinderpath assess technique RECON-1 --target example.local
 ```
 
+Operators select techniques and intent; CinderPath resolves safe prerequisites
+from retained compatible evidence or existing bounded modules. An authorized
+one-off LDAP assessment needs no separate `discover` command or LDAP-enable flag:
+
+```bash
+export CINDERPATH_PASSWORD='example-only'
+./bin/cinderpath assess technique RECON-1 --target SCCM.LAB \
+  --provider live --domain-controller DC.SCCM.LAB \
+  --username cinderpath-ldap@SCCM.LAB --password-env CINDERPATH_PASSWORD
+```
+
 Without a configured live connector, the technique command returns a truthful plan and performs no network activity.
 
 ## Example operator workflows
@@ -223,6 +234,11 @@ Use `--redact-secrets` when sharing terminal output, reports, screenshots, ticke
 The flag changes rendering, not the underlying assessment result. It replaces secret values with `<redacted>` while leaving normal operational values such as hostnames, site codes, usernames, and share names visible. Reports use the same policy, include `redaction.secrets_redacted`, and are written owner-only. Debug logs never print secret values. Offline capture and fixture sanitization remain separate conservative workflows.
 
 Terminal scrollback, shell multiplexers, CI logs, and copied output can retain visible secrets. Protect unredacted output accordingly.
+
+Interactive text output uses semantic color by default. Use `--color always` or
+`--color never`; a non-empty `NO_COLOR` disables automatic color. JSON, HTML,
+SQLite, and non-interactive output remain ANSI-free. Redaction occurs before
+rendering, so `<redacted>` never receives secret styling.
 
 ## Project maturity and limitations
 

@@ -60,6 +60,41 @@ The canonical artifact registry stores run ID, target fingerprint, workflow, sta
 
 ## Profiles
 
+## Technique Planning And Terminal Output
+
+Operators select intent; CinderPath resolves safe prerequisites:
+
+```text
+Operator intent
+      |
+Technique planner
+      |
+Prerequisite resolver
+      |
+Reusable bounded modules
+      |
+Evidence + relationships
+      |
+Assessment
+      |
+CLI / JSON / HTML
+```
+
+The resolver evaluates domain context, RootDSE, site, management point, identity,
+SMB target, and HTTP target facts against compatible retained evidence and its
+configured age. It schedules LDAP only when a technique declares LDAP facts and
+the live connector has an exact domain controller and authorized identity.
+Explicit RECON-2 is SMB-only and explicit RECON-3 is HTTP-only. Unsupported
+CRED paths may show a plan but never collect policies or recover credentials.
+
+Technique one-off values may use `--provider`, `--domain-controller`,
+`--username`, `--password-env`, and `--password-file`; module limits remain
+configuration/profile values. Text uses `--color auto|always|never` (default
+`auto`). A non-empty `NO_COLOR` disables automatic color. JSON, HTML, SQLite,
+and non-TTY output are ANSI-free. Green marks success, yellow warnings/stale
+states, red failures, cyan targets/modules, magenta shown secrets, and dim text
+supplemental IDs.
+
 Profiles express policy, not shortcuts around gates:
 
 | Profile | Network | Authentication | Active validation | Secret display | Chaining | Cleanup |

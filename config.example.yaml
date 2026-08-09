@@ -3,6 +3,7 @@
 db: cinderpath.db
 output_dir: reports
 log_level: info
+# Compatibility switch. Prefer the CLI's --color auto|always|never control.
 no_color: false
 timeout: 2m
 profile: safe

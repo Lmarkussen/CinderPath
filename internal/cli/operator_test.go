@@ -138,6 +138,17 @@ func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
 	}
 }
 
+func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
+	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-1", "--target", "SCCM.LAB", "--provider", "live", "--domain-controller", "DC.SCCM.LAB", "--username", "operator", "--format", "json")
+	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "live.ldap.rootdse") {
+		t.Fatalf("err=%v stderr=%q output=%q", err, stderr, out)
+	}
+	out, _, err = executeForTest(t, "--color", "always", "assess", "technique", "RECON-1", "--target", "SCCM.LAB")
+	if err != nil || !strings.Contains(out, "\x1b[36mSCCM.LAB") {
+		t.Fatalf("err=%v output=%q", err, out)
+	}
+}
+
 func TestFrameworkProvenanceText(t *testing.T) {
 	out, stderr, err := executeForTest(t, "framework", "coverage", "--framework", "misconfiguration-manager")
 	if err != nil || stderr != "" {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,11 +15,14 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/artifact"
 	"github.com/Lmarkussen/CinderPath/internal/config"
+	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/framework"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
+	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
+	"github.com/Lmarkussen/CinderPath/internal/terminal"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -135,9 +139,27 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 }
 
 func (s *state) assessTechniqueCommand() *cobra.Command {
-	var target, runID, format string
+	var target, runID, format, provider, domainController, username, passwordEnv, passwordFile string
 	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		// These narrow overrides preserve config-first operation for one-off assessments.
+		if provider != "" {
+			s.cfg.Workflow.Provider = provider
+		}
+		if domainController != "" {
+			s.cfg.WorkflowScope.DomainController = domainController
+		}
+		if username != "" {
+			s.cfg.Identity.Username = username
+		}
+		if passwordEnv != "" {
+			s.cfg.Identity.PasswordEnv, s.cfg.Identity.PasswordFile = passwordEnv, ""
+		}
+		if passwordFile != "" {
+			s.cfg.Identity.PasswordFile, s.cfg.Identity.PasswordEnv = passwordFile, ""
+		}
+		s.application.Config = s.cfg
 		techniqueID := strings.ToUpper(args[0])
+		plan := s.techniquePlan(techniqueID, target, runID)
 		support := "unsupported_or_unknown"
 		if snapshot, err := framework.EmbeddedSnapshot(); err == nil {
 			for _, coverage := range snapshot.Coverage {
@@ -147,7 +169,7 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 				}
 			}
 		}
-		if techniqueID == "RECON-1" && s.cfg.Workflow.Provider == "live" && s.cfg.Workflow.LDAP {
+		if techniqueID == "RECON-1" && s.cfg.Workflow.Provider == "live" {
 			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			defer cancel()
 			opts := recon1LiveOptions(s.cfg, target)
@@ -162,7 +184,7 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 			if status == "" {
 				status = "completed"
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nSCCM LDAP evidence: assets=%d findings=%d\nAssessment support: %s\nDefensive mappings: %s\nNetwork behavior: LDAP-only\nRun ID: %s\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), support, strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+			s.printTechniqueText(techniqueID, target, status, fmt.Sprintf("SCCM LDAP evidence: assets=%d findings=%d", out.Assets, sumFindings(out.Findings)), []string{"live.ldap.rootdse", "live.ldap.sccm_directory"}, out.Run.ID, support)
 			return nil
 		}
 		if techniqueID == "RECON-2" {
@@ -203,9 +225,6 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 				defer cancel()
 				opts := recon3LiveOptions(s.cfg, target)
-				if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
-					return err
-				}
 				out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon3", Live: opts})
 				if err != nil {
 					return err
@@ -228,16 +247,59 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 			return nil
 		}
 		if format == "json" {
-			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "next_actions": []string{"configure the existing authorized live connector with LDAP enabled"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
+			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"configure an authorized live connector; prerequisites are resolved automatically when safe"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
 			return json.NewEncoder(s.stdout).Encode(result)
 		}
-		fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: authenticated RootDSE, System Management, SCCM AD publishing, site code, and management-point discovery\nNetwork behavior: none\nActive validation: not performed\nNext action: configure the existing authorized live connector with LDAP enabled; no network activity occurred\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), support)
+		s.printTechniqueText(techniqueID, target, "not_run_no_connector", "Result: no assessment performed; no findings are available", plan.Modules, runID, support)
+		printPrerequisites(s.stdout, s.renderer, plan)
 		return nil
 	}}
 	c.Flags().StringVar(&target, "target", "", "target associated with the technique assessment")
 	c.Flags().StringVar(&runID, "run", "", "existing run context")
 	c.Flags().StringVar(&format, "format", "text", "text or json")
+	c.Flags().StringVar(&provider, "provider", "", "provider override: mock or live")
+	c.Flags().StringVar(&domainController, "domain-controller", "", "authorized domain controller for LDAP prerequisites")
+	c.Flags().StringVar(&username, "username", "", "authorized identity username")
+	c.Flags().StringVar(&passwordEnv, "password-env", "", "environment variable containing the identity password")
+	c.Flags().StringVar(&passwordFile, "password-file", "", "bounded file containing the identity password")
 	return c
+}
+
+func (s *state) techniquePlan(technique, target, runID string) planner.Plan {
+	var evidence []models.Evidence
+	if _, err := os.Stat(s.cfg.DBPath); err == nil {
+		store, err := database.Open(context.Background(), s.cfg.DBPath)
+		if err == nil {
+			evidence, _ = store.ListEvidence(context.Background())
+			_ = store.Close()
+		}
+	}
+	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour})
+}
+func printPrerequisites(w io.Writer, r terminal.Renderer, p planner.Plan) {
+	if len(p.Prerequisites) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "Prerequisites:")
+	for _, d := range p.Prerequisites {
+		marker := r.Warning("?")
+		if d.State == planner.Current || d.State == planner.Recent {
+			marker = r.Success("✓")
+		}
+		if d.State == planner.Collect {
+			marker = r.Target("→")
+		}
+		fmt.Fprintf(w, "  %s %-26s %s\n", marker, d.Label, d.Reason)
+	}
+}
+func (s *state) printTechniqueText(id, target, status, detail string, modules []string, runID, support string) {
+	fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nStatus: %s\n%s\nAssessment support: %s\n", id, s.renderer.Target(redactedTarget(target)), s.renderer.Status(status), detail, support)
+	if len(modules) > 0 {
+		fmt.Fprintf(s.stdout, "Execution plan: %s\n", s.renderer.Target(strings.Join(modules, ", ")))
+	}
+	if runID != "" {
+		fmt.Fprintf(s.stdout, "Run ID: %s\n", s.renderer.Dim(runID))
+	}
 }
 
 func defensiveMappings(id string) []string {
