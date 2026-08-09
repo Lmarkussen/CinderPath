@@ -154,7 +154,6 @@ func (s *state) protocolCommand() *cobra.Command {
 	sanitize.Flags().StringArrayVar(&replacementLiterals, "replace-literal", nil, "length-preserving ORIGINAL=REPLACEMENT")
 	sanitize.Flags().StringVar(&replacementMap, "replacement-map", "", "mode-0600 YAML replacement map")
 	_ = sanitize.MarkFlagRequired("input")
-	_ = sanitize.MarkFlagRequired("output")
 	var inspectFormat string
 	var maxBytes int64
 	inspect := &cobra.Command{Use: "inspect-binary FILE", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
@@ -248,7 +247,6 @@ func (s *state) protocolCommand() *cobra.Command {
 	review.Flags().StringArrayVar(&approveBodies, "approve-body", nil, "body filename to record as reviewed")
 	review.Flags().StringVar(&reviewRef, "reviewer-reference", "", "bounded operator-selected review reference")
 	_ = review.MarkFlagRequired("directory")
-	_ = review.MarkFlagRequired("reviewer-reference")
 	bundle := s.bundleCommand()
 	root.AddCommand(imp, list, show, validate, analyze, replay, sanitize, review, inspect, serve, bundle, s.signingKeyCommand(), s.researchSetCommand(), s.contractResearchCommand(), s.researchViewCommand("correlations"), s.researchViewCommand("sequences"))
 	return root
@@ -274,7 +272,6 @@ func (s *state) bundleCommand() *cobra.Command {
 	ex.Flags().StringVar(&output, "output", "", "new .tar.gz output")
 	_ = ex.MarkFlagRequired("contract")
 	_ = ex.MarkFlagRequired("directory")
-	_ = ex.MarkFlagRequired("output")
 	inspect := &cobra.Command{Use: "inspect", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		i, e := policy.InspectBundle(input)
 		if e != nil {
@@ -312,7 +309,6 @@ func (s *state) bundleCommand() *cobra.Command {
 	sign.Flags().StringVar(&output, "output", "", "new signed bundle")
 	_ = sign.MarkFlagRequired("input")
 	_ = sign.MarkFlagRequired("key")
-	_ = sign.MarkFlagRequired("output")
 	verify := &cobra.Command{Use: "verify", Short: "Verify bundle integrity and signature without elevating protocol trust", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		v, e := policy.VerifyBundle(input, trusted)
 		if info, ie := policy.InspectBundle(input); ie == nil {

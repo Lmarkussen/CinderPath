@@ -83,7 +83,6 @@ func (s *state) labCommand() *cobra.Command {
 	f.StringVar(&o.SiteCode, "site-code", "", "optional placeholder site-code metadata")
 	f.StringVar(&o.ManagementPoint, "management-point", "", "optional management-point reference")
 	f.StringVar(&o.ClientIDReference, "client-id-reference", "", "optional existing-client reference")
-	_ = c.MarkFlagRequired("output")
 	root.AddCommand(c)
 	root.AddCommand(s.captureKitCommand())
 	root.AddCommand(s.clientArtifactsCommand())

@@ -25,7 +25,6 @@ func (s *state) signingKeyCommand() *cobra.Command {
 	}}
 	gen.Flags().StringVar(&out, "output", "", "private-key output path")
 	gen.Flags().BoolVar(&force, "force", false, "replace existing keypair atomically")
-	_ = gen.MarkFlagRequired("output")
 	root.AddCommand(gen)
 	return root
 }
@@ -44,8 +43,6 @@ func (s *state) researchSetCommand() *cobra.Command {
 	create.Flags().StringVar(&out, "output", "", "new research-set YAML")
 	create.Flags().StringSliceVar(&controlled, "controlled", nil, "explicit controlled variable categories")
 	create.Flags().StringSliceVar(&fixed, "fixed", nil, "explicit fixed variable categories")
-	_ = create.MarkFlagRequired("name")
-	_ = create.MarkFlagRequired("output")
 	add := &cobra.Command{Use: "add", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		m := map[string]string{}
 		for _, v := range expected {
@@ -117,7 +114,6 @@ func (s *state) contractResearchCommand() *cobra.Command {
 	derive.Flags().StringVar(&out, "output", "", "new candidate-contract YAML")
 	derive.Flags().BoolVar(&single, "single-fixture-research", false, "allow explicitly low-confidence single-fixture derivation")
 	_ = derive.MarkFlagRequired("research-set")
-	_ = derive.MarkFlagRequired("output")
 	dossier := &cobra.Command{Use: "dossier", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		b, e := os.ReadFile(contract)
 		if e != nil {
@@ -142,7 +138,6 @@ func (s *state) contractResearchCommand() *cobra.Command {
 	dossier.Flags().BoolVar(&force, "force", false, "replace existing dossier")
 	_ = dossier.MarkFlagRequired("contract")
 	_ = dossier.MarkFlagRequired("research-set")
-	_ = dossier.MarkFlagRequired("output")
 	review := &cobra.Command{Use: "review", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		r := policy.SafetyReview{ContractID: contract, ReviewerReference: reviewer, Decision: decision, NotesRedacted: notes}
 		if e := policy.SaveSafetyReview(out, r); e != nil {
@@ -160,8 +155,6 @@ func (s *state) contractResearchCommand() *cobra.Command {
 	review.Flags().StringVar(&notes, "notes-redacted", "", "bounded redacted notes")
 	review.Flags().StringVar(&out, "output", "", "new safety-review YAML")
 	_ = review.MarkFlagRequired("contract")
-	_ = review.MarkFlagRequired("reviewer-reference")
-	_ = review.MarkFlagRequired("output")
 	_ = format
 	root.AddCommand(derive, dossier, review)
 	return root

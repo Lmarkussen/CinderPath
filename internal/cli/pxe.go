@@ -41,12 +41,10 @@ func (s *state) pxeCommand() *cobra.Command {
 	plan.Flags().StringVar(&site, "site-code", "", "safe SCCM site code")
 	plan.Flags().StringVar(&output, "output", "", "mode-0600 inspection plan")
 	_ = plan.MarkFlagRequired("candidate")
-	_ = plan.MarkFlagRequired("output")
 	collector := &cobra.Command{Use: "collector-script", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		return atomicCaptureWrite(output, []byte(pxe.CollectorPowerShell()))
 	}}
 	collector.Flags().StringVar(&output, "output", "", "generated Windows PowerShell 5.1 collector")
-	_ = collector.MarkFlagRequired("output")
 	analyze := &cobra.Command{Use: "analyze", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		r, e := pxe.LoadRuntime(input)
 		if e != nil {
@@ -74,7 +72,6 @@ func (s *state) pxeCommand() *cobra.Command {
 	analyze.Flags().StringVar(&format, "format", "text", "text or json")
 	_ = analyze.MarkFlagRequired("inventory")
 	_ = analyze.MarkFlagRequired("candidate")
-	_ = analyze.MarkFlagRequired("output")
 	root.AddCommand(candidates, plan, collector, analyze)
 	var providerServer, providerSite, providerOutput string
 	providerPlan := &cobra.Command{Use: "provider-plan", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
@@ -92,14 +89,12 @@ func (s *state) pxeCommand() *cobra.Command {
 	providerPlan.Flags().StringVar(&providerOutput, "output", "", "mode-0600 provider plan")
 	_ = providerPlan.MarkFlagRequired("server")
 	_ = providerPlan.MarkFlagRequired("site-code")
-	_ = providerPlan.MarkFlagRequired("output")
 	deploymentCollector := &cobra.Command{Use: "deployment-metadata", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		return atomicCaptureWrite(providerOutput, []byte(pxe.DeploymentCollectorPowerShell(providerSite)))
 	}}
 	deploymentCollector.Flags().StringVar(&providerSite, "site-code", "", "safe site code embedded in exact provider namespace")
 	deploymentCollector.Flags().StringVar(&providerOutput, "output", "", "generated Windows PowerShell 5.1 collector")
 	_ = deploymentCollector.MarkFlagRequired("site-code")
-	_ = deploymentCollector.MarkFlagRequired("output")
 	var deploymentInput, deploymentDossier, deploymentFormat string
 	analyzeDeployments := &cobra.Command{Use: "analyze-deployments", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		r, e := pxe.LoadDeploymentRuntime(deploymentInput)
@@ -123,7 +118,6 @@ func (s *state) pxeCommand() *cobra.Command {
 	analyzeDeployments.Flags().StringVar(&deploymentDossier, "output", "", "new owner-only deployment dossier")
 	analyzeDeployments.Flags().StringVar(&deploymentFormat, "format", "text", "text or json")
 	_ = analyzeDeployments.MarkFlagRequired("deployments")
-	_ = analyzeDeployments.MarkFlagRequired("output")
 	root.AddCommand(providerPlan, deploymentCollector, analyzeDeployments)
 	return root
 }

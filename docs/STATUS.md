@@ -855,6 +855,12 @@ bounded authenticated SMB2/3 `IPC$`/`srvsvc` share-metadata module and has been
 runtime-validated through the authorized GOAD controller. The run observed only
 generic administrative shares, so no SCCM-role finding was created.
 
+The public operator syntax is now intent-first: `assess TARGET` creates a
+network-free target plan, `assess RECON-1 --target TARGET` selects the bounded
+adapter, and `run TARGET` selects the unified workflow. The former
+`assess technique RECON-1` spelling remains a hidden compatibility command.
+Deep capture, artifact, and research paths remain below `research`.
+
 `RECON-3` now has a targeted adapter over the existing fixed SCCM HTTP route
 allowlist. It plans five routes over HTTP and HTTPS, one method per route, for
 an explicit maximum of 10 network requests (route and access evidence are

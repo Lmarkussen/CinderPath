@@ -50,7 +50,6 @@ func (s *state) captureKitCommand() *cobra.Command {
 	f.StringVar(&o.CaptureAction, "capture-action", "normal_policy_retrieval", "operator-declared action metadata")
 	f.BoolVar(&o.Force, "force", false, "atomically replace an existing kit")
 	f.StringVar(&format, "format", "text", "text or json")
-	_ = create.MarkFlagRequired("output")
 	var dir string
 	validate := &cobra.Command{Use: "validate", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		v, e := capturekit.Validate(dir)
@@ -175,7 +174,6 @@ func (s *state) captureKitBundleCommand() *cobra.Command {
 	export.Flags().BoolVar(&force, "force", false, "atomically replace output")
 	export.Flags().StringVar(&format, "format", "text", "text or json")
 	_ = export.MarkFlagRequired("directory")
-	_ = export.MarkFlagRequired("output")
 	inspect := &cobra.Command{Use: "inspect", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		info, _, e := capturekit.InspectEvidenceBundle(input)
 		if e != nil {
@@ -204,7 +202,6 @@ func (s *state) captureKitBundleCommand() *cobra.Command {
 	imp.Flags().BoolVar(&force, "force", false, "atomically replace output directory")
 	imp.Flags().StringVar(&format, "format", "text", "text or json")
 	_ = imp.MarkFlagRequired("input")
-	_ = imp.MarkFlagRequired("output")
 	sign := &cobra.Command{Use: "sign", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		info, e := capturekit.SignEvidenceBundle(input, key, output, force)
 		if e != nil {
@@ -222,7 +219,6 @@ func (s *state) captureKitBundleCommand() *cobra.Command {
 	sign.Flags().StringVar(&format, "format", "text", "text or json")
 	_ = sign.MarkFlagRequired("input")
 	_ = sign.MarkFlagRequired("key")
-	_ = sign.MarkFlagRequired("output")
 	root.AddCommand(export, inspect, imp, sign, verify)
 	return root
 }

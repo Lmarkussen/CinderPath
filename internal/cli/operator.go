@@ -138,28 +138,47 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 	return c
 }
 
-func (s *state) assessTechniqueCommand() *cobra.Command {
-	var target, runID, format, provider, domainController, username, passwordEnv, passwordFile string
-	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+type techniqueOptions struct {
+	target, runID, format, provider, domainController, username, passwordEnv, passwordFile string
+}
+
+func bindTechniqueOptions(f interface {
+	StringVar(*string, string, string, string)
+}, o *techniqueOptions) {
+	f.StringVar(&o.target, "target", "", "assessment target")
+	f.StringVar(&o.runID, "run", "", "existing run context")
+	f.StringVar(&o.format, "format", "text", "text or json")
+	f.StringVar(&o.provider, "provider", "", "provider override: mock or live")
+	f.StringVar(&o.domainController, "domain-controller", "", "authorized domain controller")
+	f.StringVar(&o.username, "username", "", "authorized identity username")
+	f.StringVar(&o.passwordEnv, "password-env", "", "environment variable containing the identity password")
+	f.StringVar(&o.passwordFile, "password-file", "", "bounded file containing the identity password")
+}
+
+func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
+	if o == nil {
+		o = &techniqueOptions{}
+	}
+	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
 		// These narrow overrides preserve config-first operation for one-off assessments.
-		if provider != "" {
-			s.cfg.Workflow.Provider = provider
+		if o.provider != "" {
+			s.cfg.Workflow.Provider = o.provider
 		}
-		if domainController != "" {
-			s.cfg.WorkflowScope.DomainController = domainController
+		if o.domainController != "" {
+			s.cfg.WorkflowScope.DomainController = o.domainController
 		}
-		if username != "" {
-			s.cfg.Identity.Username = username
+		if o.username != "" {
+			s.cfg.Identity.Username = o.username
 		}
-		if passwordEnv != "" {
-			s.cfg.Identity.PasswordEnv, s.cfg.Identity.PasswordFile = passwordEnv, ""
+		if o.passwordEnv != "" {
+			s.cfg.Identity.PasswordEnv, s.cfg.Identity.PasswordFile = o.passwordEnv, ""
 		}
-		if passwordFile != "" {
-			s.cfg.Identity.PasswordFile, s.cfg.Identity.PasswordEnv = passwordFile, ""
+		if o.passwordFile != "" {
+			s.cfg.Identity.PasswordFile, s.cfg.Identity.PasswordEnv = o.passwordFile, ""
 		}
 		s.application.Config = s.cfg
 		techniqueID := strings.ToUpper(args[0])
-		plan := s.techniquePlan(techniqueID, target, runID)
+		plan := s.techniquePlan(techniqueID, o.target, o.runID)
 		support := "unsupported_or_unknown"
 		if snapshot, err := framework.EmbeddedSnapshot(); err == nil {
 			for _, coverage := range snapshot.Coverage {
@@ -172,7 +191,7 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 		if techniqueID == "RECON-1" && s.cfg.Workflow.Provider == "live" {
 			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			defer cancel()
-			opts := recon1LiveOptions(s.cfg, target)
+			opts := recon1LiveOptions(s.cfg, o.target)
 			if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
 				return err
 			}
@@ -184,14 +203,14 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 			if status == "" {
 				status = "completed"
 			}
-			s.printTechniqueText(techniqueID, target, status, fmt.Sprintf("SCCM LDAP evidence: assets=%d findings=%d", out.Assets, sumFindings(out.Findings)), []string{"live.ldap.rootdse", "live.ldap.sccm_directory"}, out.Run.ID, support)
+			s.printTechniqueText(techniqueID, o.target, status, fmt.Sprintf("SCCM LDAP evidence: assets=%d findings=%d", out.Assets, sumFindings(out.Findings)), []string{"live.ldap.rootdse", "live.ldap.sccm_directory"}, out.Run.ID, support)
 			return nil
 		}
 		if techniqueID == "RECON-2" {
 			if s.cfg.Workflow.Provider == "live" {
 				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 				defer cancel()
-				opts := recon2LiveOptions(s.cfg, target)
+				opts := recon2LiveOptions(s.cfg, o.target)
 				if err := live.ResolveSMBPassword(&opts.SMB); err != nil {
 					return err
 				}
@@ -203,28 +222,28 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 				if status == "" {
 					status = string(out.Run.Status)
 				}
-				if format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
+				if o.format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
 				}
-				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nSMB share evidence: assets=%d findings=%d\nSelected modules: live.smb.share_metadata\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nSMB share evidence: assets=%d findings=%d\nSelected modules: live.smb.share_metadata\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 				return nil
 			}
 			mappings := defensiveMappings(techniqueID)
-			if format == "json" {
+			if o.format == "json" {
 				return json.NewEncoder(s.stdout).Encode(map[string]any{
-					"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "redaction": s.outputPolicy().Metadata(),
+					"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "redaction": s.outputPolicy().Metadata(),
 					"assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings,
-					"limitations": []string{"configure the existing authorized live connector for bounded authenticated SMB share metadata", "no SMB protocol request was sent"}, "live_policy_requests": 0, "run_id": runID,
+					"limitations": []string{"configure the existing authorized live connector for bounded authenticated SMB share metadata", "no SMB protocol request was sent"}, "live_policy_requests": 0, "run_id": o.runID,
 				})
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: authenticated SMB2/3 IPC$ and srvsvc share metadata, then classify generic versus SCCM shares\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no SMB protocol request was sent\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), support, strings.Join(mappings, ", "))
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: authenticated SMB2/3 IPC$ and srvsvc share metadata, then classify generic versus SCCM shares\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no SMB protocol request was sent\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), support, strings.Join(mappings, ", "))
 			return nil
 		}
 		if techniqueID == "RECON-3" {
 			if s.cfg.Workflow.Provider == "live" {
 				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 				defer cancel()
-				opts := recon3LiveOptions(s.cfg, target)
+				opts := recon3LiveOptions(s.cfg, o.target)
 				out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon3", Live: opts})
 				if err != nil {
 					return err
@@ -233,35 +252,27 @@ func (s *state) assessTechniqueCommand() *cobra.Command {
 				if status == "" {
 					status = string(out.Run.Status)
 				}
-				if format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
+				if o.format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
 				}
-				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nHTTP route evidence: assets=%d findings=%d\nRequests: actual=%v maximum=%v successes=%v failures=%v\nSelected modules: live.sccm.http_recon\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nHTTP route evidence: assets=%d findings=%d\nRequests: actual=%v maximum=%v successes=%v failures=%v\nSelected modules: live.sccm.http_recon\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
 				return nil
 			}
 			mappings := defensiveMappings(techniqueID)
-			if format == "json" {
-				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": runID, "redaction": s.outputPolicy().Metadata()})
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "defensive_mappings": mappings, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": o.runID, "redaction": s.outputPolicy().Metadata()})
 			}
-			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: one explicit host using the fixed anonymous SCCM HTTP GET/HEAD route allowlist\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(target), targetID(target), snapshotRevision(), support, strings.Join(mappings, ", "))
+			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: one explicit host using the fixed anonymous SCCM HTTP GET/HEAD route allowlist\nSelected modules: none\nNetwork behavior: none\nDefensive mappings: %s\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), support, strings.Join(mappings, ", "))
 			return nil
 		}
-		if format == "json" {
-			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(target), "target_id": targetID(target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"configure an authorized live connector; prerequisites are resolved automatically when safe"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
+		if o.format == "json" {
+			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"configure an authorized live connector; prerequisites are resolved automatically when safe"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
 			return json.NewEncoder(s.stdout).Encode(result)
 		}
-		s.printTechniqueText(techniqueID, target, "not_run_no_connector", "Result: no assessment performed; no findings are available", plan.Modules, runID, support)
+		s.printTechniqueText(techniqueID, o.target, "not_run_no_connector", "Result: no assessment performed; no findings are available", plan.Modules, o.runID, support)
 		printPrerequisites(s.stdout, s.renderer, plan)
 		return nil
 	}}
-	c.Flags().StringVar(&target, "target", "", "target associated with the technique assessment")
-	c.Flags().StringVar(&runID, "run", "", "existing run context")
-	c.Flags().StringVar(&format, "format", "text", "text or json")
-	c.Flags().StringVar(&provider, "provider", "", "provider override: mock or live")
-	c.Flags().StringVar(&domainController, "domain-controller", "", "authorized domain controller for LDAP prerequisites")
-	c.Flags().StringVar(&username, "username", "", "authorized identity username")
-	c.Flags().StringVar(&passwordEnv, "password-env", "", "environment variable containing the identity password")
-	c.Flags().StringVar(&passwordFile, "password-file", "", "bounded file containing the identity password")
 	return c
 }
 
@@ -399,10 +410,12 @@ func (s *state) validationCommand() *cobra.Command {
 	root := &cobra.Command{Use: "validate", Short: "Validate findings through explicit, supported safety gates"}
 	var run string
 	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error {
+		if run == "" {
+			return errors.New("run is required after configuration resolution")
+		}
 		return errors.New("technique validation is unsupported in this build; no action was performed")
 	}}
 	c.Flags().StringVar(&run, "run", "", "existing run ID")
-	_ = c.MarkFlagRequired("run")
 	root.AddCommand(c)
 	return root
 }
@@ -412,12 +425,16 @@ func (s *state) exploitCommand() *cobra.Command {
 	var run string
 	var ack bool
 	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error {
+		if run == "" {
+			return errors.New("run is required after configuration resolution")
+		}
+		if !ack {
+			return errors.New("acknowledge-impact is required before execution")
+		}
 		return errors.New("authorized technique execution is not implemented; no action was performed")
 	}}
 	c.Flags().StringVar(&run, "run", "", "existing assessment run ID")
 	c.Flags().BoolVar(&ack, "acknowledge-impact", false, "acknowledge the documented impact before execution")
-	_ = c.MarkFlagRequired("run")
-	_ = c.MarkFlagRequired("acknowledge-impact")
 	root.AddCommand(c)
 	return root
 }
@@ -425,10 +442,12 @@ func (s *state) exploitCommand() *cobra.Command {
 func (s *state) cleanupCommand() *cobra.Command {
 	var run string
 	c := &cobra.Command{Use: "cleanup", Short: "Apply cleanup obligations recorded by an authorized execution", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+		if run == "" {
+			return errors.New("run is required after configuration resolution")
+		}
 		return errors.New("no cleanup-capable execution exists in this build; no action was performed")
 	}}
 	c.Flags().StringVar(&run, "run", "", "run ID containing cleanup obligations")
-	_ = c.MarkFlagRequired("run")
 	return c
 }
 
@@ -515,7 +534,6 @@ func (s *state) artifactRegistryCommand() *cobra.Command {
 	register.Flags().StringVar(&stage, "stage", "research", "producing workflow stage")
 	register.Flags().StringVar(&workflow, "workflow", "research", "owning workflow")
 	register.Flags().BoolVar(&sensitive, "sensitive", false, "mark artifact sensitive")
-	_ = register.MarkFlagRequired("run")
 	_ = register.MarkFlagRequired("artifact-type")
 	_ = register.MarkFlagRequired("artifact")
 	resolve := &cobra.Command{Use: "resolve", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
@@ -535,7 +553,6 @@ func (s *state) artifactRegistryCommand() *cobra.Command {
 	}}
 	resolve.Flags().StringVar(&runID, "run", "", "run ID")
 	resolve.Flags().StringVar(&typ, "artifact-type", "", "canonical artifact type")
-	_ = resolve.MarkFlagRequired("run")
 	_ = resolve.MarkFlagRequired("artifact-type")
 	root.AddCommand(register, resolve)
 	return root
@@ -567,6 +584,10 @@ type complexityReport struct {
 	VisibleCommands             int `json:"visible_commands"`
 	HiddenCommands              int `json:"hidden_commands"`
 	DeprecatedCommands          int `json:"deprecated_commands"`
+	AllFlags                    int `json:"all_flags"`
+	VisibleFlags                int `json:"visible_flags"`
+	HiddenFlags                 int `json:"hidden_flags"`
+	PersistentFlags             int `json:"persistent_flags"`
 	TotalLocalFlags             int `json:"total_local_flags"`
 	PublicFlags                 int `json:"public_flags"`
 	ResearchFlags               int `json:"research_flags"`
@@ -592,6 +613,9 @@ func buildComplexity(inv commandInventory) complexityReport {
 		if c.Category == "deprecated_candidate" {
 			r.DeprecatedCommands++
 		}
+		r.AllFlags += len(c.Flags)
+		r.HiddenFlags += c.HiddenFlagCount
+		r.PersistentFlags += c.PersistentFlagCount
 		r.TotalLocalFlags += len(c.Flags)
 		r.RequiredFlags += len(c.RequiredFlags)
 		r.ArtifactPathFlags += len(c.InputArtifacts)
@@ -607,6 +631,7 @@ func buildComplexity(inv commandInventory) complexityReport {
 			seen[f]++
 		}
 	}
+	r.VisibleFlags = r.AllFlags - r.HiddenFlags
 	r.PublicFlags = len(publicSeen)
 	for _, n := range seen {
 		if n > 1 {
@@ -639,6 +664,8 @@ type commandRecord struct {
 	CurrentTests            []string `json:"current_tests"`
 	DocumentationReferences []string `json:"documentation_references"`
 	RequiredFlagCount       int      `json:"required_flag_count"`
+	HiddenFlagCount         int      `json:"hidden_flag_count"`
+	PersistentFlagCount     int      `json:"persistent_flag_count"`
 }
 
 func buildCommandInventory(root *cobra.Command) commandInventory {
@@ -648,8 +675,16 @@ func buildCommandInventory(root *cobra.Command) commandInventory {
 		if c != root {
 			category := classifyCommand(c)
 			r := commandRecord{Path: c.CommandPath(), Description: c.Short, Category: category, Disposition: commandDisposition(category), SideEffects: commandSideEffects(c), NetworkBehavior: commandNetwork(c), Flags: []string{}, RequiredFlags: []string{}, InheritedFlags: []string{}, SafetyAcknowledgements: []string{}, InputArtifacts: []string{}, OutputArtifacts: []string{}, CurrentTests: []string{"Cobra construction and package tests"}, DocumentationReferences: []string{"docs/CLI_DESIGN.md", "docs/CLI_MIGRATION.md"}}
+			persistent := map[string]bool{}
+			c.PersistentFlags().VisitAll(func(f *pflag.Flag) { persistent[f.Name] = true })
 			collect := func(f *pflag.Flag) {
 				r.Flags = append(r.Flags, "--"+f.Name)
+				if f.Hidden {
+					r.HiddenFlagCount++
+				}
+				if persistent[f.Name] {
+					r.PersistentFlagCount++
+				}
 				if a, ok := f.Annotations[cobra.BashCompOneRequiredFlag]; ok && len(a) > 0 && a[0] == "true" {
 					r.RequiredFlags = append(r.RequiredFlags, "--"+f.Name)
 				}

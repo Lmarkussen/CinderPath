@@ -37,7 +37,6 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 	discover.Flags().IntVar(&maxInstances, "max-instances", 128, "generated runtime per-class instance limit (1-128)")
 	discover.Flags().BoolVar(&force, "force", false, "replace output when safely supported")
 	discover.Flags().StringVar(&format, "format", "text", "text or json")
-	_ = discover.MarkFlagRequired("output")
 	inspect := &cobra.Command{Use: "inspect", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		v, e := localartifact.Load(inventory, localartifact.DefaultLimits())
 		if e != nil {
@@ -77,9 +76,7 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 		_ = c.MarkFlagRequired("inventory")
 	}
 	inspect.Flags().StringVar(&output, "output", "", "new owner-only dossier directory")
-	_ = inspect.MarkFlagRequired("output")
 	exportPlan.Flags().StringVar(&output, "output", "", "mode-0600 export-plan JSON")
-	_ = exportPlan.MarkFlagRequired("output")
 	schemaCommand := func(use string, dossier bool) *cobra.Command {
 		var schemaInventory, schemaOutput, schemaFormat string
 		var schemaMaxClasses, schemaMaxInstances int
@@ -113,7 +110,6 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 		cmd.Flags().StringVar(&schemaFormat, "format", "text", "text or json")
 		_ = cmd.MarkFlagRequired("inventory")
 		if dossier {
-			_ = cmd.MarkFlagRequired("output")
 		}
 		return cmd
 	}
@@ -135,7 +131,6 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 	previewPlan.Flags().StringVar(&previewOutput, "output", "", "mode-0600 preview plan JSON")
 	previewPlan.Flags().StringVar(&previewScript, "script-output", "", "generated exact-allowlist PowerShell collector")
 	_ = previewPlan.MarkFlagRequired("inventory")
-	_ = previewPlan.MarkFlagRequired("output")
 	_ = previewPlan.MarkFlagRequired("script-output")
 	var previewInput, planInput, previewDossier, previewFormat string
 	inspectPreviews := &cobra.Command{Use: "inspect-previews", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
@@ -182,7 +177,6 @@ func (s *state) clientArtifactsCommand() *cobra.Command {
 	inspectPreviews.Flags().StringVar(&previewFormat, "format", "text", "text or json")
 	_ = inspectPreviews.MarkFlagRequired("input")
 	_ = inspectPreviews.MarkFlagRequired("plan")
-	_ = inspectPreviews.MarkFlagRequired("output")
 	root.AddCommand(previewPlan, inspectPreviews)
 	credentialTargets := &cobra.Command{Use: "credential-targets", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		t := localartifact.CredentialTargets()

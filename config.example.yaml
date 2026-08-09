@@ -7,6 +7,8 @@ log_level: info
 no_color: false
 timeout: 2m
 profile: safe
+# Normal use: cinderpath run SCCM.LAB --profile standard. CLI target and
+# connector values override these retained engagement defaults when supplied.
 
 # Unified operator workflow. All values are placeholders. Mock is deliberately
 # the default; change to live only with explicit authorization and target scope.

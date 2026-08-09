@@ -39,10 +39,10 @@ func TestPublicSurface(t *testing.T) {
 
 func TestComplexityBudgets(t *testing.T) {
 	r := buildComplexity(buildCommandInventory(New(&bytes.Buffer{}, &bytes.Buffer{})))
-	if r.VisibleCommands > 15 || r.PublicFlags > 35 || r.CommonWorkflowRequiredFlags > 2 {
+	if r.VisibleCommands > 15 || r.PublicFlags > 30 || r.CommonWorkflowRequiredFlags > 2 {
 		t.Fatalf("public CLI budget exceeded: %+v", r)
 	}
-	if r.ArtifactPathFlags > 43 || r.TotalLocalFlags >= 580 {
+	if r.ArtifactPathFlags > 43 || r.TotalLocalFlags >= 410 || r.RequiredFlags >= 100 {
 		t.Fatalf("complexity not materially reduced: %+v", r)
 	}
 }
@@ -149,6 +149,22 @@ func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
 	}
 }
 
+func TestSimplifiedAssessmentAndRunForms(t *testing.T) {
+	out, stderr, err := executeForTest(t, "assess", "RECON-1", "--target", "SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" || !strings.Contains(out, `"technique_id":"RECON-1"`) {
+		t.Fatalf("direct technique: err=%v stderr=%q output=%q", err, stderr, out)
+	}
+	out, _, err = executeForTest(t, "assess", "SCCM.LAB")
+	if err != nil || !strings.Contains(out, "safe plan only; no network activity") {
+		t.Fatalf("domain plan: err=%v output=%q", err, out)
+	}
+	db := t.TempDir() + "/run.db"
+	out, _, err = executeForTest(t, "--db", db, "run", "SCCM.LAB", "--dry-run")
+	if err != nil || !strings.Contains(out, "Project: SCCM.LAB") || !strings.Contains(out, "Network activity: none; dry-run") {
+		t.Fatalf("positional run: err=%v output=%q", err, out)
+	}
+}
+
 func TestFrameworkProvenanceText(t *testing.T) {
 	out, stderr, err := executeForTest(t, "framework", "coverage", "--framework", "misconfiguration-manager")
 	if err != nil || stderr != "" {
@@ -214,7 +230,7 @@ func TestArtifactContextCLI(t *testing.T) {
 
 func TestUnsupportedExecutionPreservesGates(t *testing.T) {
 	_, _, e := executeForTest(t, "exploit", "technique", "PXE-1", "--run", "run-1")
-	if e == nil || !strings.Contains(e.Error(), "required flag") {
+	if e == nil || !strings.Contains(e.Error(), "acknowledge-impact is required") {
 		t.Fatalf("impact acknowledgement not required: %v", e)
 	}
 	_, _, e = executeForTest(t, "exploit", "technique", "PXE-1", "--run", "run-1", "--acknowledge-impact")
@@ -255,7 +271,7 @@ func TestPublicHelpGoldenSurface(t *testing.T) {
 
 func TestWorkflowHelpGoldenSurfaces(t *testing.T) {
 	cases := map[string][]string{
-		"assess":               {"client-policy", "pxe", "technique", "--framework", "--target"},
+		"assess":               {"client-policy", "pxe", "--framework", "--target"},
 		"assess pxe":           {"--run", "--target", "--format"},
 		"assess client-policy": {"--run", "--target", "--format"},
 		"research":             {"artifact", "capture", "discover-advanced", "evidence", "policy", "pxe"},

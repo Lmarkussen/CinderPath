@@ -9,6 +9,20 @@ discover → assess → validate → exploit → cleanup → report
 
 `validate`, `exploit`, and `cleanup` are visible so the lifecycle is honest, but currently return an unsupported result without action. Exploitation retains a required `--acknowledge-impact` gate even while unsupported.
 
+Normal assessment is positional and intent-first:
+
+```bash
+cinderpath assess SCCM.LAB
+cinderpath assess RECON-1 --target SCCM.LAB
+cinderpath run SCCM.LAB --profile yolo
+```
+
+The existing `assess technique RECON-1` spelling is retained as a compatibility
+form. The embedded framework registry distinguishes technique IDs from targets.
+`run` keeps only target, authorized connector identity, provider, and dry-run
+inputs; configuration generation and offline artifact controls remain under
+`research`.
+
 ## Public commands
 
 ```bash
@@ -94,6 +108,12 @@ configuration/profile values. Text uses `--color auto|always|never` (default
 and non-TTY output are ANSI-free. Green marks success, yellow warnings/stale
 states, red failures, cyan targets/modules, magenta shown secrets, and dim text
 supplemental IDs.
+
+Research output destinations are no longer Cobra-required flags. They remain
+explicit advanced inputs where the command needs a separate artifact location;
+normal lifecycle output uses the global output root and deterministic report
+paths. This removes Cobra's pre-merge rejection so configuration/default
+resolution can remain authoritative.
 
 Profiles express policy, not shortcuts around gates:
 

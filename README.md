@@ -172,7 +172,7 @@ make build
 Assess one technique after configuring an explicitly authorized connector:
 
 ```bash
-./bin/cinderpath assess technique RECON-1 --target example.local
+./bin/cinderpath assess RECON-1 --target example.local
 ```
 
 Operators select techniques and intent; CinderPath resolves safe prerequisites
@@ -181,7 +181,7 @@ one-off LDAP assessment needs no separate `discover` command or LDAP-enable flag
 
 ```bash
 export CINDERPATH_PASSWORD='example-only'
-./bin/cinderpath assess technique RECON-1 --target SCCM.LAB \
+./bin/cinderpath assess RECON-1 --target SCCM.LAB \
   --provider live --domain-controller DC.SCCM.LAB \
   --username cinderpath-ldap@SCCM.LAB --password-env CINDERPATH_PASSWORD
 ```
@@ -193,11 +193,18 @@ Without a configured live connector, the technique command returns a truthful pl
 Network-free planning and reporting:
 
 ```bash
+./bin/cinderpath assess SCCM.LAB
+./bin/cinderpath run SCCM.LAB --dry-run
+./bin/cinderpath run SCCM.LAB --profile yolo --dry-run
 ./bin/cinderpath run --config config.example.yaml --dry-run
 ./bin/cinderpath discover --provider mock
 ./bin/cinderpath assess
 ./bin/cinderpath report
 ```
+
+`assess technique RECON-1` remains a compatibility form. `assess TARGET`
+creates a safe target plan and never implies live validation; a technique ID is
+recognized from the embedded framework registry rather than hostname syntax.
 
 Explicit-scope discovery for an authorized target:
 

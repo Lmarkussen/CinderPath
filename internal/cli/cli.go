@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -373,14 +375,20 @@ func (s *state) discoverOptions() (app.DiscoverOptions, error) {
 }
 func (s *state) assessCommand() *cobra.Command {
 	var frameworkName string
-	var targets []string
-	c := &cobra.Command{Use: "assess", Short: "Assess supported techniques without active validation", Long: "Assess stored or mock-safe evidence. Framework and target context are associated with one run; unsupported and active stages remain clearly blocked.", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	technique := &techniqueOptions{}
+	c := &cobra.Command{Use: "assess [TARGET_OR_TECHNIQUE]", Short: "Assess a target or supported technique without active validation", Long: "Assess stored or mock-safe evidence. A technique ID selects its bounded adapter; another target creates a safe assessment plan. Unsupported and active stages remain clearly blocked.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			if isFrameworkTechnique(args[0]) {
+				return s.assessTechniqueCommand(technique).RunE(cmd, args)
+			}
+			return s.assessTargetPlan(args[0], technique.format)
+		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 		defer cancel()
 		out, err := s.application.Assess(ctx, os.Args[1:])
 		s.printOutcome(out)
 		if frameworkName != "" {
-			fmt.Fprintf(s.stdout, "Framework: %s\nTargets associated with run: %d\nActive technique validation: blocked by default\n", frameworkName, len(targets))
+			fmt.Fprintf(s.stdout, "Framework: %s\nTargets associated with run: %d\nActive technique validation: blocked by default\n", frameworkName, targetCount(technique.target))
 			if frameworkName == "misconfiguration-manager" {
 				if snapshot, snapshotErr := framework.EmbeddedSnapshot(); snapshotErr == nil {
 					assessable, partial := 0, 0
@@ -399,9 +407,38 @@ func (s *state) assessCommand() *cobra.Command {
 		return err
 	}}
 	c.Flags().StringVar(&frameworkName, "framework", "", "framework snapshot, for example misconfiguration-manager")
-	c.Flags().StringArrayVar(&targets, "target", nil, "assessment target context (repeatable; no discovery traffic)")
-	c.AddCommand(s.assessWorkflowCommand("client-policy"), s.assessWorkflowCommand("pxe"), s.assessTechniqueCommand())
+	bindTechniqueOptions(c.PersistentFlags(), technique)
+	c.AddCommand(s.assessWorkflowCommand("client-policy"), s.assessWorkflowCommand("pxe"), s.assessTechniqueCommand(technique))
 	return c
+}
+
+func targetCount(target string) int {
+	if target == "" {
+		return 0
+	}
+	return 1
+}
+
+func isFrameworkTechnique(value string) bool {
+	snapshot, err := framework.EmbeddedSnapshot()
+	if err != nil {
+		return false
+	}
+	for _, technique := range snapshot.Techniques {
+		if strings.EqualFold(technique.ID, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *state) assessTargetPlan(target, format string) error {
+	r := canonicalResult{SchemaVersion: 1, Workflow: "assess_target", Target: redactedTarget(target), TargetID: targetID(target), Framework: "misconfiguration-manager", Status: "plan_ready_execution_requires_authorized_connector", Findings: []string{}, Blockers: []string{"no live connector was selected", "active validation remains separately gated"}, NextAction: "select a supported technique or configure an authorized connector", Network: "none", Redaction: s.outputPolicy().Metadata()}
+	if format == "json" {
+		return json.NewEncoder(s.stdout).Encode(r)
+	}
+	fmt.Fprintf(s.stdout, "Target: %s\nStatus: %s\nAssessment: safe plan only; no network activity\n", s.renderer.Target(target), s.renderer.Status(r.Status))
+	return nil
 }
 func (s *state) reportCommand() *cobra.Command {
 	return &cobra.Command{Use: "report", Short: "Generate portable JSON and HTML reports", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {

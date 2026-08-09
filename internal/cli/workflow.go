@@ -208,19 +208,23 @@ func applyWorkflow(c *config.Config, w workflowFlags) {
 }
 
 func (s *state) runCommand() *cobra.Command {
-	c := &cobra.Command{Use: "run", Short: "Run the unified CinderPath workflow", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return s.executeWorkflow(cmd) }}
-	s.bindWorkflowFlags(c.Flags(), false)
+	c := &cobra.Command{Use: "run [TARGET]", Short: "Run the unified bounded workflow", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			if len(s.workflow.targets) > 0 || s.workflow.domain != "" {
+				return errors.New("use either positional TARGET or --target, not both")
+			}
+			s.workflow.domain, s.workflow.targets = args[0], []string{args[0]}
+		}
+		return s.executeWorkflow(cmd)
+	}}
 	f := c.Flags()
+	f.StringVar(&s.workflow.dc, "domain-controller", "", "domain controller for authorized LDAP prerequisites")
+	f.StringVar(&s.workflow.username, "username", "", "primary identity username")
+	f.StringVar(&s.workflow.passwordEnv, "password-env", "", "password environment-variable reference")
+	f.StringVar(&s.workflow.passwordFile, "password-file", "", "password file reference")
+	f.StringArrayVar(&s.workflow.targets, "target", nil, "explicit target")
 	f.StringVar(&s.workflow.provider, "provider", "", "mock or explicitly enabled live discovery")
 	f.BoolVar(&s.workflow.dryRun, "dry-run", false, "plan without network activity or persistent observations")
-	f.BoolVar(&s.workflow.saveConfig, "save-config", false, "save flag-derived configuration before running")
-	f.StringVar(&s.workflow.configOutput, "config-output", "", "saved configuration path")
-	f.BoolVar(&s.workflow.forceConfig, "force-config", false, "overwrite saved configuration")
-	f.BoolVar(&s.workflow.ackLockout, "acknowledge-lockout-risk", false, "acknowledge authentication lockout risk")
-	f.BoolVar(&s.workflow.showSecrets, "show-secrets", false, "deliberately display confirmed fixture plaintext")
-	f.BoolVar(&s.workflow.hideSecrets, "hide-secrets", false, "suppress plaintext terminal output")
-	f.StringVar(&s.workflow.secretsOutput, "secrets-output", "", "dedicated secure secrets output")
-	f.StringVar(&s.workflow.secretsFormat, "secrets-format", "", "text or json")
 	return c
 }
 func (s *state) executeWorkflow(cmd *cobra.Command) error {
@@ -233,6 +237,8 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 			c.OutputDir, c.Output.Directory = base.OutputDir, base.OutputDir
 		}
 		applyWorkflow(&c, s.workflow)
+	} else {
+		applyRunOverrides(&c, s.workflow)
 	}
 	if ds := config.Validate(c); config.HasErrors(ds) {
 		printDiagnostics(s.stderr, ds)
@@ -367,6 +373,30 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 		return ae
 	}
 	return re
+}
+
+func applyRunOverrides(c *config.Config, w workflowFlags) {
+	if w.domain != "" {
+		c.Project.Name, c.WorkflowScope.Domain = w.domain, w.domain
+	}
+	if len(w.targets) > 0 {
+		c.WorkflowScope.Targets = append([]string(nil), w.targets...)
+	}
+	if w.dc != "" {
+		c.WorkflowScope.DomainController = w.dc
+	}
+	if w.username != "" {
+		c.Identity.Username = w.username
+	}
+	if w.passwordEnv != "" {
+		c.Identity.PasswordEnv, c.Identity.PasswordFile = w.passwordEnv, ""
+	}
+	if w.passwordFile != "" {
+		c.Identity.PasswordFile, c.Identity.PasswordEnv = w.passwordFile, ""
+	}
+	if w.provider != "" {
+		c.Workflow.Provider = w.provider
+	}
 }
 func mustDuration(v string) time.Duration { d, _ := time.ParseDuration(v); return d }
 func scopeInput(c config.Config) scope.Input {

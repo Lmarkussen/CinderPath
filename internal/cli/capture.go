@@ -379,7 +379,6 @@ func (s *state) captureCommand() *cobra.Command {
 		_ = c.MarkFlagRequired("input")
 	}
 	normalize.Flags().StringVar(&output, "output", "", "mode-0600 normalized JSON output")
-	_ = normalize.MarkFlagRequired("output")
 	root.AddCommand(imp, inspect, normalize, verify, list, show, correlate, endpointCorrelate, s.guidedImportCommand())
 	return root
 }
@@ -392,8 +391,6 @@ func (s *state) matrixCommand() *cobra.Command {
 	}}
 	create.Flags().StringVar(&name, "name", "", "matrix name")
 	create.Flags().StringVar(&out, "output", "", "matrix YAML")
-	_ = create.MarkFlagRequired("name")
-	_ = create.MarkFlagRequired("output")
 	add := &cobra.Command{Use: "add", RunE: func(*cobra.Command, []string) error {
 		m, e := readMatrix(setPath)
 		if e != nil {
@@ -574,7 +571,6 @@ func (s *state) analysisCommand() *cobra.Command {
 	dossier.Flags().StringVar(&dossierOut, "output", "", "new dossier directory")
 	dossier.Flags().BoolVar(&force, "force", false, "replace an existing empty output (currently refused safely)")
 	_ = dossier.MarkFlagRequired("input")
-	_ = dossier.MarkFlagRequired("output")
 	var corpusDir string
 	corpus := &cobra.Command{Use: "corpus", Short: "Validate deterministic synthetic capture corpora offline"}
 	corpusRun := func(*cobra.Command, []string) error {
