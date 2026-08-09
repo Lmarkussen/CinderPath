@@ -16,6 +16,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/modules"
+	"github.com/Lmarkussen/CinderPath/internal/policy"
 	"github.com/Lmarkussen/CinderPath/internal/progress"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 )
@@ -99,6 +100,46 @@ func TestDryRunPersistsRunStagesAndAllModuleDecisions(t *testing.T) {
 	r2, err := a.PersistDryRun(cancelled, p, []string{"run", "--dry-run"})
 	if err != nil || r2.Status != models.RunCancelled || r2.ID == r.ID {
 		t.Fatalf("cancelled dry-run history not preserved: %#v %v", r2, err)
+	}
+}
+
+func TestPolicyFixturePersistenceIsRedactedAndRecordsResponseState(t *testing.T) {
+	c := config.Defaults()
+	c.DBPath = filepath.Join(t.TempDir(), "policy.db")
+	a := &Application{Config: c, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	fixtureDir, err := filepath.Abs(filepath.Join("..", "policy", "testdata", "example01"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, contract, err := policy.ImportDirectory(fixtureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, candidates, err := policy.ParsePolicy(context.Background(), f.ResponseBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.PersistPolicyFixture(context.Background(), "run-policy", f, contract, p, candidates); err != nil {
+		t.Fatal(err)
+	}
+	s, err := database.Open(context.Background(), c.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	docs, _ := s.ListPolicyRecords(context.Background(), "policy_documents")
+	contracts, _ := s.ListPolicyRecords(context.Background(), "protocol_contracts")
+	if len(docs) != 1 || docs[0].Data["acquisition_state"] != string(policy.ProtectedCredential) {
+		t.Fatalf("documents=%+v", docs)
+	}
+	if len(contracts) < 2 || !strings.Contains(fmt.Sprint(contracts), "cred2_policy_acquisition_contract") {
+		t.Fatalf("contracts=%+v", contracts)
+	}
+	for _, table := range []string{"policy_documents", "policy_candidates", "protocol_contracts"} {
+		records, _ := s.ListPolicyRecords(context.Background(), table)
+		if strings.Contains(fmt.Sprint(records), "SyntheticPassword123!") {
+			t.Fatalf("secret persisted in %s", table)
+		}
 	}
 }
 

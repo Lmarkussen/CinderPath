@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -139,13 +140,29 @@ func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
 }
 
 func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
-	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-1", "--target", "SCCM.LAB", "--provider", "live", "--domain-controller", "DC.SCCM.LAB", "--username", "operator", "--format", "json")
-	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "live.ldap.rootdse") {
+	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-2", "--target", "SCCM.LAB", "--provider", "live", "--domain-controller", "DC.SCCM.LAB", "--username", "operator", "--format", "json")
+	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "live.ldap.rootdse") || !strings.Contains(out, "policy_acquisition") {
 		t.Fatalf("err=%v stderr=%q output=%q", err, stderr, out)
 	}
 	out, _, err = executeForTest(t, "--color", "always", "assess", "technique", "RECON-1", "--target", "SCCM.LAB")
 	if err != nil || !strings.Contains(out, "\x1b[36mSCCM.LAB") {
 		t.Fatalf("err=%v output=%q", err, out)
+	}
+}
+
+func TestPolicySecretRenderingHonorsGlobalRedaction(t *testing.T) {
+	fixtureDir, err := filepath.Abs(filepath.Join("..", "policy", "testdata", "example01"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--profile", "standard", "research", "policy-model", "secrets", "--directory", fixtureDir, "--show-secrets"}
+	out, _, err := executeForTest(t, args...)
+	if err != nil || !strings.Contains(out, "SyntheticPassword123!") {
+		t.Fatalf("default secret rendering: err=%v output=%q", err, out)
+	}
+	out, _, err = executeForTest(t, append([]string{"--redact-secrets"}, args...)...)
+	if err != nil || strings.Contains(out, "SyntheticPassword123!") {
+		t.Fatalf("redacted secret rendering: err=%v output=%q", err, out)
 	}
 }
 

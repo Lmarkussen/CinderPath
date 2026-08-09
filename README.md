@@ -235,7 +235,7 @@ CinderPath is designed for authorized operator use. Interactive output shows ope
 Use `--redact-secrets` when sharing terminal output, reports, screenshots, tickets, or transcripts with people who should not receive recovered secret material:
 
 ```bash
-./bin/cinderpath assess technique CRED-1 --target SCCM.LAB --redact-secrets
+./bin/cinderpath assess CRED-2 --target SCCM.LAB --redact-secrets
 ```
 
 The flag changes rendering, not the underlying assessment result. It replaces secret values with `<redacted>` while leaving normal operational values such as hostnames, site codes, usernames, and share names visible. Reports use the same policy, include `redaction.secrets_redacted`, and are written owner-only. Debug logs never print secret values. Offline capture and fixture sanitization remain separate conservative workflows.

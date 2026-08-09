@@ -42,9 +42,14 @@ Current registry entries are truthfully `planned` or `documented` only.
 runtime-validated through the authorized GOAD controller; validation and
 execution remain not applicable.
 
-Prerequisite planning is fact-based. CRED-1 and CRED-2 can expose a bounded
-LDAP prerequisite plan for domain/site/management-point context, but this does
-not implement policy collection, credential recovery, validation, or execution.
+Prerequisite planning is fact-based. CRED-2 is the client-policy path and can
+expose bounded LDAP prerequisites for domain/site/management-point context,
+then requires an existing SCCM client identity and exact policy endpoint.
+Offline response classification is implemented, including protected-material
+detection. Live policy collection, deobfuscation, credential recovery,
+validation, and execution remain blocked because the retained request envelope
+and certificate semantics are not structurally evidenced. CRED-1 remains the
+separate PXE boot-media technique.
 
 `RECON-2` is mapped to the upstream SMB role-enumeration technique. Its
 reviewed module performs only authenticated SMB2/3 `IPC$`/`srvsvc`

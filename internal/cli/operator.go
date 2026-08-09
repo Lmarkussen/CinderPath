@@ -21,6 +21,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/planner"
+	"github.com/Lmarkussen/CinderPath/internal/policy"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/Lmarkussen/CinderPath/internal/terminal"
 	"github.com/spf13/cobra"
@@ -267,10 +268,17 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		if o.format == "json" {
 			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "defensive_mappings": defensiveMappings(techniqueID), "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"configure an authorized live connector; prerequisites are resolved automatically when safe"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
+			if techniqueID == "CRED-2" {
+				result["policy_acquisition"] = policy.CRED2AcquisitionContract()
+			}
 			return json.NewEncoder(s.stdout).Encode(result)
 		}
 		s.printTechniqueText(techniqueID, o.target, "not_run_no_connector", "Result: no assessment performed; no findings are available", plan.Modules, o.runID, support)
 		printPrerequisites(s.stdout, s.renderer, plan)
+		if techniqueID == "CRED-2" {
+			contract := policy.CRED2AcquisitionContract()
+			fmt.Fprintf(s.stdout, "Policy acquisition: %s\nPolicy request: %s %s\nLimitation: %s\n", s.renderer.Warning(string(contract.State)), s.renderer.Target(contract.Method), s.renderer.Target(contract.Route), contract.Reason)
+		}
 		return nil
 	}}
 	return c

@@ -51,6 +51,23 @@ func TestEmbeddedSnapshotAndCoverageDimensions(t *testing.T) {
 	}
 }
 
+func TestCanonicalCredentialTechniqueMapping(t *testing.T) {
+	s, err := EmbeddedSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := map[string]string{}
+	for _, technique := range s.Techniques {
+		titles[technique.ID] = technique.Title
+	}
+	if titles["CRED-2"] != "Request computer policy and deobfuscate secrets" {
+		t.Fatalf("CRED-2=%q", titles["CRED-2"])
+	}
+	if titles["CRED-1"] != "Retrieve secrets from PXE boot media" {
+		t.Fatalf("CRED-1=%q", titles["CRED-1"])
+	}
+}
+
 func TestImportDeterministicAndRejectsUnknownMatrixReference(t *testing.T) {
 	d := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(d, "attack-techniques", "CRED", "CRED-1"), 0700); err != nil {

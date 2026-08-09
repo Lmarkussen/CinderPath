@@ -2068,16 +2068,17 @@
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
       "lab_validation": "partial",
-      "reason": "Existing SCCM capture, PXE posture, and targeted policy metadata support only bounded discovery and assessment; recovery and execution remain unsupported.",
+      "reason": "Bounded offline policy-response classification and prerequisite planning support only partial discovery and assessment; live policy acquisition, recovery, and execution remain unsupported.",
       "modules": [
         "capture",
         "pxe",
-        "localartifact"
+        "localartifact",
+        "policy"
       ],
       "limitations": [
         "No policy payload recovery",
         "No PXE/media retrieval",
-        "No live client action"
+        "No live client action or policy request"
       ]
     },
     {

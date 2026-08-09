@@ -31,6 +31,15 @@ func (a *Application) PersistPolicyFixture(ctx context.Context, runID string, f 
 	}
 	defer store.Close()
 	now := time.Now().UTC()
+	response, responseErr := policy.AnalyzeCRED2Response(ctx, f.Metadata.Response.Status, f.Metadata.Response.ContentType, f.ResponseBody)
+	if responseErr != nil {
+		response = policy.ResponseResult{State: policy.ParserFailed, Reason: responseErr.Error()}
+	}
+	acquisition := policy.CRED2AcquisitionContract()
+	acquisitionData := mapOf(acquisition)
+	if e = store.UpsertPolicyRecord(ctx, "protocol_contracts", database.PolicyRecord{ID: "cred2_policy_acquisition_contract", Fingerprint: digest([]byte(acquisition.TechniqueID + acquisition.Method + acquisition.Route)), ObservedAt: now, Data: acquisitionData}); e != nil {
+		return e
+	}
 	cData := mapOf(c)
 	delete(cData, "verified_at")
 	if e = store.UpsertPolicyRecord(ctx, "protocol_contracts", database.PolicyRecord{ID: c.ID, Fingerprint: digest([]byte(c.ID)), ObservedAt: now, Data: cData}); e != nil {
@@ -62,7 +71,7 @@ func (a *Application) PersistPolicyFixture(ctx context.Context, runID string, f 
 			scripts++
 		}
 	}
-	doc := map[string]any{"fixture_id": f.ID, "policy_id": p.PolicyID, "policy_type": p.Type, "policy_category": p.Category, "policy_version": p.Version, "content_fingerprint": digest(f.ResponseBody), "parser_status": "parsed", "parser_version": policyParserVersion, "raw_size": len(f.ResponseBody), "protected_value_count": protected, "plaintext_candidate_count": plain, "confirmed_plaintext_count": confirmed, "sensitive_script_count": scripts}
+	doc := map[string]any{"fixture_id": f.ID, "policy_id": p.PolicyID, "policy_type": p.Type, "policy_category": p.Category, "policy_version": p.Version, "content_fingerprint": digest(f.ResponseBody), "parser_status": "parsed", "parser_version": policyParserVersion, "raw_size": len(f.ResponseBody), "protected_value_count": protected, "plaintext_candidate_count": plain, "confirmed_plaintext_count": confirmed, "sensitive_script_count": scripts, "acquisition_state": response.State, "acquisition_reason": response.Reason, "source_type": "offline_fixture", "live_policy_requests": 0}
 	if e = store.UpsertPolicyRecord(ctx, "policy_documents", database.PolicyRecord{ID: docID, RunID: runID, Fingerprint: digest(f.ResponseBody), ObservedAt: now, Data: doc}); e != nil {
 		return e
 	}

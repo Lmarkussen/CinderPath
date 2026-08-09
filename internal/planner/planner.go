@@ -11,13 +11,15 @@ import (
 type Fact string
 
 const (
-	DomainContext Fact = "domain_context"
-	RootDSE       Fact = "rootdse"
-	SiteCode      Fact = "site_code"
-	ManagementPt  Fact = "management_point"
-	SMBTarget     Fact = "smb_target"
-	HTTPTarget    Fact = "http_target"
-	Identity      Fact = "authenticated_identity"
+	DomainContext  Fact = "domain_context"
+	RootDSE        Fact = "rootdse"
+	SiteCode       Fact = "site_code"
+	ManagementPt   Fact = "management_point"
+	SMBTarget      Fact = "smb_target"
+	HTTPTarget     Fact = "http_target"
+	Identity       Fact = "authenticated_identity"
+	ClientIdentity Fact = "client_identity"
+	PolicyEndpoint Fact = "policy_endpoint"
 )
 
 type State string
@@ -46,6 +48,7 @@ type Decision struct {
 }
 type Input struct {
 	Technique, Provider, Target, DomainController, Username, CurrentRun string
+	ClientID, ManagementPoint                                           string
 	Evidence                                                            []models.Evidence
 	Now                                                                 time.Time
 	EvidenceMaxAge                                                      time.Duration
@@ -64,8 +67,8 @@ func RequirementsFor(technique string) []Requirement {
 		return []Requirement{{SMBTarget, "SMB target"}, {Identity, "Authorized identity"}}
 	case "RECON-3":
 		return []Requirement{{HTTPTarget, "HTTP target"}}
-	case "CRED-1", "CRED-2":
-		return []Requirement{{DomainContext, "Domain context"}, {RootDSE, "RootDSE"}, {SiteCode, "SCCM site"}, {ManagementPt, "Management point"}, {Identity, "Authorized identity"}}
+	case "CRED-2":
+		return []Requirement{{DomainContext, "Domain context"}, {RootDSE, "RootDSE"}, {SiteCode, "SCCM site"}, {ManagementPt, "Management point"}, {Identity, "Authorized identity"}, {ClientIdentity, "Existing SCCM client identity"}, {PolicyEndpoint, "Policy endpoint"}}
 	default:
 		return nil
 	}
@@ -117,6 +120,22 @@ func resolve(r Requirement, in Input) Decision {
 			d.State, d.Reason = Current, "configured identity"
 		} else {
 			d.State, d.Reason = OperatorInput, "identity is required"
+		}
+		return d
+	}
+	if r.Fact == ClientIdentity {
+		if in.ClientID != "" {
+			d.State, d.Reason = Current, "existing client identity reference"
+		} else {
+			d.State, d.Reason = OperatorInput, "existing SCCM client GUID is required"
+		}
+		return d
+	}
+	if r.Fact == PolicyEndpoint {
+		if in.ManagementPoint != "" {
+			d.State, d.Reason = Current, "explicit management point"
+		} else {
+			d.State, d.Reason = OperatorInput, "exact management point is required"
 		}
 		return d
 	}

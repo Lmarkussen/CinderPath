@@ -339,7 +339,7 @@ func (s *state) executeWorkflow(cmd *cobra.Command) error {
 	secretCount := 0
 	if len(fixtureCandidates) > 0 {
 		var secretErr error
-		secretCount, secretErr = policy.OutputSecrets(s.stdout, fixtureCandidates, policy.SecretOptions{Show: s.workflow.showSecrets, Hide: s.workflow.hideSecrets, Interactive: isTerminalWriter(s.stdout), Profile: string(c.Profile), Path: secretPath, Format: secretFormat})
+		secretCount, secretErr = policy.OutputSecrets(s.stdout, fixtureCandidates, policy.SecretOptions{Show: s.workflow.showSecrets, Hide: s.workflow.hideSecrets || s.outputPolicy().RedactSecrets, Interactive: isTerminalWriter(s.stdout), Profile: string(c.Profile), Path: secretPath, Format: secretFormat})
 		if secretErr != nil {
 			fmt.Fprintf(s.stderr, "dedicated secret output failed: %v\n", secretErr)
 		}

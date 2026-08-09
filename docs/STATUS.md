@@ -861,6 +861,17 @@ adapter, and `run TARGET` selects the unified workflow. The former
 `assess technique RECON-1` spelling remains a hidden compatibility command.
 Deep capture, artifact, and research paths remain below `research`.
 
+For credential discovery, the canonical client-policy technique is CRED-2
+(`Request computer policy and deobfuscate secrets`); CRED-1 is PXE boot-media
+retrieval. CinderPath now classifies already obtained bounded policy responses
+as no-policy, non-credential, credential-bearing, protected material, supplied
+plaintext, or parser failure and persists only redacted metadata. The retained
+`CCM_POST /ccm_system/request` fixture is synthetic and does not establish a
+live request envelope, certificate use, or required headers. Live policy
+collection and deobfuscation remain blocked.
+The embedded CRED-2 coverage remains `partial` for prerequisites, discovery,
+assessment, and lab validation; validation and execution remain unsupported.
+
 `RECON-3` now has a targeted adapter over the existing fixed SCCM HTTP route
 allowlist. It plans five routes over HTTP and HTTPS, one method per route, for
 an explicit maximum of 10 network requests (route and access evidence are

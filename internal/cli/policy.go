@@ -394,7 +394,7 @@ func (s *state) policyCommand() *cobra.Command {
 		if e != nil {
 			return e
 		}
-		_, e = policy.OutputSecrets(s.stdout, c, policy.SecretOptions{Show: show, Hide: hide, Interactive: isTerminalWriter(s.stdout), Profile: string(s.cfg.Profile), Path: out, Format: format})
+		_, e = policy.OutputSecrets(s.stdout, c, policy.SecretOptions{Show: show, Hide: hide || s.outputPolicy().RedactSecrets, Interactive: isTerminalWriter(s.stdout), Profile: string(s.cfg.Profile), Path: out, Format: format})
 		return e
 	}}
 	for _, c := range []*cobra.Command{parse, secrets} {
