@@ -139,11 +139,37 @@ func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("invalid json: %v", err)
 	}
-	if result["status"] != "not_run_no_connector" || result["network_behavior"] != "none" || result["defensive_mappings"].([]any)[0] != "PREVENT-20" {
+	if result["status"] != "not_run_no_connector" || result["network_behavior"] != "none" {
 		t.Fatalf("result=%v", result)
+	}
+	if _, ok := result["defensive_mappings"]; ok {
+		t.Fatalf("defensive mappings leaked into product result: %v", result)
 	}
 	if !strings.Contains(out, "srv01") || !strings.Contains(out, "target_id") || !strings.Contains(out, "no HTTP request was sent") {
 		t.Fatalf("unsafe or unredacted output: %s", out)
+	}
+}
+
+func TestDefensiveTechniquesAreOutOfProductScope(t *testing.T) {
+	for _, family := range []string{"CRED", "ELEVATE", "EXEC", "RECON", "TAKEOVER", "COERCE"} {
+		out, stderr, err := executeForTest(t, "assess", "technique", family+"-999", "--target", "srv01", "--format", "json")
+		if err != nil || stderr != "" || !strings.Contains(out, `"technique_id"`) {
+			t.Fatalf("attack family %s was not accepted: out=%q stderr=%q err=%v", family, out, stderr, err)
+		}
+	}
+	for _, family := range []string{"PREVENT", "DETECT", "CANARY"} {
+		_, _, err := executeForTest(t, "assess", "technique", family+"-1", "--target", "srv01")
+		if err == nil || !strings.Contains(err.Error(), "out of scope") {
+			t.Fatalf("defensive family %s was not rejected: %v", family, err)
+		}
+		_, _, err = executeForTest(t, "framework", "technique", family+"-1")
+		if err == nil || !strings.Contains(err.Error(), "out of scope") {
+			t.Fatalf("framework exposed defensive family %s: %v", family, err)
+		}
+		_, _, err = executeForTest(t, "framework", "family", family)
+		if err == nil || !strings.Contains(err.Error(), "out of scope") {
+			t.Fatalf("framework exposed defensive family %s: %v", family, err)
+		}
 	}
 }
 
@@ -323,6 +349,21 @@ func TestFrameworkProvenanceJSON(t *testing.T) {
 	p, ok := result["framework"].(map[string]any)
 	if !ok || p["name"] != "Misconfiguration Manager" || p["upstream_revision"] != "394c53baf98c4eeb5ba001d195c4653216ac3141" || p["implementation"] != "CinderPath independent adapter" {
 		t.Fatalf("unexpected provenance: %#v", result["framework"])
+	}
+}
+
+func TestFrameworkCoverageIsAttackOnly(t *testing.T) {
+	out, stderr, err := executeForTest(t, "framework", "coverage", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	if strings.Contains(out, `"family":"PREVENT"`) || strings.Contains(out, `"family":"DETECT"`) || strings.Contains(out, `"family":"CANARY"`) || strings.Contains(out, "matrix_mappings") {
+		t.Fatalf("defensive framework data exposed as product coverage: %s", out)
+	}
+	for _, family := range []string{"CRED", "ELEVATE", "EXEC", "RECON", "TAKEOVER", "COERCE"} {
+		if !strings.Contains(out, `"`+family+`"`) {
+			t.Fatalf("attack family %s missing from product coverage: %s", family, out)
+		}
 	}
 }
 

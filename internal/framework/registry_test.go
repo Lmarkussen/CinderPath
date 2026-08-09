@@ -21,9 +21,14 @@ func TestMisconfigurationManagerRoadmapTruthful(t *testing.T) {
 			t.Fatalf("untruthful support %s", x.Support)
 		}
 	}
-	for _, id := range []string{"policy_secrets_naa", "pxe_dp_assessment", "pxe_boot_media", "identity_shadow_prereq", "identity_shadow_execute", "defensive_mapping"} {
+	for _, id := range []string{"policy_secrets_naa", "pxe_dp_assessment", "pxe_boot_media", "identity_shadow_prereq", "identity_shadow_execute"} {
 		if !seen[id] {
 			t.Fatalf("missing %s", id)
+		}
+	}
+	for _, x := range r.Objectives {
+		if x.Track == "defensive_controls" || x.ID == "defensive_mapping" {
+			t.Fatalf("defensive objective exposed: %+v", x)
 		}
 	}
 	for _, x := range r.Objectives {

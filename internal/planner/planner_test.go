@@ -111,3 +111,10 @@ func TestDirectoryEvidenceFromAnotherControllerIsNotReused(t *testing.T) {
 		}
 	}
 }
+
+func TestDefensiveTechniqueCannotEnterPlanner(t *testing.T) {
+	p := Resolve(Input{Technique: "PREVENT-1", Provider: "live", Now: time.Now()})
+	if len(p.Prerequisites) != 1 || p.Prerequisites[0].State != Unsupported || len(p.Modules) != 0 {
+		t.Fatalf("defensive technique received a plan: %+v", p)
+	}
+}

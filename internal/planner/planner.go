@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Lmarkussen/CinderPath/internal/framework"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 )
 
@@ -85,6 +86,10 @@ func Resolve(in Input) Plan {
 		in.EvidenceMaxAge = 30 * 24 * time.Hour
 	}
 	p := Plan{Technique: strings.ToUpper(in.Technique)}
+	if !framework.IsProductTechnique(p.Technique) {
+		p.Prerequisites = []Decision{{Requirement: Requirement{Fact: "product_scope", Label: "CinderPath product scope"}, State: Unsupported, Reason: "technique family is out of scope; CinderPath supports CRED, ELEVATE, EXEC, RECON, TAKEOVER, and COERCE"}}
+		return p
+	}
 	for _, r := range RequirementsFor(p.Technique) {
 		p.Prerequisites = append(p.Prerequisites, resolve(r, in))
 	}

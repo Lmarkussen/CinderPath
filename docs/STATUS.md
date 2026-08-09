@@ -10,6 +10,9 @@ at upstream revision `394c53baf98c4eeb5ba001d195c4653216ac3141`. Snapshot
 generation records the upstream revision, date, matrix fingerprint, and source
 provenance. Upstream technique definitions and defensive mappings are distinct
 from CinderPath support states, evidence, and runtime-validation claims.
+CinderPath product scope is limited to `CRED`, `ELEVATE`, `EXEC`, `RECON`,
+`TAKEOVER`, and `COERCE`; defensive upstream records are retained only for
+snapshot provenance.
 
 ## Passive Windows lab capture kit
 

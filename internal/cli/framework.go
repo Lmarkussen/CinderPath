@@ -30,10 +30,11 @@ func (s *state) frameworkCoverageCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		visible := framework.ProductSnapshot(r)
 		if format == "json" {
-			return json.NewEncoder(s.stdout).Encode(map[string]any{"framework": framework.SnapshotProvenance(r), "snapshot": r})
+			return json.NewEncoder(s.stdout).Encode(map[string]any{"framework": framework.SnapshotProvenance(r), "snapshot": visible, "product_scope": framework.ProductFamilyNames()})
 		}
-		printFrameworkCoverage(s.stdout, r, s.verbose)
+		printFrameworkCoverage(s.stdout, visible, s.verbose)
 		return nil
 	}}
 	c.Flags().StringVar(&name, "framework", "misconfiguration-manager", "framework identifier")
@@ -42,16 +43,12 @@ func (s *state) frameworkCoverageCommand() *cobra.Command {
 }
 
 func printFrameworkCoverage(out io.Writer, r framework.FrameworkSnapshot, verbose bool) {
-	att, def := 0, 0
+	att := 0
 	families := map[string]int{}
 	support := map[string]int{}
 	for _, t := range r.Techniques {
 		families[t.Family]++
-		if t.Kind == "attack" {
-			att++
-		} else {
-			def++
-		}
+		att++
 	}
 	for _, c := range r.Coverage {
 		if c.Prerequisites == framework.Supported || c.Prerequisites == framework.Partial {
@@ -76,9 +73,10 @@ func printFrameworkCoverage(out io.Writer, r framework.FrameworkSnapshot, verbos
 	p := framework.SnapshotProvenance(r)
 	fmt.Fprintf(out, "Framework coverage: %s\n\n", r.FrameworkID)
 	fmt.Fprintf(out, "Framework: %s\nUpstream project: %s\nUpstream revision: %s\nSnapshot date: %s\nImplementation: %s\n\n", p.Name, p.UpstreamRepository, p.UpstreamRevision, r.SnapshotDate, p.Implementation)
-	fmt.Fprintf(out, "Techniques\n  %d total (%d attack, %d defense)\n  %d matrix mappings\n  Families: %s\n\n", len(r.Techniques), att, def, len(r.MatrixMappings), formatFamilies(families))
+	fmt.Fprintf(out, "Product techniques\n  %d total attack techniques\n  Families: %s\n\n", att, formatFamilies(families))
 	fmt.Fprintf(out, "Support (supported or partial)\n  Prerequisites: %d\n  Discovery:     %d\n  Assessment:   %d\n  Validation:   %d\n  Execution:    %d\n  Lab-validated: %d\n\n", support["prerequisites"], support["discovery"], support["assessment"], support["validation"], support["execution"], support["lab"])
 	fmt.Fprintln(out, "Notes")
+	fmt.Fprintln(out, "  CinderPath product scope: CRED, ELEVATE, EXEC, RECON, TAKEOVER, COERCE.")
 	fmt.Fprintln(out, "  Planning metadata only; unsupported validation and execution remain blocked.")
 	fmt.Fprintln(out, "  Safety: offline snapshot and planning metadata only; no technique execution.")
 	fmt.Fprintln(out, "  Legacy mappings: policy_secrets_naa -> CRED-1; pxe_dp_assessment -> RECON-1")
@@ -112,6 +110,9 @@ func (s *state) frameworkTechniqueCommand() *cobra.Command {
 		if e != nil {
 			return e
 		}
+		if !framework.IsProductTechnique(args[0]) {
+			return fmt.Errorf("technique %q is out of scope: CinderPath supports attack families %s", args[0], strings.Join(framework.ProductFamilyNames(), ", "))
+		}
 		for _, t := range r.Techniques {
 			if t.ID == strings.ToUpper(args[0]) {
 				if format == "json" {
@@ -119,11 +120,6 @@ func (s *state) frameworkTechniqueCommand() *cobra.Command {
 				}
 				p := framework.SnapshotProvenance(r)
 				fmt.Fprintf(s.stdout, "%s: %s\nFramework: %s\nUpstream project: %s\nUpstream revision: %s\nImplementation: %s\nFamily: %s\nKind: %s\nSummary: %s\nSource: %s\n", t.ID, t.Title, p.Name, p.UpstreamRepository, p.UpstreamRevision, p.Implementation, t.Family, t.Kind, t.Summary, strings.Join(t.SourceFiles, ", "))
-				for _, m := range r.MatrixMappings {
-					if m.AttackID == t.ID {
-						fmt.Fprintf(s.stdout, "Defense mapping: %s\n", m.DefenseID)
-					}
-				}
 				for _, c := range r.Coverage {
 					if c.TechniqueID == t.ID {
 						fmt.Fprintf(s.stdout, "Support: prerequisites=%s discovery=%s assessment=%s validation=%s execution=%s lab=%s\nReason: %s\n", c.Prerequisites, c.Discovery, c.Assessment, c.Validation, c.Execution, c.LabValidation, c.Reason)
@@ -148,6 +144,9 @@ func (s *state) frameworkFamilyCommand() *cobra.Command {
 			return e
 		}
 		fam := strings.ToUpper(args[0])
+		if !framework.IsProductAttackFamily(fam) {
+			return fmt.Errorf("family %q is out of scope: CinderPath supports attack families %s", args[0], strings.Join(framework.ProductFamilyNames(), ", "))
+		}
 		var xs []framework.Technique
 		for _, t := range r.Techniques {
 			if t.Family == fam {
@@ -177,7 +176,7 @@ func (s *state) frameworkGapsCommand() *cobra.Command {
 			return e
 		}
 		fmt.Fprintln(s.stdout, "Largest framework gaps")
-		for _, c := range r.Coverage {
+		for _, c := range framework.ProductSnapshot(r).Coverage {
 			if c.Assessment == framework.Unsupported || c.Assessment == framework.Planned || c.Execution == framework.Unsupported {
 				fmt.Fprintf(s.stdout, "%s assessment=%s execution=%s\n", c.TechniqueID, c.Assessment, c.Execution)
 			}

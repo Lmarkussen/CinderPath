@@ -60,7 +60,7 @@ type CoverageRecord struct {
 	Validation        SupportState `json:"validation"`
 	Execution         SupportState `json:"execution"`
 	Cleanup           SupportState `json:"cleanup"`
-	DefenseAssessment SupportState `json:"defense_assessment"`
+	DefenseAssessment SupportState `json:"defense_assessment,omitempty"`
 	LabValidation     SupportState `json:"lab_validation"`
 	Reason            string       `json:"reason,omitempty"`
 	Modules           []string     `json:"modules,omitempty"`
@@ -74,7 +74,7 @@ type FrameworkSnapshot struct {
 	SnapshotDate      string           `json:"snapshot_date"`
 	MatrixFingerprint string           `json:"matrix_fingerprint"`
 	Techniques        []Technique      `json:"techniques"`
-	MatrixMappings    []MatrixMapping  `json:"matrix_mappings"`
+	MatrixMappings    []MatrixMapping  `json:"matrix_mappings,omitempty"`
 	Coverage          []CoverageRecord `json:"coverage"`
 	Warnings          []string         `json:"warnings,omitempty"`
 }

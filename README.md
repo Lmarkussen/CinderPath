@@ -28,7 +28,6 @@ discover SCCM infrastructure
 | NAA credential recovery | Research foundation present; recovery not implemented |
 | Task-sequence secret recovery | Research foundation present; recovery not implemented |
 | Execution and hierarchy takeover | Planned |
-| Defensive framework assessment | Mapped; assessment support is partial |
 
 ## Why CinderPath exists
 
@@ -38,7 +37,7 @@ CinderPath is being built to make that process repeatable. It combines a simple 
 
 ## Misconfiguration Manager acknowledgement
 
-CinderPath is built around the research, terminology, and technique model published by the [Misconfiguration Manager project](https://github.com/subat0mik/Misconfiguration-Manager). Misconfiguration Manager provides the foundational SCCM attack-and-defense research model used for CinderPath's technique families, prerequisites, and defensive mappings.
+CinderPath is built around the research, terminology, and technique model published by the [Misconfiguration Manager project](https://github.com/subat0mik/Misconfiguration-Manager). The upstream snapshot retains its attack-and-defense research provenance; CinderPath implements only the attack families `CRED`, `ELEVATE`, `EXEC`, `RECON`, `TAKEOVER`, and `COERCE`.
 
 A huge amount of credit belongs to the Misconfiguration Manager maintainers and contributors for organizing SCCM attack and defense research into a clear and practical framework.
 
@@ -48,13 +47,13 @@ CinderPath is an independent implementation and is not affiliated with or endors
 
 ### Framework-driven assessment
 
-CinderPath embeds a deterministic snapshot containing 67 techniques: 34 attack techniques, 33 defensive techniques, and 130 attack-defense mappings. Each technique has independent support states for documentation, prerequisites, discovery, assessment, validation, execution, cleanup, defense assessment, and lab validation. A documented or mapped technique is not automatically executable.
+CinderPath embeds a deterministic upstream snapshot, while its product-visible coverage contains only `CRED`, `ELEVATE`, `EXEC`, `RECON`, `TAKEOVER`, and `COERCE`. Upstream defensive records and mappings remain provenance only and are not CinderPath capabilities. Each visible technique has independent support states for documentation, prerequisites, discovery, assessment, validation, execution, cleanup, and lab validation. A documented technique is not automatically executable.
 
 Use `cinderpath framework coverage` to inspect the current matrix. Full support details live in the [framework roadmap](docs/MISCONFIGURATION_MANAGER_ROADMAP.md) and [implementation status](docs/STATUS.md).
 
 ### Runtime-validated reconnaissance
 
-**RECON-1 — SCCM roles and site information via LDAP.** Authenticated RootDSE collection, `System Management` discovery, SCCM Active Directory publishing detection, site-code and management-point discovery, evidence-backed assets and relationships, and defensive mappings have been runtime validated in GOAD. See [RECON-1](docs/TECHNIQUES/RECON-1.md).
+**RECON-1 — SCCM roles and site information via LDAP.** Authenticated RootDSE collection, `System Management` discovery, SCCM Active Directory publishing detection, site-code and management-point discovery, and evidence-backed assets and relationships have been runtime validated in GOAD. See [RECON-1](docs/TECHNIQUES/RECON-1.md).
 
 **RECON-2 — SCCM role reconnaissance via SMB.** The bounded adapter authenticates with SMB2/3, uses only `IPC$` and `srvsvc`, performs one `NetShareEnumAll` operation, distinguishes generic shares from SCCM shares, and persists evidence. It has been runtime validated in GOAD; the validated target exposed generic administrative shares but no SCCM-specific share. See [RECON-2](docs/TECHNIQUES/RECON-2.md).
 
@@ -106,10 +105,6 @@ Correlate task-sequence deployments with unknown-computer and PXE posture, suppo
 ### Escalation and takeover
 
 Implement selected ELEVATE, EXEC, COERCE, and TAKEOVER techniques; correlate SCCM identities with downstream Active Directory paths; validate explicitly authorized actions; track state changes; and clean them up. These capabilities are planned, not generally available today.
-
-### Defense
-
-Assess PREVENT, DETECT, and CANARY controls, compare offensive evidence with defensive coverage, and produce prioritized remediation reports. Defensive mappings exist today; broad automated defense assessment does not.
 
 ## How it works
 
@@ -253,7 +248,7 @@ existing scripts and transcript tests.
 
 CinderPath is early-stage software under active development. RECON-1 and RECON-2 are the only fully supported, GOAD-runtime-validated framework techniques; RECON-3 has partial runtime validation. Most of the 67-technique catalog remains documentation and planning metadata.
 
-Credential recovery, task-sequence content access, boot-media acquisition, active PXE validation, broad defensive assessment, exploitation, hierarchy takeover, and automated state-changing cleanup are not currently supported. Lab validation covers specific GOAD systems and does not establish compatibility with every SCCM, Windows, PowerShell, or network configuration. Consult [docs/STATUS.md](docs/STATUS.md) before relying on a capability claim.
+Credential recovery, task-sequence content access, boot-media acquisition, active PXE validation, exploitation, hierarchy takeover, and automated state-changing cleanup are not currently supported. Lab validation covers specific GOAD systems and does not establish compatibility with every SCCM, Windows, PowerShell, or network configuration. Consult [docs/STATUS.md](docs/STATUS.md) before relying on a capability claim.
 
 ## Documentation
 

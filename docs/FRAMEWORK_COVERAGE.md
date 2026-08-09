@@ -7,7 +7,7 @@ The embedded snapshot represents upstream revision
 attack-defense mappings originate upstream; support dimensions and runtime
 validation results describe the independent CinderPath implementation only.
 
-CinderPath uses an embedded, offline framework snapshot. Normal runtime never downloads upstream content. A snapshot records its upstream revision, snapshot date, matrix fingerprint, technique summaries, attack/defense mappings, and independent coverage dimensions.
+CinderPath uses an embedded, offline framework snapshot. Normal runtime never downloads upstream content. A snapshot records its upstream revision, snapshot date, matrix fingerprint, technique summaries, attack/defense mappings, and independent coverage dimensions. Product-visible coverage is restricted to `CRED`, `ELEVATE`, `EXEC`, `RECON`, `TAKEOVER`, and `COERCE`; defensive records remain upstream provenance only.
 
 Inspect coverage with:
 
@@ -18,7 +18,7 @@ cinderpath framework family CRED
 cinderpath framework gaps
 ```
 
-The catalog is planning metadata. Prerequisites, discovery, assessment, validation, execution, cleanup, defense assessment, and lab validation are reported separately. A supported prerequisite does not imply supported execution. Shadow Credentials remains a downstream AD primitive and is not enabled by the framework snapshot.
+The catalog is planning metadata. Prerequisites, discovery, assessment, validation, execution, cleanup, and lab validation are reported separately. A supported prerequisite does not imply supported execution. Shadow Credentials remains a downstream AD primitive and is not enabled by the framework snapshot.
 
 Upstream imports are development-only and require a local export:
 

@@ -8,7 +8,9 @@ snapshot date, matrix fingerprint, source files, and deterministic technique
 fingerprints. Technique definitions and attack-defense mappings originate
 upstream. CinderPath support states, evidence, and runtime-validation claims
 are independent implementation metadata and do not imply endorsement or
-affiliation.
+affiliation. CinderPath product scope is limited to the attack families
+`CRED`, `ELEVATE`, `EXEC`, `RECON`, `TAKEOVER`, and `COERCE`; upstream defensive
+records remain provenance only.
 
 Normal coverage review now starts with `cinderpath assess --framework misconfiguration-manager --target <scope>` or `cinderpath framework coverage`. The embedded offline snapshot is canonical; only discovery and assessment support recorded in its coverage records is selected, while planned validation or execution remains blocked. Low-level evidence commands remain available under `research`.
 
@@ -34,9 +36,6 @@ task-sequence media analysis, and offline WIM/image inspection.
 The `sccm_identity_attack_paths` track separates SCCM identity-to-AD ACL
 correlation and Shadow Credentials prerequisite detection from explicitly
 authorized Shadow Credentials execution and cleanup. Execution is unavailable.
-
-The `defensive_controls` track plans PREVENT, DETECT, and CANARY mappings.
-Current registry entries are truthfully `planned` or `documented` only.
 
 `RECON-1` is mapped to the existing LDAP discovery path. Its assessment remains
 runtime-validated through the authorized GOAD controller; validation and
