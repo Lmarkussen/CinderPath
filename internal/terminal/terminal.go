@@ -17,18 +17,23 @@ const (
 type Renderer struct{ enabled bool }
 
 func New(mode Mode, w io.Writer) Renderer {
-	if mode == Never || (mode != Always && os.Getenv("NO_COLOR") != "") {
+	f, ok := w.(*os.File)
+	if !ok {
+		return NewWithTTY(mode, false)
+	}
+	info, err := f.Stat()
+	return NewWithTTY(mode, err == nil && info.Mode()&os.ModeCharDevice != 0)
+}
+
+// NewWithTTY makes terminal capability explicit for deterministic rendering tests.
+func NewWithTTY(mode Mode, tty bool) Renderer {
+	if mode == Never || os.Getenv("NO_COLOR") != "" {
 		return Renderer{}
 	}
 	if mode == Always {
 		return Renderer{true}
 	}
-	f, ok := w.(*os.File)
-	if !ok {
-		return Renderer{}
-	}
-	info, err := f.Stat()
-	return Renderer{enabled: err == nil && info.Mode()&os.ModeCharDevice != 0}
+	return Renderer{enabled: tty}
 }
 func (r Renderer) Enabled() bool { return r.enabled }
 func (r Renderer) style(code, v string) string {

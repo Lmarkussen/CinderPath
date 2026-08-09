@@ -103,11 +103,12 @@ CRED paths may show a plan but never collect policies or recover credentials.
 
 Technique one-off values may use `--provider`, `--domain-controller`,
 `--username`, `--password-env`, and `--password-file`; module limits remain
-configuration/profile values. Text uses `--color auto|always|never` (default
-`auto`). A non-empty `NO_COLOR` disables automatic color. JSON, HTML, SQLite,
-and non-TTY output are ANSI-free. Green marks success, yellow warnings/stale
-states, red failures, cyan targets/modules, magenta shown secrets, and dim text
-supplemental IDs.
+configuration/profile values. Interactive text uses semantic colors
+automatically. `--no-color` or a non-empty `NO_COLOR` disables ANSI styling;
+JSON, HTML, SQLite, files, and non-TTY output are ANSI-free. The hidden
+compatibility flag `--color auto|always|never` remains for existing scripts and
+transcript tests. Green marks success, yellow warnings/stale states, red
+failures, cyan targets/modules, magenta shown secrets, and dim supplemental IDs.
 
 Research output destinations are no longer Cobra-required flags. They remain
 explicit advanced inputs where the command needs a separate artifact location;

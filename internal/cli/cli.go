@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -75,6 +76,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.StringVar(&s.logLevel, "log-level", d.LogLevel, "log level: debug, info, warn, error")
 	f.BoolVar(&s.noColor, "no-color", d.NoColor, "disable ANSI color output")
 	f.StringVar(&s.color, "color", "auto", "color output: auto, always, or never")
+	_ = f.MarkHidden("color")
 	f.BoolVar(&s.verbose, "verbose", false, "show resolved context sources and advanced details")
 	f.BoolVar(&s.redactSecrets, "redact-secrets", false, "redact secret values in operator output and reports")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
@@ -242,7 +244,14 @@ func (s *state) configure(cmd *cobra.Command) error {
 	if mode != terminal.Auto && mode != terminal.Always && mode != terminal.Never {
 		return fmt.Errorf("invalid --color %q (use auto, always, or never)", s.color)
 	}
-	if cfg.NoColor {
+	colorChanged := cmd.Flags().Changed("color")
+	if cfg.NoColor && colorChanged && mode == terminal.Always {
+		return errors.New("--no-color cannot be combined with --color always")
+	}
+	if formatFlag := cmd.Flags().Lookup("format"); formatFlag != nil && formatFlag.Value.String() == "json" {
+		mode = terminal.Never
+	}
+	if cfg.NoColor || os.Getenv("NO_COLOR") != "" {
 		mode = terminal.Never
 	}
 	s.renderer = terminal.New(mode, s.stdout)

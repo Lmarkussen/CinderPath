@@ -204,7 +204,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			if status == "" {
 				status = "completed"
 			}
-			s.printTechniqueText(techniqueID, o.target, status, fmt.Sprintf("SCCM LDAP evidence: assets=%d findings=%d", out.Assets, sumFindings(out.Findings)), []string{"live.ldap.rootdse", "live.ldap.sccm_directory"}, out.Run.ID, support)
+			s.printRECON1Text(techniqueID, o.target, status, out, support)
 			return nil
 		}
 		if techniqueID == "RECON-2" {
@@ -226,7 +226,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 				if o.format == "json" {
 					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
 				}
-				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nSMB share evidence: assets=%d findings=%d\nSelected modules: live.smb.share_metadata\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				s.printRECON2Text(techniqueID, o.target, status, out, support)
 				return nil
 			}
 			mappings := defensiveMappings(techniqueID)
@@ -256,7 +256,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 				if o.format == "json" {
 					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "defensive_mappings": defensiveMappings(techniqueID), "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
 				}
-				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: %s\nHTTP route evidence: assets=%d findings=%d\nRequests: actual=%v maximum=%v successes=%v failures=%v\nSelected modules: live.sccm.http_recon\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\nDefensive mappings: %s\nRun ID: %s\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), status, out.Assets, sumFindings(out.Findings), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], strings.Join(defensiveMappings(techniqueID), ", "), out.Run.ID)
+				s.printRECON3Text(techniqueID, o.target, status, out, support)
 				return nil
 			}
 			mappings := defensiveMappings(techniqueID)
@@ -295,6 +295,179 @@ func (s *state) techniquePlan(technique, target, runID string) planner.Plan {
 	}
 	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour})
 }
+
+func (s *state) evidenceForRun(runID string) []models.Evidence {
+	if runID == "" {
+		return nil
+	}
+	store, err := database.Open(context.Background(), s.cfg.DBPath)
+	if err != nil {
+		return nil
+	}
+	defer store.Close()
+	evidence, err := store.ListEvidence(context.Background())
+	if err != nil {
+		return nil
+	}
+	out := make([]models.Evidence, 0)
+	for _, item := range evidence {
+		if item.RunID == runID {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func (s *state) printTechniqueHeader(id, target, status string) {
+	fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nStatus: %s\n", id, s.renderer.Target(redactedTarget(target)), s.renderer.Status(status))
+}
+
+func (s *state) printTechniqueFooter(modules []string, runID, support string) {
+	if len(modules) > 0 {
+		fmt.Fprintf(s.stdout, "Selected modules: %s\n", s.renderer.Target(strings.Join(modules, ", ")))
+	}
+	if support != "" {
+		fmt.Fprintf(s.stdout, "Assessment support: %s\n", s.renderer.Dim(support))
+	}
+	if runID != "" {
+		fmt.Fprintf(s.stdout, "Run ID: %s\n", s.renderer.Dim(runID))
+	}
+}
+
+type recon1Details struct {
+	RootDSE, SystemManagement, Publishing bool
+	Sites, ManagementPoints               []string
+}
+
+func recon1DetailsFor(evidence []models.Evidence) recon1Details {
+	var out recon1Details
+	for _, item := range evidence {
+		switch item.Type {
+		case "ldap_rootdse":
+			out.RootDSE = true
+		case "recon1_ldap_assessment":
+			out.Publishing = item.Data["publishing_state"] == "sccm_ad_publishing_confirmed"
+			out.SystemManagement = item.Data["system_management_state"] == "system_management_container_present"
+			out.Sites = append(out.Sites, evidenceStrings(item.Data["sites_observed"])...)
+			out.ManagementPoints = append(out.ManagementPoints, evidenceStrings(item.Data["management_points_observed"])...)
+		}
+	}
+	out.Sites = uniqueStrings(out.Sites)
+	out.ManagementPoints = uniqueStrings(out.ManagementPoints)
+	return out
+}
+
+type shareSummary struct{ Name, Classification string }
+
+func recon2SharesFor(evidence []models.Evidence) []shareSummary {
+	var out []shareSummary
+	for _, item := range evidence {
+		if item.Type != "smb_share_metadata" {
+			continue
+		}
+		for _, raw := range evidenceMaps(item.Data["shares"]) {
+			name, classification := fmt.Sprint(raw["name"]), fmt.Sprint(raw["classification"])
+			if name != "" && name != "<nil>" {
+				out = append(out, shareSummary{Name: name, Classification: classification})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if len(out) > 12 {
+		out = out[:12]
+	}
+	return out
+}
+
+func evidenceStrings(v any) []string {
+	items, ok := v.([]any)
+	if !ok {
+		if strings, ok := v.([]string); ok {
+			return strings
+		}
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text := strings.TrimSpace(fmt.Sprint(item)); text != "" && text != "<nil>" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func evidenceMaps(v any) []map[string]any {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *state) printRECON1Text(id, target, status string, out app.Outcome, support string) {
+	details := recon1DetailsFor(s.evidenceForRun(out.Run.ID))
+	s.printTechniqueHeader(id, target, status)
+	fmt.Fprintf(s.stdout, "Discovery\n  %s RootDSE\n  %s System Management\n  %s SCCM publishing\n", statusMark(s.renderer, details.RootDSE), statusMark(s.renderer, details.SystemManagement), statusMark(s.renderer, details.Publishing))
+	if len(details.Sites) > 0 || len(details.ManagementPoints) > 0 {
+		fmt.Fprintln(s.stdout, "SCCM")
+		if len(details.Sites) > 0 {
+			fmt.Fprintf(s.stdout, "  Site                  %s\n", s.renderer.Target(strings.Join(details.Sites, ", ")))
+		}
+		if len(details.ManagementPoints) > 0 {
+			fmt.Fprintf(s.stdout, "  Management point      %s\n", s.renderer.Target(strings.Join(details.ManagementPoints, ", ")))
+		}
+	}
+	fmt.Fprintf(s.stdout, "Evidence: assets=%d findings=%d\n", out.Assets, sumFindings(out.Findings))
+	s.printTechniqueFooter([]string{"live.ldap.rootdse", "live.ldap.sccm_directory"}, out.Run.ID, support)
+}
+
+func statusMark(r terminal.Renderer, observed bool) string {
+	if observed {
+		return r.Success("✓")
+	}
+	return r.Warning("?")
+}
+
+func (s *state) printRECON2Text(id, target, status string, out app.Outcome, support string) {
+	s.printTechniqueHeader(id, target, status)
+	fmt.Fprintf(s.stdout, "Framework revision: %s\nSMB\n", s.renderer.Dim(snapshotRevision()))
+	shares := recon2SharesFor(s.evidenceForRun(out.Run.ID))
+	if len(shares) == 0 {
+		fmt.Fprintln(s.stdout, "  Share metadata         none returned")
+	} else {
+		fmt.Fprintln(s.stdout, "  Shares")
+		for _, share := range shares {
+			fmt.Fprintf(s.stdout, "    %-22s %s\n", s.renderer.Target(share.Name), share.Classification)
+		}
+	}
+	fmt.Fprintf(s.stdout, "Evidence: assets=%d findings=%d\nNetwork behavior: authenticated SMB2/3 IPC$ srvsvc share metadata only\n", out.Assets, sumFindings(out.Findings))
+	s.printTechniqueFooter([]string{"live.smb.share_metadata"}, out.Run.ID, support)
+}
+
+func (s *state) printRECON3Text(id, target, status string, out app.Outcome, support string) {
+	s.printTechniqueHeader(id, target, status)
+	fmt.Fprintf(s.stdout, "Framework revision: %s\nHTTP\n  Requests              %v / %v\n  Successful            %v\n  Failed                %v\nEvidence: assets=%d findings=%d\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\n", s.renderer.Dim(snapshotRevision()), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], out.Assets, sumFindings(out.Findings))
+	s.printTechniqueFooter([]string{"live.sccm.http_recon"}, out.Run.ID, support)
+}
 func printPrerequisites(w io.Writer, r terminal.Renderer, p planner.Plan) {
 	if len(p.Prerequisites) == 0 {
 		return
@@ -312,13 +485,9 @@ func printPrerequisites(w io.Writer, r terminal.Renderer, p planner.Plan) {
 	}
 }
 func (s *state) printTechniqueText(id, target, status, detail string, modules []string, runID, support string) {
-	fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nStatus: %s\n%s\nAssessment support: %s\n", id, s.renderer.Target(redactedTarget(target)), s.renderer.Status(status), detail, support)
-	if len(modules) > 0 {
-		fmt.Fprintf(s.stdout, "Execution plan: %s\n", s.renderer.Target(strings.Join(modules, ", ")))
-	}
-	if runID != "" {
-		fmt.Fprintf(s.stdout, "Run ID: %s\n", s.renderer.Dim(runID))
-	}
+	s.printTechniqueHeader(id, target, status)
+	fmt.Fprintln(s.stdout, detail)
+	s.printTechniqueFooter(modules, runID, support)
 }
 
 func defensiveMappings(id string) []string {

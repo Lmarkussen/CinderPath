@@ -15,6 +15,9 @@ func TestModesAndSemanticStyles(t *testing.T) {
 	if New(Auto, &bytes.Buffer{}).Enabled() {
 		t.Fatal("non-TTY auto must be plain")
 	}
+	if !NewWithTTY(Auto, true).Enabled() {
+		t.Fatal("TTY auto must be colored")
+	}
 	if New(Never, &bytes.Buffer{}).Enabled() {
 		t.Fatal("never must be plain")
 	}
@@ -24,7 +27,7 @@ func TestNoColorOverridesAuto(t *testing.T) {
 	if New(Auto, &bytes.Buffer{}).Enabled() {
 		t.Fatal("NO_COLOR must disable auto")
 	}
-	if !New(Always, &bytes.Buffer{}).Enabled() {
-		t.Fatal("explicit always takes precedence")
+	if New(Always, &bytes.Buffer{}).Enabled() {
+		t.Fatal("NO_COLOR must disable explicit color")
 	}
 }

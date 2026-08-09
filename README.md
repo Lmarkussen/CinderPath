@@ -242,10 +242,12 @@ The flag changes rendering, not the underlying assessment result. It replaces se
 
 Terminal scrollback, shell multiplexers, CI logs, and copied output can retain visible secrets. Protect unredacted output accordingly.
 
-Interactive text output uses semantic color by default. Use `--color always` or
-`--color never`; a non-empty `NO_COLOR` disables automatic color. JSON, HTML,
-SQLite, and non-interactive output remain ANSI-free. Redaction occurs before
-rendering, so `<redacted>` never receives secret styling.
+Interactive text output uses semantic color automatically. Use `--no-color` or
+a non-empty `NO_COLOR` environment variable to disable ANSI styling. JSON,
+HTML, SQLite, files, and non-interactive output remain ANSI-free. Redaction
+occurs before rendering, so `<redacted>` never receives secret styling. The
+hidden compatibility flag `--color auto|always|never` remains available for
+existing scripts and transcript tests.
 
 ## Project maturity and limitations
 

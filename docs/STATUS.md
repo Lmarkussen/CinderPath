@@ -259,6 +259,14 @@ remain conservative regardless of this operator rendering policy.
 
 Configuration precedence is explicit CLI flag, environment variable, YAML file, then default. `--redact-secrets` and `CINDERPATH_REDACT_SECRETS` control output rendering, with the CLI taking precedence over environment and YAML. The default is false for authorized operator output. Profiles select workflow defaults while hard safety gates remain authoritative. Unavailable aggressive/yolo modules are recorded as blocked or not implemented rather than executed.
 
+Interactive terminal output uses semantic ANSI colors automatically. Operators
+disable styling with `--no-color` or non-empty `NO_COLOR`; JSON, HTML, SQLite,
+files, and redirected output remain ANSI-free. The hidden compatibility switch
+`--color auto|always|never` remains for scripts and transcript tests. RECON-1,
+RECON-2, and RECON-3 now share the same semantic technique header/footer
+rendering, while bounded summaries read only evidence already persisted by the
+current run.
+
 ## Mock behavior
 
 The default workflow remains network-free:

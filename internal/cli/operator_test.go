@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Lmarkussen/CinderPath/internal/app"
+	"github.com/Lmarkussen/CinderPath/internal/models"
+	"github.com/Lmarkussen/CinderPath/internal/terminal"
 )
 
 func executeForTest(t *testing.T, args ...string) (string, string, error) {
@@ -140,6 +144,7 @@ func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
 }
 
 func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
 	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-2", "--target", "SCCM.LAB", "--provider", "live", "--domain-controller", "DC.SCCM.LAB", "--username", "operator", "--format", "json")
 	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "live.ldap.rootdse") || !strings.Contains(out, "policy_acquisition") {
 		t.Fatalf("err=%v stderr=%q output=%q", err, stderr, out)
@@ -147,6 +152,70 @@ func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
 	out, _, err = executeForTest(t, "--color", "always", "assess", "technique", "RECON-1", "--target", "SCCM.LAB")
 	if err != nil || !strings.Contains(out, "\x1b[36mSCCM.LAB") {
 		t.Fatalf("err=%v output=%q", err, out)
+	}
+}
+
+func TestColorControlsAndTechniqueSemanticRendering(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	var text bytes.Buffer
+	s := &state{stdout: &text, renderer: terminal.New(terminal.Always, &text)}
+	s.printRECON1Text("RECON-1", "SCCM.LAB", "completed", app.Outcome{}, "supported")
+	if got := text.String(); !strings.Contains(got, "\x1b[36mSCCM.LAB") || !strings.Contains(got, "\x1b[32m✓ completed") {
+		t.Fatalf("RECON-1 semantic rendering missing: %q", got)
+	}
+	text.Reset()
+	s.printRECON2Text("RECON-2", "MECM.SCCM.LAB", "completed", app.Outcome{}, "supported")
+	if got := text.String(); !strings.Contains(got, "\x1b[36mMECM.SCCM.LAB") || !strings.Contains(got, "\x1b[32m✓ completed") || !strings.Contains(got, "\x1b[36mlive.smb.share_metadata") {
+		t.Fatalf("RECON-2 semantic rendering missing: %q", got)
+	}
+	text.Reset()
+	s.printRECON3Text("RECON-3", "MECM.SCCM.LAB", "connection_failed", app.Outcome{}, "partial")
+	if got := text.String(); !strings.Contains(got, "\x1b[31m✗ connection_failed") || !strings.Contains(got, "\x1b[36mlive.sccm.http_recon") {
+		t.Fatalf("RECON-3 semantic rendering missing: %q", got)
+	}
+
+	out, _, err := executeForTest(t, "--no-color", "--color", "always", "assess", "RECON-1", "--target", "SCCM.LAB")
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") || strings.Contains(out, "\x1b[") {
+		t.Fatalf("conflicting color controls: err=%v output=%q", err, out)
+	}
+	out, _, err = executeForTest(t, "--no-color", "assess", "RECON-1", "--target", "SCCM.LAB")
+	if err != nil || strings.Contains(out, "\x1b[") {
+		t.Fatalf("--no-color: err=%v output=%q", err, out)
+	}
+	t.Setenv("NO_COLOR", "1")
+	out, _, err = executeForTest(t, "--color", "always", "assess", "RECON-1", "--target", "SCCM.LAB")
+	if err != nil || strings.Contains(out, "\x1b[") {
+		t.Fatalf("NO_COLOR: err=%v output=%q", err, out)
+	}
+}
+
+func TestLegacyColorFlagIsHidden(t *testing.T) {
+	c := New(&bytes.Buffer{}, &bytes.Buffer{})
+	flag := c.PersistentFlags().Lookup("color")
+	if flag == nil || !flag.Hidden || flag.DefValue != "auto" {
+		t.Fatalf("legacy color flag=%+v", flag)
+	}
+}
+
+func TestBoundedTechniqueSummariesUseExistingEvidence(t *testing.T) {
+	recon1 := recon1DetailsFor([]models.Evidence{
+		{Type: "ldap_rootdse"},
+		{Type: "recon1_ldap_assessment", Data: map[string]any{
+			"publishing_state":           "sccm_ad_publishing_confirmed",
+			"system_management_state":    "system_management_container_present",
+			"sites_observed":             []any{"P01"},
+			"management_points_observed": []any{"MECM.SCCM.LAB"},
+		}},
+	})
+	if !recon1.RootDSE || !recon1.SystemManagement || !recon1.Publishing || strings.Join(recon1.Sites, ",") != "P01" || strings.Join(recon1.ManagementPoints, ",") != "MECM.SCCM.LAB" {
+		t.Fatalf("RECON-1 details=%+v", recon1)
+	}
+	shares := recon2SharesFor([]models.Evidence{{Type: "smb_share_metadata", Data: map[string]any{"shares": []any{
+		map[string]any{"name": "IPC$", "classification": "generic_administrative_share"},
+		map[string]any{"name": "SMSPKG", "classification": "sccm_content_share"},
+	}}}})
+	if len(shares) != 2 || shares[0].Name != "IPC$" || shares[1].Classification != "sccm_content_share" {
+		t.Fatalf("RECON-2 shares=%+v", shares)
 	}
 }
 
