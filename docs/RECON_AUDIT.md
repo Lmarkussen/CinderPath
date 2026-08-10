@@ -11,7 +11,7 @@ its own implementation and runtime state.
 | RECON-3 — Enumerate SCCM roles via HTTP | Fixed anonymous SCCM route reconnaissance on an explicit site-system host | Complete; GOAD validated | Authorized assessment host; no content retrieval |
 | RECON-4 — Query client devices via CMPivot | Authenticated ConfigMgr CMPivot query against a collection or device | Complete; GOAD validated | One explicit Kerberos/Negotiate AdminService request targets one device with the fixed `OperatingSystem` query; polling and result normalization are bounded |
 | RECON-5 — Locate users via SMS Provider | Read-only SMS Provider inventory and user-device affinity queries | Complete; GOAD validated | Explicit Kerberos/Negotiate AdminService WMI query of `SMS_UserMachineRelationship`, bounded to 128 records; optional exact-user filter |
-| RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Read-only remote registry metadata through the `winreg` named pipe | Blocked | Requires a bounded SMB named-pipe/Remote Registry adapter |
+| RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Read-only remote registry metadata through the `winreg` named pipe | Complete; GOAD validated | Authenticated SMB2/3 `IPC$` → MS-RRP reads from the fixed `SOFTWARE\\Microsoft\\SMS` allowlist; Remote Registry must already be available |
 | RECON-7 — Enumerate SCCM site information via local files | Read SCCM client logs and management-point registry metadata | Partial | Requires local SCCM client access; current artifact workflow is metadata-only/offline |
 
 `RECON-ALL` treats its supplied target as an environment/site-system root and

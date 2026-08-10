@@ -557,9 +557,9 @@ func defaultCoverage(id string) CoverageRecord {
 		c.Reason = "SMS Provider user/device inventory queries require an authenticated ConfigMgr provider adapter that is not implemented."
 		c.Modules = []string{"planner"}
 	case "RECON-6":
-		c.Assessment = Blocked
-		c.Reason = "Remote winreg named-pipe enumeration requires a bounded SMB named-pipe/Remote Registry adapter that is not implemented."
-		c.Modules = []string{"planner"}
+		c.Prerequisites, c.Discovery, c.Assessment, c.LabValidation = Supported, Supported, Supported, Supported
+		c.Reason = "Bounded authenticated SMB2/3 IPC$ winreg MS-RRP reads use a fixed SCCM registry allowlist and normalize site/role metadata without registry mutation."
+		c.Modules = []string{"live.smb.winreg", "report"}
 	case "RECON-7":
 		c.Discovery, c.Assessment = Partial, Partial
 		c.Reason = "Bounded offline/local SCCM artifact metadata discovery covers client log and registry locations, but normal live local-file assessment is not yet integrated."

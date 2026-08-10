@@ -101,6 +101,9 @@ func OrchestrationFor(technique string) OrchestrationSpec {
 	case "RECON-5":
 		spec.TargetRole, spec.Capability = "management_point_sms_provider", "sms_provider"
 		spec.Execution = "management_point_authority"
+	case "RECON-6":
+		spec.TargetRole, spec.Capability = "site_system", "remote_registry_read"
+		spec.Execution = "remote_network"
 	case "CRED-1":
 		spec.TargetRole, spec.Capability = "distribution_point_or_management_point", "packet_capture"
 	case "CRED-2", "CRED-3":
@@ -115,7 +118,7 @@ func OrchestrationFor(technique string) OrchestrationSpec {
 
 func familyTechniqueImplemented(id string) bool {
 	switch strings.ToUpper(id) {
-	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "CRED-1", "CRED-2", "CRED-3":
+	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "RECON-6", "CRED-1", "CRED-2", "CRED-3":
 		return true
 	default:
 		return false
@@ -203,6 +206,8 @@ func Resolve(in Input) Plan {
 			p.Modules = append(p.Modules, "live.smb.share_metadata")
 		case "RECON-3":
 			p.Modules = append(p.Modules, "live.sccm.http_recon")
+		case "RECON-6":
+			p.Modules = append(p.Modules, "live.smb.winreg")
 		}
 	}
 	p.Modules = unique(p.Modules)

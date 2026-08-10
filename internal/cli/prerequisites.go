@@ -185,7 +185,7 @@ func (s *state) printFamilyPlan(family string) {
 		if transport != "" {
 			route = transport
 		}
-		fmt.Fprintf(s.stdout, "  RECON-1  LDAP        directory/site context (%s)\n  RECON-2  SMB         site-system role discovery (%s)\n  RECON-3  HTTP        logical authority → %s (anonymous)\n  RECON-4  CMPivot     client via ConfigMgr authority (%s)\n\n", identity, identity, route, identity)
+		fmt.Fprintf(s.stdout, "  RECON-1  LDAP        directory/site context (%s)\n  RECON-2  SMB         site-system role discovery (%s)\n  RECON-3  HTTP        logical authority → %s (anonymous)\n  RECON-4  CMPivot     client via ConfigMgr authority (%s)\n  RECON-5  Provider    user/device relationships (%s)\n  RECON-6  winreg      site-system registry roles (%s)\n\n", identity, identity, route, identity, identity, identity)
 		return
 	}
 	fmt.Fprintf(s.stdout, "  CRED-1   PXE         anonymous network path\n  CRED-2   NAA         SCCM client context\n  CRED-3   NAA         SCCM client context\n\n")

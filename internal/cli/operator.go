@@ -26,6 +26,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/policy"
 	"github.com/Lmarkussen/CinderPath/internal/recon4"
+	"github.com/Lmarkussen/CinderPath/internal/recon6"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/Lmarkussen/CinderPath/internal/terminal"
 	"github.com/spf13/cobra"
@@ -440,6 +441,78 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			fmt.Fprintln(s.stdout, "\nStatus: completed")
 			return nil
 		}
+		if techniqueID == "RECON-6" {
+			if s.cfg.Workflow.Provider != "live" {
+				return s.renderBlocked(techniqueID, o.target, localPrerequisite{ID: "remote_registry", Name: "Remote Registry winreg capability", Status: "blocked", Reason: "RECON-6 requires the live authenticated SMB winreg adapter", Remediation: "select the live provider for an authorized target"}, o.format)
+			}
+			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
+			transport := os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP")
+			if transport == "" {
+				transport = o.target
+			}
+			smbOpts := live.SMBOptions{Server: transport, User: s.cfg.Identity.Username, PasswordEnv: s.cfg.Identity.PasswordEnv, PasswordFile: s.cfg.Identity.PasswordFile, Domain: s.cfg.WorkflowScope.Domain, Port: 445, ConnectTimeout: 5 * time.Second, OperationTimeout: s.cfg.Timeout}
+			parent := cmd.Context()
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(parent, s.cfg.Timeout)
+			defer cancel()
+			if err := live.ResolveSMBPassword(&smbOpts); err != nil {
+				return s.renderBlocked(techniqueID, o.target, localPrerequisite{ID: "smb_identity", Name: "SMB identity", Status: "blocked", Reason: err.Error(), Remediation: "configure --username with --password-env or --password-file"}, o.format)
+			}
+			result, err := recon6.Enumerate(ctx, recon6.Options{LogicalHost: o.target, Transport: transport, Username: s.cfg.Identity.Username, Password: smbOpts.Password, Domain: s.cfg.WorkflowScope.Domain, Timeout: s.cfg.Timeout})
+			if err != nil {
+				lower := strings.ToLower(err.Error())
+				status := "failed"
+				if strings.Contains(lower, "authentication_failed") {
+					status = "authentication_failed"
+				}
+				if strings.Contains(lower, "authorization_denied") {
+					status = "authorization_failed"
+				}
+				if strings.Contains(lower, "winreg_unavailable") || strings.Contains(lower, "target_unavailable") {
+					status = "blocked_prerequisite"
+				}
+				if o.format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": status, "reason": err.Error(), "target": redactedTarget(o.target), "transport": redactedTarget(transport), "redaction": s.outputPolicy().Metadata()})
+				}
+				if status == "blocked_prerequisite" {
+					return s.renderBlocked(techniqueID, o.target, localPrerequisite{ID: "remote_registry", Name: "Remote Registry winreg", Status: "blocked", Reason: err.Error(), Remediation: "verify that the authorized target exposes the Remote Registry winreg pipe"}, o.format)
+				}
+				return err
+			}
+			status := "completed"
+			if result.Partial {
+				status = "completed_with_partial_registry_evidence"
+			}
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": status, "target": redactedTarget(o.target), "transport": redactedTarget(transport), "protocol": "SMB2/3 IPC$ winreg MS-RRP read-only", "roles": result.Roles, "site_code": result.SiteCode, "site_server": result.SiteServer, "management_points": result.ManagementPoints, "site_database": result.SiteDatabase, "anonymous_access_enabled": result.AnonymousAccess, "pxe_enabled": result.PXE, "registry_values": result.Values, "registry_reads": result.Reads, "successful": result.Successful, "unavailable": result.Unavailable, "subkeys": result.Subkeys, "run_id": o.runID, "redaction": s.outputPolicy().Metadata()})
+			}
+			fmt.Fprintf(s.stdout, "RECON-6 — Enumerate SCCM roles via the SMB Named Pipe winreg\n\nTarget\n  Host: %s\n  Transport: %s\n  Protocol: SMB2/3 → IPC$ → winreg\n\nSCCM\n", o.target, transport)
+			if result.SiteCode != "" {
+				fmt.Fprintf(s.stdout, "  Site code             %s\n", result.SiteCode)
+			}
+			if result.SiteServer != "" {
+				fmt.Fprintf(s.stdout, "  Site server           %s\n", result.SiteServer)
+			}
+			if len(result.ManagementPoints) > 0 {
+				fmt.Fprintf(s.stdout, "  Management point      %s\n", strings.Join(result.ManagementPoints, ", "))
+			}
+			if result.SiteDatabase != "" {
+				fmt.Fprintf(s.stdout, "  Site database         %s\n", result.SiteDatabase)
+			}
+			for _, role := range result.Roles {
+				fmt.Fprintf(s.stdout, "  Role                  %s\n", role)
+			}
+			if result.AnonymousAccess != nil {
+				fmt.Fprintf(s.stdout, "  Anonymous access      %t\n", *result.AnonymousAccess)
+			}
+			if result.PXE != nil {
+				fmt.Fprintf(s.stdout, "  PXE                   %t\n", *result.PXE)
+			}
+			fmt.Fprintf(s.stdout, "\nEvidence\n  Registry reads         %d\n  Successful             %d\n  Unavailable            %d\n\nStatus: %s\n", result.Reads, result.Successful, result.Unavailable, status)
+			return nil
+		}
 		var prerequisiteRuns []app.Outcome
 		var executedPrerequisites []string
 		if s.cfg.Workflow.Provider == "live" && planHasCollection(plan) {
@@ -657,7 +730,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 			continue
 		}
 		childOptions := *o
-		if id == "RECON-3" || id == "RECON-4" || id == "RECON-5" {
+		if id == "RECON-3" || id == "RECON-4" || id == "RECON-5" || id == "RECON-6" {
 			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
 		}
 		// A family target is an environment/site-system root. RECON-4 always
@@ -897,7 +970,7 @@ func familyOutputReason(output, fallback string) string {
 
 func familyTechniqueImplemented(id string) bool {
 	switch id {
-	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "CRED-1", "CRED-2", "CRED-3":
+	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "RECON-6", "CRED-1", "CRED-2", "CRED-3":
 		return true
 	default:
 		return false

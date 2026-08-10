@@ -2779,21 +2779,23 @@
     {
       "technique_id": "RECON-6",
       "documentation": "supported",
-      "prerequisites": "partial",
-      "discovery": "unsupported",
-      "assessment": "blocked",
+      "prerequisites": "supported",
+      "discovery": "supported",
+      "assessment": "supported",
       "validation": "unsupported",
-      "execution": "unsupported",
+      "execution": "supported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
-      "lab_validation": "unsupported",
-      "reason": "Remote winreg named-pipe enumeration requires a bounded SMB named-pipe/Remote Registry adapter that is not implemented.",
+      "lab_validation": "supported",
+      "reason": "Bounded authenticated SMB2/3 IPC$ winreg MS-RRP reads use a fixed SCCM registry allowlist and normalize site/role metadata without registry mutation.",
       "modules": [
-        "planner"
+        "live.smb.winreg",
+        "report"
       ],
       "limitations": [
-        "No winreg named-pipe protocol operation",
-        "No remote registry reads"
+        "Fixed SOFTWARE\\Microsoft\\SMS allowlist",
+        "Remote Registry service must already be available",
+        "No registry mutation or arbitrary path input"
       ]
     },
     {
