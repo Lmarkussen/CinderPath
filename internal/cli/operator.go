@@ -184,6 +184,23 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		if !framework.IsProductTechnique(techniqueID) {
 			return fmt.Errorf("technique %q is out of scope: CinderPath supports attack families %s", techniqueID, strings.Join(framework.ProductFamilyNames(), ", "))
 		}
+		if techniqueID == "CRED-2" && s.cfg.Workflow.Provider == "live" {
+			if o.format != "text" && o.format != "json" {
+				return errors.New("CRED-2 format must be text or json")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			defer cancel()
+			out, err := s.application.AssessCRED2(ctx, o.target)
+			if err != nil {
+				return err
+			}
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": "CRED-2", "status": "completed", "target": redactedTarget(out.Host), "context": `NT AUTHORITY\\SYSTEM`, "source_namespace": cred2.NAANamespace, "source_class": cred2.NAAClass, "naa_policy": map[string]any{"username": "protected", "password": "protected"}, "recovery": map[string]any{"machine_dpapi": "usable", "username": "recovered", "password": "recovered"}, "recovered_credential": cred2SecretOutput(out.Credential, true), "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
+			}
+			result := cred2SecretOutput(out.Credential, s.outputPolicy().RedactSecrets)
+			fmt.Fprintf(s.stdout, "CRED-2 — Network Access Account Credential Recovery\n\nClient\n  Host: %s\n  SCCM client: detected\n  Context: NT AUTHORITY\\SYSTEM\n\nNAA policy\n  Username: protected\n  Password: protected\n\nRecovery\n  Machine DPAPI: usable\n  Username: recovered\n  Password: recovered\n\nRecovered credential\n  %s: %s\n\nStatus: completed\n", out.Host, result["username"], result["password"])
+			return nil
+		}
 		plan := s.techniquePlan(techniqueID, o.target, o.runID)
 		maxAge := time.Duration(s.cfg.Staleness.EvidenceDays) * 24 * time.Hour
 		support := "unsupported_or_unknown"
@@ -428,7 +445,7 @@ func (s *state) techniquePlan(technique, target, runID string) planner.Plan {
 			clientID, clientSource = identity.Identity.ClientID, identity.Identity.Source.Type
 		}
 	}
-	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, ClientID: clientID, ClientIdentitySource: clientSource, ClientIdentityReason: clientReason, AllowSafeLDAP: &s.cfg.Workflow.LDAP, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: maxAge})
+	return planner.Resolve(planner.Input{Technique: technique, Provider: s.cfg.Workflow.Provider, Target: target, DomainController: s.cfg.WorkflowScope.DomainController, Username: s.cfg.Identity.Username, ClientID: clientID, ClientIdentitySource: clientSource, ClientIdentityReason: clientReason, AllowSafeLDAP: &s.cfg.Workflow.LDAP, CurrentRun: runID, Evidence: evidence, Now: time.Now().UTC(), EvidenceMaxAge: maxAge, LocalExecution: strings.EqualFold(technique, "CRED-2")})
 }
 
 func (s *state) evidenceForRun(runID string) []models.Evidence {

@@ -14,6 +14,19 @@ func TestCredentialPlanSchedulesLDAPWhenFactsMissing(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 }
+
+func TestCRED2LocalPlanUsesClientRuntimePrerequisites(t *testing.T) {
+	p := Resolve(Input{Technique: "CRED-2", Provider: "live", Target: "CLIENT", LocalExecution: true, Now: time.Now()})
+	if len(p.Modules) != 0 || len(p.Prerequisites) != 4 {
+		t.Fatalf("unexpected local CRED-2 plan: %+v", p)
+	}
+	want := map[Fact]bool{LocalExecution: true, SCCMClient: true, SystemContext: true, CurrentNAA: true}
+	for _, d := range p.Prerequisites {
+		if !want[d.Fact] || d.State != Current {
+			t.Fatalf("unexpected local prerequisite: %+v", d)
+		}
+	}
+}
 func TestCurrentEvidenceSkipsLDAP(t *testing.T) {
 	now := time.Now()
 	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC", Username: "user", Now: now, Evidence: []models.Evidence{{Type: "ldap_rootdse", RunID: "run-current", CollectedAt: now, Data: map[string]any{"server": "DC"}}, {Type: "ldap_sccm_object", RunID: "run-current", CollectedAt: now}}})

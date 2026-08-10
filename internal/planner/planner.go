@@ -21,6 +21,10 @@ const (
 	Identity       Fact = "authenticated_identity"
 	ClientIdentity Fact = "client_identity"
 	PolicyEndpoint Fact = "policy_endpoint"
+	LocalExecution Fact = "local_windows_execution"
+	SCCMClient     Fact = "installed_sccm_client"
+	SystemContext  Fact = "system_context"
+	CurrentNAA     Fact = "current_naa_artifact"
 )
 
 type State string
@@ -56,6 +60,7 @@ type Input struct {
 	Evidence                                                              []models.Evidence
 	Now                                                                   time.Time
 	EvidenceMaxAge                                                        time.Duration
+	LocalExecution                                                        bool
 }
 type Plan struct {
 	Technique     string     `json:"technique"`
@@ -88,6 +93,15 @@ func Resolve(in Input) Plan {
 	p := Plan{Technique: strings.ToUpper(in.Technique)}
 	if !framework.IsProductTechnique(p.Technique) {
 		p.Prerequisites = []Decision{{Requirement: Requirement{Fact: "product_scope", Label: "CinderPath product scope"}, State: Unsupported, Reason: "technique family is out of scope; CinderPath supports CRED, ELEVATE, EXEC, RECON, TAKEOVER, and COERCE"}}
+		return p
+	}
+	if p.Technique == "CRED-2" && in.LocalExecution {
+		p.Prerequisites = []Decision{
+			{Requirement: Requirement{LocalExecution, "Windows local execution"}, State: Current, Reason: "CRED-2 local-client adapter selected; runtime verifies Windows"},
+			{Requirement: Requirement{SCCMClient, "installed SCCM client"}, State: Current, Reason: "runtime verifies the fixed SCCM WMI namespace"},
+			{Requirement: Requirement{SystemContext, `NT AUTHORITY\\SYSTEM context`}, State: Current, Reason: "runtime verifies the current security token"},
+			{Requirement: Requirement{CurrentNAA, "current CCM_NetworkAccessAccount artifact"}, State: Current, Reason: "runtime reads the current artifact and refuses historical evidence"},
+		}
 		return p
 	}
 	for _, r := range RequirementsFor(p.Technique) {

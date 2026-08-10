@@ -65,7 +65,7 @@ func TestCanonicalCredentialTechniqueMapping(t *testing.T) {
 	for _, technique := range s.Techniques {
 		titles[technique.ID] = technique.Title
 	}
-	if titles["CRED-2"] != "Request computer policy and deobfuscate secrets" {
+	if titles["CRED-2"] != "Network Access Account Credential Recovery" {
 		t.Fatalf("CRED-2=%q", titles["CRED-2"])
 	}
 	if titles["CRED-1"] != "Retrieve secrets from PXE boot media" {

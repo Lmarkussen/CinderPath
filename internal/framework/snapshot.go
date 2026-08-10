@@ -525,11 +525,16 @@ func normalizeID(id string) string {
 func defaultCoverage(id string) CoverageRecord {
 	c := CoverageRecord{TechniqueID: id, Documentation: Supported, Prerequisites: Partial, Discovery: Unsupported, Assessment: Unsupported, Validation: Unsupported, Execution: Unsupported, Cleanup: NotApplicable, DefenseAssessment: Unsupported, LabValidation: Unsupported, Reason: "No CinderPath module mapping has been asserted for this imported technique."}
 	switch id {
-	case "CRED-1", "CRED-2":
+	case "CRED-1":
 		c.Discovery, c.Assessment, c.LabValidation = Partial, Partial, Partial
 		c.Reason = "Existing SCCM capture, PXE posture, and targeted policy metadata support only bounded discovery and assessment; recovery and execution remain unsupported."
 		c.Modules = []string{"capture", "pxe", "localartifact"}
 		c.Limitations = []string{"No policy payload recovery", "No PXE/media retrieval", "No live client action"}
+	case "CRED-2":
+		c.Discovery, c.Assessment, c.LabValidation = Partial, Partial, Partial
+		c.Reason = "CinderPath provides a bounded local Windows SCCM-client adapter that recovers the current NAA under SYSTEM; remote policy acquisition and execution remain unsupported."
+		c.Modules = []string{"local_cred2"}
+		c.Limitations = []string{"Local Windows SCCM client and SYSTEM context required", "No remote policy acquisition", "No PXE/media retrieval"}
 	case "RECON-1", "RECON-2", "RECON-3", "RECON-4":
 		c.Prerequisites, c.Discovery, c.Assessment, c.LabValidation = Supported, Partial, Partial, Partial
 		c.Reason = "Existing bounded SCCM discovery and offline evidence modules provide partial reconnaissance coverage."

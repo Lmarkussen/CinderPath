@@ -102,7 +102,7 @@
       "id": "CRED-2",
       "family": "CRED",
       "kind": "attack",
-      "title": "Request computer policy and deobfuscate secrets",
+      "title": "Network Access Account Credential Recovery",
       "summary": "The [network access account](https://learn.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/accounts#network-access-account) (NAA) is a domain account that can be configured on the site server. Clients use the NAA to access and retrieve software from a distribution point but serves no other purpose on the client. The credentials are retrieved by clients as part of the Computer Policy. Upon receipt, the client will encrypt the NAA using the Data Protection API (DPAPI). But what happens before that? How are the secrets protected in transit before the client protects them with DPAPI?\nThe client's first step is to request a list of available policies. For this technique, only `NAAConfig` is covered. The `NAAConfig` policy contains the obfuscated NAA credentials. To request this policy, the request headers must contain some important information, all of which is available at this stage.\nThis policy endpoint also requires authentication. Specifically, it requires authentication as an SCCM client in an `Approved` status. SCCM's default setting is `Automatically approve computers in trusted domains (recommended)`. This means the MP will automatically approve any client registration requests from computers in a trusted domain, such as the MP's domain.\nThere are two options for the next step:\n1) compromise a computer account, such as local privilege escalation\n2) add a computer account to the domain.\nOption 2 is possible if the domain's `MachineAccountQuota` attribute is set to any value greater than `0` (the default value is `10`). Various tooling, such as Kevin Robertson's [Powermad](https://github.com/Kevin-Robertson/Powermad) can be used to add a computer account.\nThe `Default Domain Policy \u003e Computer Configuration \u003e Policies \u003e Windows Settings \u003e Security Settings \u003e User Rights Assignment \u003e Add workstations to domain` GPO can also be configured to a non-default principal (something other than `Domain Users`). If permission to add a computer object is denied and `MachineAccountQuota` is a non-zero value, it is likely this GPO is the culprit.\nWith this domain computer context, the computer can be registered as a client which will be automatically approved, then policy can be requested and deobfuscated, as discovered and published by Adam Chester in his [blog](https://blog.xpnsec.com/unobfuscating-network-access-accounts/) and [tool](https://github.com/xpn/sccmwtf).\nThis technique has also been built into [SharpSCCM](https://github.com/Mayyhem/SharpSCCM/wiki/get#get-naa--get-secrets) with the `get secrets` and `get naa` commands.\nThe `get secrets` command extends this technique to retrieve collection variables and task sequences from machine policies, which may also contain secrets such as credentials.",
       "requirements": [
         "PKI certificates are not required for client authentication [DEFAULT]",
@@ -2068,17 +2068,14 @@
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
       "lab_validation": "partial",
-      "reason": "Bounded offline policy-response classification and prerequisite planning support only partial discovery and assessment; live policy acquisition, recovery, and execution remain unsupported.",
+      "reason": "CinderPath provides a bounded local Windows SCCM-client adapter that recovers the current NAA under SYSTEM; remote policy acquisition and execution remain unsupported.",
       "modules": [
-        "capture",
-        "pxe",
-        "localartifact",
-        "policy"
+        "local_cred2"
       ],
       "limitations": [
-        "No policy payload recovery",
-        "No PXE/media retrieval",
-        "No live client action or policy request"
+        "Local Windows SCCM client and SYSTEM context required",
+        "No remote policy acquisition",
+        "No PXE/media retrieval"
       ]
     },
     {
