@@ -23,10 +23,10 @@ discover SCCM infrastructure
 | SMB role enumeration | Runtime validated in GOAD |
 | HTTP SCCM route assessment | Implemented; partial GOAD validation |
 | Evidence database and JSON/HTML reports | Implemented |
-| Local client policy analysis | Implemented; secret recovery pending |
+| Local client policy analysis | Implemented; current NAA recovery supported on Windows SCCM clients |
 | PXE/OSD posture analysis | Implemented; active deployment path not proven |
-| NAA credential recovery | Research foundation present; recovery not implemented |
-| Task-sequence secret recovery | Research foundation present; recovery not implemented |
+| NAA credential recovery | CRED-2/CRED-3 implemented and GOAD validated |
+| Task-sequence secret recovery | CRED-1 PXE path implemented and GOAD validated |
 | Execution and hierarchy takeover | Planned |
 
 ## Why CinderPath exists
@@ -59,6 +59,8 @@ Use `cinderpath framework coverage` to inspect the current matrix. Full support 
 
 **RECON-3 — SCCM role reconnaissance via HTTP.** The implemented adapter accepts one explicit SCCM host and makes at most ten anonymous requests across a fixed HTTP/HTTPS SCCM route allowlist. It persists request evidence and distinguishes transport failure from a completed run with no SCCM evidence. GOAD collection reached the selected target, but ports 80 and 443 refused connections, so RECON-3 remains only partially runtime validated. See [RECON-3](docs/TECHNIQUES/RECON-3.md).
 
+**RECON-4 through RECON-7 — additional reconnaissance.** RECON-4 is live validated through the explicit Kerberos/Negotiate AdminService path with one bounded `OperatingSystem` CMPivot query against one device. RECON-5 SMS Provider user/device inventory and RECON-6 winreg named-pipe enumeration remain blocked pending safe bounded protocol adapters. RECON-7 has a bounded offline/local-artifact metadata foundation but is not yet a normal live assessment. Family selectors report these states individually and never claim unsupported execution.
+
 ### SCCM discovery and topology
 
 The discovery pipeline supports explicit-scope DNS and bounded endpoint discovery, TCP connect checks, HTTP/TLS profiling, LDAP SCCM directory discovery, fixed management-point and distribution-point route checks, and passive role inference. Normalized assets, relationships, evidence, findings, credentials references, and capabilities are incrementally persisted in SQLite and rendered as machine-clean JSON or portable HTML reports.
@@ -81,9 +83,16 @@ The intended endgame is to identify deployed task sequences, validate PXE exposu
 
 | Technique coverage | Current state |
 |---|---|
-| RECON-1 | Supported and GOAD runtime validated |
-| RECON-2 | Supported and GOAD runtime validated |
-| RECON-3 | Implemented; partial GOAD runtime validation |
+| RECON-1 — Enumerate SCCM site information via LDAP | Supported and GOAD runtime validated |
+| RECON-2 — Enumerate SCCM roles via SMB | Supported and GOAD runtime validated |
+| RECON-3 — Enumerate SCCM roles via HTTP | Implemented; partial GOAD runtime validation |
+| RECON-4 — Query client devices via CMPivot | Complete and GOAD runtime validated; fixed single-device OperatingSystem query |
+| RECON-5 — Locate users via SMS Provider | Blocked; provider adapter missing |
+| RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Blocked; winreg adapter missing |
+| RECON-7 — Enumerate SCCM site information via local files | Partial; offline metadata foundation only |
+| CRED-1 — Retrieve secrets from PXE boot media | Complete and GOAD validated |
+| CRED-2 — Network Access Account Credential Recovery | Complete and GOAD validated |
+| CRED-3 — Dump Currently Deployed NAA Credentials | Complete and GOAD validated |
 | Remaining framework techniques | Cataloged and mapped, but not fully implemented |
 
 CinderPath reports support per capability dimension. It does not turn framework mappings or nearby reusable modules into broad implementation claims. See the [Misconfiguration Manager roadmap](docs/MISCONFIGURATION_MANAGER_ROADMAP.md) for the complete matrix and [current status](docs/STATUS.md) for verified results and limitations.
@@ -168,6 +177,8 @@ Assess one technique after configuring an explicitly authorized connector:
 
 ```bash
 ./bin/cinderpath assess RECON-1 --target example.local
+./bin/cinderpath assess RECON-ALL --target example.local --format json
+./bin/cinderpath assess CRED-ALL --target example.local --format json
 ```
 
 Operators select techniques and intent; CinderPath resolves safe prerequisites
@@ -200,6 +211,10 @@ Network-free planning and reporting:
 `assess technique RECON-1` remains a compatibility form. `assess TARGET`
 creates a safe target plan and never implies live validation; a technique ID is
 recognized from the embedded framework registry rather than hostname syntax.
+Family selectors such as `RECON-ALL` and `CRED-ALL` execute techniques in
+deterministic registry order, report each technique's name and state, and leave
+unavailable or context-incompatible techniques blocked rather than attempting
+remote orchestration.
 
 Explicit-scope discovery for an authorized target:
 
@@ -246,7 +261,13 @@ existing scripts and transcript tests.
 
 ## Project maturity and limitations
 
-CinderPath is early-stage software under active development. RECON-1 and RECON-2 are the only fully supported, GOAD-runtime-validated framework techniques; RECON-3 has partial runtime validation. Most of the 67-technique catalog remains documentation and planning metadata.
+CinderPath is early-stage software under active development. RECON-1,
+RECON-2, and RECON-4 are supported and GOAD-runtime-validated; RECON-3 is
+implemented with partial protocol-positive runtime validation. RECON-5 and
+RECON-6 are audited but blocked pending safe adapters, and RECON-7 remains
+partial. CRED-1,
+CRED-2, and CRED-3 are implemented and GOAD validated. The remaining catalog
+is documentation and planning metadata.
 
 Credential recovery, task-sequence content access, boot-media acquisition, active PXE validation, exploitation, hierarchy takeover, and automated state-changing cleanup are not currently supported. Lab validation covers specific GOAD systems and does not establish compatibility with every SCCM, Windows, PowerShell, or network configuration. Consult [docs/STATUS.md](docs/STATUS.md) before relying on a capability claim.
 
@@ -255,6 +276,7 @@ Credential recovery, task-sequence content access, boot-media acquisition, activ
 | Topic | Document |
 |---|---|
 | Current implementation and verified results | [docs/STATUS.md](docs/STATUS.md) |
+| RECON family audit | [docs/RECON_AUDIT.md](docs/RECON_AUDIT.md) |
 | Framework coverage and roadmap | [docs/MISCONFIGURATION_MANAGER_ROADMAP.md](docs/MISCONFIGURATION_MANAGER_ROADMAP.md) |
 | Technique documentation | [docs/TECHNIQUES](docs/TECHNIQUES) |
 | CLI design and public surface | [docs/CLI_DESIGN.md](docs/CLI_DESIGN.md) |

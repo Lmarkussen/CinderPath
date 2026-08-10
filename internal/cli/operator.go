@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/outputpolicy"
 	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/policy"
+	"github.com/Lmarkussen/CinderPath/internal/recon4"
 	"github.com/Lmarkussen/CinderPath/internal/scope"
 	"github.com/Lmarkussen/CinderPath/internal/terminal"
 	"github.com/spf13/cobra"
@@ -162,7 +164,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 	if o == nil {
 		o = &techniqueOptions{}
 	}
-	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		// These narrow overrides preserve config-first operation for one-off assessments.
 		if o.provider != "" {
 			s.cfg.Workflow.Provider = o.provider
@@ -181,6 +183,9 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		s.application.Config = s.cfg
 		techniqueID := strings.ToUpper(args[0])
+		if strings.HasSuffix(techniqueID, "-ALL") {
+			return s.assessTechniqueFamily(cmd.Context(), o, strings.TrimSuffix(techniqueID, "-ALL"))
+		}
 		if !framework.IsProductTechnique(techniqueID) {
 			return fmt.Errorf("technique %q is out of scope: CinderPath supports attack families %s", techniqueID, strings.Join(framework.ProductFamilyNames(), ", "))
 		}
@@ -216,6 +221,14 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			}
 			result := cred2SecretOutput(credential, s.outputPolicy().RedactSecrets)
 			fmt.Fprintf(s.stdout, "%s\n\nClient\n  Host: %s\n  SCCM client: detected\n  Context: NT AUTHORITY\\SYSTEM\n\nCurrent NAA policy\n  CCM_NetworkAccessAccount: present\n  Username: protected\n  Password: protected\n\nRecovery\n  Machine DPAPI: usable\n  Username: recovered\n  Password: recovered\n\nRecovered credential\n  %s: %s\n\nStatus: %s\n", title, host, result["username"], result["password"], status)
+			return nil
+		}
+		if strings.HasPrefix(techniqueID, "RECON-") && !familyTechniqueImplemented(techniqueID) {
+			reason := "canonical RECON technique is registered, but no safe CinderPath adapter is available"
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": "blocked", "reason": reason, "target": redactedTarget(o.target), "redaction": s.outputPolicy().Metadata()})
+			}
+			fmt.Fprintf(s.stdout, "%s — %s\nTarget: %s\nStatus: blocked\nReason: %s\n", techniqueID, techniqueTitle(techniqueID), redactedTarget(o.target), reason)
 			return nil
 		}
 		plan := s.techniquePlan(techniqueID, o.target, o.runID)
@@ -288,14 +301,14 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 					status = string(out.Run.Status)
 				}
 				if o.format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "smb_ipc_srvsvc_share_metadata_only", "selected_modules": []string{"live.smb.share_metadata"}, "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
 				}
 				s.printRECON2Text(techniqueID, o.target, status, out, support)
 				return nil
 			}
 			if o.format == "json" {
 				return json.NewEncoder(s.stdout).Encode(map[string]any{
-					"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "redaction": s.outputPolicy().Metadata(),
+					"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "redaction": s.outputPolicy().Metadata(),
 					"assessment_support": support, "network_behavior": "none", "selected_modules": []string{},
 					"limitations": []string{"configure the existing authorized live connector for bounded authenticated SMB share metadata", "no SMB protocol request was sent"}, "live_policy_requests": 0, "run_id": o.runID,
 				})
@@ -317,15 +330,38 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 					status = string(out.Run.Status)
 				}
 				if o.format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "sccm_http_allowlist_only", "selected_modules": []string{"live.sccm.http_recon"}, "request_summary": out.TechniqueSummary, "assets": out.Assets, "findings": out.Findings, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
 				}
 				s.printRECON3Text(techniqueID, o.target, status, out, support)
 				return nil
 			}
 			if o.format == "json" {
-				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": o.runID, "redaction": s.outputPolicy().Metadata()})
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "framework_revision": snapshotRevision(), "status": "not_run_no_connector", "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "none", "selected_modules": []string{}, "limitations": []string{"configure the existing authorized live connector for fixed SCCM HTTP route reconnaissance", "no HTTP request was sent"}, "run_id": o.runID, "redaction": s.outputPolicy().Metadata()})
 			}
 			fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nTarget ID: %s\nFramework revision: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no findings are available\nAssessment support: %s\nWould check: one explicit host using the fixed anonymous SCCM HTTP GET/HEAD route allowlist\nSelected modules: none\nNetwork behavior: none\nLimitation: configure the existing authorized live connector; no HTTP request was sent\n", techniqueID, redactedTarget(o.target), targetID(o.target), snapshotRevision(), support)
+			return nil
+		}
+		if techniqueID == "RECON-4" {
+			if s.cfg.Workflow.Provider != "live" {
+				return fmt.Errorf("RECON-4 requires --provider live")
+			}
+			parent := cmd.Context()
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(parent, s.cfg.Timeout)
+			defer cancel()
+			out, err := s.application.AssessRECON4(ctx, o.target)
+			if err != nil {
+				if o.format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": "blocked_or_failed", "reason": err.Error(), "target": redactedTarget(o.target), "redaction": s.outputPolicy().Metadata()})
+				}
+				return err
+			}
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": "completed", "target": redactedTarget(o.target), "device": out.Result.Device, "operation_id": out.Result.OperationID, "query": recon4.FixedQuery, "rows": out.Result.Rows, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
+			}
+			fmt.Fprintf(s.stdout, "RECON-4 — Query Client Devices via CMPivot\n\nClient\n  Name: %s\n  Machine ID: %d\n  Site: %s\n  Client version: %s\n\nCMPivot\n  Fixed query: %s\n  Operation: %d\n  Rows: %d\n\nStatus: completed\n", out.Result.Device.Name, out.Result.Device.MachineID, out.Result.Device.SiteCode, out.Result.Device.ClientVersion, recon4.FixedQuery, out.Result.OperationID, len(out.Result.Rows))
 			return nil
 		}
 		var prerequisiteRuns []app.Outcome
@@ -346,7 +382,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 					runID = prerequisiteRuns[len(prerequisiteRuns)-1].Run.ID
 				}
 				if o.format == "json" {
-					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "status": status, "prerequisites": plan.Prerequisites, "prerequisite_collection": prerequisiteRuns, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": status, "prerequisites": plan.Prerequisites, "prerequisite_collection": prerequisiteRuns, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()})
 				}
 				s.printTechniqueText(techniqueID, o.target, status, "Result: safe prerequisite collection did not complete; no technique assessment was performed", executedPrerequisites, runID, support)
 				printPrerequisites(s.stdout, s.renderer, plan)
@@ -358,7 +394,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			status = "blocked_by_safety_gate"
 		}
 		if o.format == "json" {
-			result := map[string]any{"technique_id": techniqueID, "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"safe prerequisites are resolved automatically when authorized"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
+			result := map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "framework_revision": snapshotRevision(), "status": status, "target": redactedTarget(o.target), "target_id": targetID(o.target), "assessment_support": support, "network_behavior": "none", "run_id": o.runID, "prerequisites": plan.Prerequisites, "execution_plan": plan.Modules, "next_actions": []string{"safe prerequisites are resolved automatically when authorized"}, "live_policy_requests": 0, "redaction": s.outputPolicy().Metadata()}
 			if len(prerequisiteRuns) > 0 {
 				result["prerequisite_collection"] = map[string]any{"runs": prerequisiteRuns, "modules": executedPrerequisites}
 			}
@@ -390,6 +426,136 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		return nil
 	}}
 	return c
+}
+
+func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, family string) error {
+	if family == "" {
+		return errors.New("family selector requires a family name")
+	}
+	valid := false
+	for _, name := range framework.ProductFamilyNames() {
+		if name == family {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("unknown technique family %q", family)
+	}
+	snapshot, err := framework.EmbeddedSnapshot()
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0)
+	for _, technique := range snapshot.Techniques {
+		if technique.Family == family {
+			ids = append(ids, technique.ID)
+		}
+	}
+	sort.Strings(ids)
+	results := make([]map[string]any, 0, len(ids))
+	executed, findings, blocked, notApplicable := 0, 0, 0, 0
+	for _, id := range ids {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		result := map[string]any{"technique_id": id, "technique_name": techniqueTitle(id)}
+		if !familyTechniqueImplemented(id) {
+			result["status"] = "blocked"
+			result["reason"] = "canonical technique is registered, but no safe CinderPath adapter is available"
+			blocked++
+			results = append(results, result)
+			continue
+		}
+		childOptions := *o
+		var captured bytes.Buffer
+		previous := s.stdout
+		s.stdout = &captured
+		child := s.assessTechniqueCommand(&childOptions)
+		childErr := child.RunE(child, []string{id})
+		s.stdout = previous
+		if childErr != nil {
+			result["status"] = "failed"
+			result["reason"] = childErr.Error()
+			blocked++
+		} else {
+			executed++
+			if o.format == "json" {
+				var value any
+				if json.Unmarshal(captured.Bytes(), &value) == nil {
+					result["result"] = value
+					if nested, ok := value.(map[string]any); ok {
+						if status, ok := nested["status"].(string); ok {
+							result["status"] = status
+							if strings.Contains(status, "blocked") || strings.Contains(status, "not_run") || strings.Contains(status, "requires_") {
+								executed--
+								blocked++
+							}
+						}
+					}
+				}
+				if _, ok := result["status"]; !ok {
+					if captured.Len() > 0 {
+						result["status"] = "completed"
+						result["output"] = captured.String()
+					} else {
+						executed--
+						blocked++
+						result["status"] = "failed"
+						result["reason"] = "technique returned no family output"
+					}
+				}
+			} else {
+				result["status"] = "completed"
+				result["output"] = captured.String()
+			}
+		}
+		results = append(results, result)
+	}
+	for _, result := range results {
+		if status, _ := result["status"].(string); strings.Contains(status, "finding") || status == "vulnerable" || status == "completed_with_sccm_evidence" {
+			findings++
+		}
+	}
+	if o.format == "json" {
+		return json.NewEncoder(s.stdout).Encode(map[string]any{"family": family, "status": "completed", "techniques": results, "summary": map[string]int{"executed": executed, "findings": findings, "blocked": blocked, "not_applicable": notApplicable}, "redaction": s.outputPolicy().Metadata()})
+	}
+	fmt.Fprintf(s.stdout, "%s family assessment\n\n", family)
+	for _, result := range results {
+		fmt.Fprintf(s.stdout, "%s — %s\n  %s", result["technique_id"], result["technique_name"], result["status"])
+		if reason, ok := result["reason"].(string); ok {
+			fmt.Fprintf(s.stdout, "\n  Reason: %s", reason)
+		}
+		if output, ok := result["output"].(string); ok {
+			fmt.Fprintf(s.stdout, "\n%s", output)
+		}
+		fmt.Fprintln(s.stdout)
+	}
+	fmt.Fprintf(s.stdout, "Summary:\n  Executed: %d\n  Findings: %d\n  Blocked: %d\n  Not applicable: %d\n", executed, findings, blocked, notApplicable)
+	return nil
+}
+
+func familyTechniqueImplemented(id string) bool {
+	switch id {
+	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "CRED-1", "CRED-2", "CRED-3":
+		return true
+	default:
+		return false
+	}
+}
+
+func techniqueTitle(id string) string {
+	snapshot, err := framework.EmbeddedSnapshot()
+	if err == nil {
+		for _, technique := range snapshot.Techniques {
+			if technique.ID == id {
+				return technique.Title
+			}
+		}
+	}
+	return id
 }
 
 // cred1Secrets intentionally derives output solely from this fresh assessment
@@ -488,7 +654,7 @@ func (s *state) evidenceForRun(runID string) []models.Evidence {
 }
 
 func (s *state) printTechniqueHeader(id, target, status string) {
-	fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nStatus: %s\n", id, s.renderer.Target(redactedTarget(target)), s.renderer.Status(status))
+	fmt.Fprintf(s.stdout, "Technique: %s — %s\nTarget: %s\nStatus: %s\n", id, techniqueTitle(id), s.renderer.Target(redactedTarget(target)), s.renderer.Status(status))
 }
 
 func (s *state) printTechniqueFooter(modules []string, runID, support string) {

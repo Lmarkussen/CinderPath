@@ -540,10 +540,30 @@ func defaultCoverage(id string) CoverageRecord {
 		c.Reason = "CinderPath provides a bounded local Windows SCCM-client adapter that recovers the currently deployed NAA under SYSTEM; historical CIM-repository recovery and remote execution remain unsupported."
 		c.Modules = []string{"local_cred3"}
 		c.Limitations = []string{"Local Windows SCCM client and SYSTEM context required", "Current WMI artifact only", "No OBJECTS.DATA or remote recovery"}
-	case "RECON-1", "RECON-2", "RECON-3", "RECON-4":
+	case "RECON-1", "RECON-2":
 		c.Prerequisites, c.Discovery, c.Assessment, c.LabValidation = Supported, Partial, Partial, Partial
 		c.Reason = "Existing bounded SCCM discovery and offline evidence modules provide partial reconnaissance coverage."
 		c.Modules = []string{"discovery", "capture", "report"}
+	case "RECON-3":
+		c.Discovery, c.Assessment, c.LabValidation = Partial, Partial, Partial
+		c.Reason = "Bounded anonymous SCCM HTTP route reconnaissance is implemented; protocol-positive runtime validation remains partial."
+		c.Modules = []string{"live.sccm.http_recon", "report"}
+	case "RECON-4":
+		c.Discovery, c.Assessment, c.LabValidation = Partial, Supported, Supported
+		c.Reason = "Bounded explicit-Kerberos AdminService CMPivot execution is live validated against one client using the fixed OperatingSystem query; arbitrary queries and collection-wide execution remain unsupported."
+		c.Modules = []string{"recon4.cmpivot", "internal.negotiate", "report"}
+	case "RECON-5":
+		c.Assessment = Blocked
+		c.Reason = "SMS Provider user/device inventory queries require an authenticated ConfigMgr provider adapter that is not implemented."
+		c.Modules = []string{"planner"}
+	case "RECON-6":
+		c.Assessment = Blocked
+		c.Reason = "Remote winreg named-pipe enumeration requires a bounded SMB named-pipe/Remote Registry adapter that is not implemented."
+		c.Modules = []string{"planner"}
+	case "RECON-7":
+		c.Discovery, c.Assessment = Partial, Partial
+		c.Reason = "Bounded offline/local SCCM artifact metadata discovery covers client log and registry locations, but normal live local-file assessment is not yet integrated."
+		c.Modules = []string{"localartifact", "planner"}
 	}
 	return c
 }

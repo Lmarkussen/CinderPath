@@ -358,6 +358,29 @@ func TestSimplifiedAssessmentAndRunForms(t *testing.T) {
 	}
 }
 
+func TestFamilySelectorsAreRegistryBackedAndDeterministic(t *testing.T) {
+	out, stderr, err := executeForTest(t, "assess", "RECON-ALL", "--target", "SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" || !strings.Contains(out, `"family":"RECON"`) || !strings.Contains(out, `"technique_id":"RECON-7"`) {
+		t.Fatalf("RECON-ALL: err=%v stderr=%q output=%q", err, stderr, out)
+	}
+	var result struct {
+		Techniques []struct {
+			ID string `json:"technique_id"`
+		} `json:"techniques"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil || len(result.Techniques) != 7 || result.Techniques[0].ID != "RECON-1" || result.Techniques[6].ID != "RECON-7" {
+		t.Fatalf("unexpected deterministic family result: err=%v result=%+v", err, result)
+	}
+	out, _, err = executeForTest(t, "assess", "CRED-ALL", "--target", "SCCM.LAB", "--format", "json")
+	if err != nil || !strings.Contains(out, `"family":"CRED"`) || !strings.Contains(out, `"technique_id":"CRED-3"`) {
+		t.Fatalf("CRED-ALL: err=%v output=%q", err, out)
+	}
+	_, _, err = executeForTest(t, "assess", "UNKNOWN-ALL", "--target", "SCCM.LAB")
+	if err == nil || !strings.Contains(err.Error(), "not a framework technique") {
+		t.Fatalf("unknown family was not rejected: %v", err)
+	}
+}
+
 func TestFrameworkProvenanceText(t *testing.T) {
 	out, stderr, err := executeForTest(t, "framework", "coverage", "--framework", "misconfiguration-manager")
 	if err != nil || stderr != "" {

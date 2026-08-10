@@ -2730,10 +2730,9 @@
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
       "lab_validation": "partial",
-      "reason": "Existing bounded SCCM discovery and offline evidence modules provide partial reconnaissance coverage.",
+      "reason": "Bounded anonymous SCCM HTTP route reconnaissance is implemented; GOAD transport was reached but exposed no responsive HTTP/SCCM route, so protocol-positive runtime validation remains partial.",
       "modules": [
-        "discovery",
-        "capture",
+        "live.sccm.http_recon",
         "report"
       ]
     },
@@ -2742,16 +2741,16 @@
       "documentation": "supported",
       "prerequisites": "supported",
       "discovery": "partial",
-      "assessment": "partial",
-      "validation": "unsupported",
+      "assessment": "supported",
+      "validation": "supported",
       "execution": "unsupported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
-      "lab_validation": "partial",
-      "reason": "Existing bounded SCCM discovery and offline evidence modules provide partial reconnaissance coverage.",
+      "lab_validation": "supported",
+      "reason": "Bounded explicit-Kerberos AdminService CMPivot execution is live validated against one client using the fixed OperatingSystem query; arbitrary queries and collection-wide execution remain unsupported.",
       "modules": [
-        "discovery",
-        "capture",
+        "recon4.cmpivot",
+        "internal.negotiate",
         "report"
       ]
     },
@@ -2760,39 +2759,61 @@
       "documentation": "supported",
       "prerequisites": "partial",
       "discovery": "unsupported",
-      "assessment": "unsupported",
+      "assessment": "blocked",
       "validation": "unsupported",
       "execution": "unsupported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
       "lab_validation": "unsupported",
-      "reason": "No CinderPath module mapping has been asserted for this imported technique."
+      "reason": "SMS Provider user/device inventory queries require an authenticated ConfigMgr provider adapter that is not implemented.",
+      "modules": [
+        "planner"
+      ],
+      "limitations": [
+        "No SMS Provider or AdminService query",
+        "No user/device inventory evidence"
+      ]
     },
     {
       "technique_id": "RECON-6",
       "documentation": "supported",
       "prerequisites": "partial",
       "discovery": "unsupported",
-      "assessment": "unsupported",
+      "assessment": "blocked",
       "validation": "unsupported",
       "execution": "unsupported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
       "lab_validation": "unsupported",
-      "reason": "No CinderPath module mapping has been asserted for this imported technique."
+      "reason": "Remote winreg named-pipe enumeration requires a bounded SMB named-pipe/Remote Registry adapter that is not implemented.",
+      "modules": [
+        "planner"
+      ],
+      "limitations": [
+        "No winreg named-pipe protocol operation",
+        "No remote registry reads"
+      ]
     },
     {
       "technique_id": "RECON-7",
       "documentation": "supported",
       "prerequisites": "partial",
-      "discovery": "unsupported",
-      "assessment": "unsupported",
+      "discovery": "partial",
+      "assessment": "partial",
       "validation": "unsupported",
       "execution": "unsupported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
       "lab_validation": "unsupported",
-      "reason": "No CinderPath module mapping has been asserted for this imported technique."
+      "reason": "Bounded offline/local SCCM artifact metadata discovery covers client log and registry locations, but normal live local-file assessment is not yet integrated.",
+      "modules": [
+        "localartifact",
+        "planner"
+      ],
+      "limitations": [
+        "Metadata-only artifact workflow",
+        "No normal live file-content enumeration"
+      ]
     },
     {
       "technique_id": "TAKEOVER-1",

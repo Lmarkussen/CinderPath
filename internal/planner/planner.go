@@ -2,6 +2,7 @@
 package planner
 
 import (
+	"os"
 	"strings"
 	"time"
 
@@ -12,19 +13,24 @@ import (
 type Fact string
 
 const (
-	DomainContext  Fact = "domain_context"
-	RootDSE        Fact = "rootdse"
-	SiteCode       Fact = "site_code"
-	ManagementPt   Fact = "management_point"
-	SMBTarget      Fact = "smb_target"
-	HTTPTarget     Fact = "http_target"
-	Identity       Fact = "authenticated_identity"
-	ClientIdentity Fact = "client_identity"
-	PolicyEndpoint Fact = "policy_endpoint"
-	LocalExecution Fact = "local_windows_execution"
-	SCCMClient     Fact = "installed_sccm_client"
-	SystemContext  Fact = "system_context"
-	CurrentNAA     Fact = "current_naa_artifact"
+	DomainContext      Fact = "domain_context"
+	RootDSE            Fact = "rootdse"
+	SiteCode           Fact = "site_code"
+	ManagementPt       Fact = "management_point"
+	SMBTarget          Fact = "smb_target"
+	HTTPTarget         Fact = "http_target"
+	Identity           Fact = "authenticated_identity"
+	ClientIdentity     Fact = "client_identity"
+	PolicyEndpoint     Fact = "policy_endpoint"
+	LocalExecution     Fact = "local_windows_execution"
+	SCCMClient         Fact = "installed_sccm_client"
+	SystemContext      Fact = "system_context"
+	CurrentNAA         Fact = "current_naa_artifact"
+	SMSProvider        Fact = "sms_provider"
+	CMPivotAccess      Fact = "cmpivot_permission"
+	RemoteRegistry     Fact = "remote_registry"
+	LocalSCCMFiles     Fact = "local_sccm_files"
+	ConfigMgrNegotiate Fact = "explicit_configmgr_negotiate"
 )
 
 type State string
@@ -76,6 +82,14 @@ func RequirementsFor(technique string) []Requirement {
 		return []Requirement{{SMBTarget, "SMB target"}, {Identity, "Authorized identity"}}
 	case "RECON-3":
 		return []Requirement{{HTTPTarget, "HTTP target"}}
+	case "RECON-4":
+		return []Requirement{{SMSProvider, "SMS Provider"}, {CMPivotAccess, "CMPivot permission"}, {ConfigMgrNegotiate, "explicit ConfigMgr Negotiate authentication"}}
+	case "RECON-5":
+		return []Requirement{{SMSProvider, "SMS Provider"}, {Identity, "ConfigMgr authorized identity"}}
+	case "RECON-6":
+		return []Requirement{{SMBTarget, "SMB target"}, {RemoteRegistry, "Remote Registry winreg"}, {Identity, "Authorized identity"}}
+	case "RECON-7":
+		return []Requirement{{LocalSCCMFiles, "local SCCM client files"}}
 	case "CRED-2":
 		return []Requirement{{DomainContext, "Domain context"}, {RootDSE, "RootDSE"}, {SiteCode, "SCCM site"}, {ManagementPt, "Management point"}, {Identity, "Authorized identity"}, {ClientIdentity, "Existing SCCM client identity"}, {PolicyEndpoint, "Policy endpoint"}}
 	default:
@@ -102,6 +116,26 @@ func Resolve(in Input) Plan {
 			{Requirement: Requirement{SCCMClient, "installed SCCM client"}, State: Current, Reason: "runtime verifies the fixed SCCM WMI namespace"},
 			{Requirement: Requirement{SystemContext, `NT AUTHORITY\\SYSTEM context`}, State: Current, Reason: "runtime verifies the current security token"},
 			{Requirement: Requirement{CurrentNAA, "current CCM_NetworkAccessAccount artifact"}, State: Current, Reason: "runtime reads the current artifact and refuses historical evidence"},
+		}
+		return p
+	}
+	if p.Technique == "RECON-4" {
+		p.Prerequisites = []Decision{
+			{Requirement: Requirement{Fact: HTTPTarget, Label: "ConfigMgr AdminService target"}, State: func() State {
+				if in.Target != "" {
+					return Current
+				}
+				return OperatorInput
+			}(), Reason: "explicit client target is required"},
+			{Requirement: Requirement{Fact: ConfigMgrNegotiate, Label: "explicit ConfigMgr Negotiate authentication"}, State: func() State {
+				if in.Username != "" && os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY") != "" && os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP") != "" {
+					return Current
+				}
+				return OperatorInput
+			}(), Reason: "explicit identity and ConfigMgr authority/transport configuration are required"},
+		}
+		if executable(p.Prerequisites) {
+			p.Modules = []string{"recon4.cmpivot"}
 		}
 		return p
 	}

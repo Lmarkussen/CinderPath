@@ -387,6 +387,9 @@ func (s *state) assessCommand() *cobra.Command {
 	technique := &techniqueOptions{}
 	c := &cobra.Command{Use: "assess [TARGET_OR_TECHNIQUE]", Short: "Assess a target or supported technique without active validation", Long: "Assess stored or mock-safe evidence. A technique ID selects its bounded adapter; another target creates a safe assessment plan. Unsupported and active stages remain clearly blocked.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 {
+			if strings.HasSuffix(strings.ToUpper(strings.TrimSpace(args[0])), "-ALL") && !isFrameworkTechnique(args[0]) {
+				return fmt.Errorf("%q is not a framework technique or supported family selector", args[0])
+			}
 			if isFrameworkTechnique(args[0]) {
 				return s.assessTechniqueCommand(technique).RunE(cmd, args)
 			}
@@ -429,6 +432,16 @@ func targetCount(target string) int {
 }
 
 func isFrameworkTechnique(value string) bool {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if strings.HasSuffix(value, "-ALL") {
+		family := strings.TrimSuffix(value, "-ALL")
+		for _, name := range framework.ProductFamilyNames() {
+			if name == family {
+				return true
+			}
+		}
+		return false
+	}
 	snapshot, err := framework.EmbeddedSnapshot()
 	if err != nil {
 		return false
