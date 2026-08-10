@@ -95,9 +95,10 @@ func Resolve(in Input) Plan {
 		p.Prerequisites = []Decision{{Requirement: Requirement{Fact: "product_scope", Label: "CinderPath product scope"}, State: Unsupported, Reason: "technique family is out of scope; CinderPath supports CRED, ELEVATE, EXEC, RECON, TAKEOVER, and COERCE"}}
 		return p
 	}
-	if p.Technique == "CRED-2" && in.LocalExecution {
+	if (p.Technique == "CRED-2" || p.Technique == "CRED-3") && in.LocalExecution {
+		adapterReason := p.Technique + " local-client adapter selected; runtime verifies Windows"
 		p.Prerequisites = []Decision{
-			{Requirement: Requirement{LocalExecution, "Windows local execution"}, State: Current, Reason: "CRED-2 local-client adapter selected; runtime verifies Windows"},
+			{Requirement: Requirement{LocalExecution, "Windows local execution"}, State: Current, Reason: adapterReason},
 			{Requirement: Requirement{SCCMClient, "installed SCCM client"}, State: Current, Reason: "runtime verifies the fixed SCCM WMI namespace"},
 			{Requirement: Requirement{SystemContext, `NT AUTHORITY\\SYSTEM context`}, State: Current, Reason: "runtime verifies the current security token"},
 			{Requirement: Requirement{CurrentNAA, "current CCM_NetworkAccessAccount artifact"}, State: Current, Reason: "runtime reads the current artifact and refuses historical evidence"},

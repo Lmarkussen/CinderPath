@@ -68,6 +68,9 @@ func TestCanonicalCredentialTechniqueMapping(t *testing.T) {
 	if titles["CRED-2"] != "Network Access Account Credential Recovery" {
 		t.Fatalf("CRED-2=%q", titles["CRED-2"])
 	}
+	if titles["CRED-3"] != "Dump Currently Deployed NAA Credentials" {
+		t.Fatalf("CRED-3=%q", titles["CRED-3"])
+	}
 	if titles["CRED-1"] != "Retrieve secrets from PXE boot media" {
 		t.Fatalf("CRED-1=%q", titles["CRED-1"])
 	}

@@ -535,6 +535,11 @@ func defaultCoverage(id string) CoverageRecord {
 		c.Reason = "CinderPath provides a bounded local Windows SCCM-client adapter that recovers the current NAA under SYSTEM; remote policy acquisition and execution remain unsupported."
 		c.Modules = []string{"local_cred2"}
 		c.Limitations = []string{"Local Windows SCCM client and SYSTEM context required", "No remote policy acquisition", "No PXE/media retrieval"}
+	case "CRED-3":
+		c.Discovery, c.Assessment, c.LabValidation = Partial, Partial, Partial
+		c.Reason = "CinderPath provides a bounded local Windows SCCM-client adapter that recovers the currently deployed NAA under SYSTEM; historical CIM-repository recovery and remote execution remain unsupported."
+		c.Modules = []string{"local_cred3"}
+		c.Limitations = []string{"Local Windows SCCM client and SYSTEM context required", "Current WMI artifact only", "No OBJECTS.DATA or remote recovery"}
 	case "RECON-1", "RECON-2", "RECON-3", "RECON-4":
 		c.Prerequisites, c.Discovery, c.Assessment, c.LabValidation = Supported, Partial, Partial, Partial
 		c.Reason = "Existing bounded SCCM discovery and offline evidence modules provide partial reconnaissance coverage."

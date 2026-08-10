@@ -126,7 +126,7 @@
       "id": "CRED-3",
       "family": "CRED",
       "kind": "attack",
-      "title": "Dump currently deployed secrets via WMI",
+      "title": "Dump Currently Deployed NAA Credentials",
       "summary": "The [network access account](https://learn.microsoft.com/en-us/mem/configmgr/core/plan-design/hierarchy/accounts#network-access-account) (NAA) is a domain account that can be configured on the site server. Clients use the NAA to access and retrieve software from a distribution point, but it serves no other purpose on the client. The credentials are retrieved by clients as part of the Computer Policy. Once received by the client, the credentials are stored in the `CCM_NetworkAccessAccount` class in the `root\\ccm\\policy\\Machine\\ActualConfig` WMI namespace. This can be verified with the following PowerShell one-liner: `Get-WmiObject -namespace \"root\\ccm\\policy\\Machine\\ActualConfig\" -class \"CCM_NetworkAccessAccount\"`.\nWithin this class, there exists two members of interest: `NetworkAccessUsername` and `NetworkAccessPassword`, which contain hexidecimal strings of encrypted data. This data is protected via the Data Protection API (DPAPI) and the SYSTEM DPAPI masterkey. Therefore, we must be elevated on the host in order to retrieve the SYSTEM masterkey which can then be used to decrypt the secrets. This technique applies only to currently-configured NAAs.\nThis process is automated in [SharpDPAPI](https://github.com/GhostPack/SharpDPAPI?tab=readme-ov-file#sccm) and [SharpSCCM](https://github.com/Mayyhem/SharpSCCM).\nA successful decryption result of `00 00 0E 0E 0E 0E...` indicates that the site server is configured to instruct the client to use its [machine account](https://twitter.com/subat0mik/status/1582387536147582976?s=20) for the NAA.\nThe SharpSCCM `local secrets -m wmi` command extends this technique to retrieve collection variables and task sequences via WMI, which may also contain secrets such as credentials.",
       "requirements": [
         "Local administrator privileges on an SCCM client"
@@ -2082,14 +2082,22 @@
       "technique_id": "CRED-3",
       "documentation": "supported",
       "prerequisites": "partial",
-      "discovery": "unsupported",
-      "assessment": "unsupported",
+      "discovery": "partial",
+      "assessment": "partial",
       "validation": "unsupported",
       "execution": "unsupported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
-      "lab_validation": "unsupported",
-      "reason": "No CinderPath module mapping has been asserted for this imported technique."
+      "lab_validation": "partial",
+      "reason": "CinderPath provides a bounded local Windows SCCM-client adapter that recovers the currently deployed NAA under SYSTEM; historical CIM-repository recovery and remote execution remain unsupported.",
+      "modules": [
+        "local_cred3"
+      ],
+      "limitations": [
+        "Local Windows SCCM client and SYSTEM context required",
+        "Current WMI artifact only",
+        "No OBJECTS.DATA or remote recovery"
+      ]
     },
     {
       "technique_id": "CRED-4",

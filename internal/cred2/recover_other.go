@@ -7,6 +7,6 @@ import (
 	"errors"
 )
 
-func recoverLocal(context.Context) (Credential, error) {
-	return Credential{}, errors.New("CRED-2 local recovery requires Windows on an SCCM client")
+func recoverLocal(_ context.Context, technique string) (Credential, error) {
+	return Credential{}, errors.New(technique + " local recovery requires Windows on an SCCM client")
 }
