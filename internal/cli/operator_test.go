@@ -146,6 +146,55 @@ func TestLocalTechniqueContextIsBlockedRatherThanFailed(t *testing.T) {
 	}
 }
 
+func TestFamilyResultsClassifyUnsupportedAndPreserveParentAttribution(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "family.db"))
+	out, stderr, err := executeForTest(t, "assess", "CRED-ALL", "--provider", "mock", "--target", "MECM.SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["parent_run"] != "assess CRED-ALL" {
+		t.Fatalf("parent attribution=%v", result["parent_run"])
+	}
+	techniques, _ := result["techniques"].([]any)
+	for _, raw := range techniques {
+		item := raw.(map[string]any)
+		if item["technique_id"] == "CRED-4" {
+			if item["classification"] != "unsupported" || item["status"] != "blocked" {
+				t.Fatalf("unsupported classification=%v", item)
+			}
+		}
+		if item["parent_run"] != "assess CRED-ALL" {
+			t.Fatalf("child parent attribution=%v", item["parent_run"])
+		}
+	}
+	summary := result["summary"].(map[string]any)
+	if summary["unsupported"] == nil {
+		t.Fatalf("unsupported summary missing: %v", summary)
+	}
+}
+
+func TestFamilyPreservesPartialCoverageClassification(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "recon-family.db"))
+	out, _, err := executeForTest(t, "assess", "RECON-ALL", "--provider", "mock", "--target", "SCCM.LAB", "--format", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range result["techniques"].([]any) {
+		item := raw.(map[string]any)
+		if item["technique_id"] == "RECON-7" && item["classification"] != "partial" {
+			t.Fatalf("RECON-7 classification=%v", item)
+		}
+	}
+}
+
 func TestCRED1CurrentOutputDoesNotReuseHistoricalSecret(t *testing.T) {
 	fresh := cred1.PolicyResult{TaskSequences: []cred1.TaskSequence{{
 		PackageID: "P01TEST", DeploymentID: "P01DEPLOYMENT",

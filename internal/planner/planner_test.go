@@ -39,6 +39,19 @@ func TestCRED3LocalPlanUsesCurrentClientPrerequisites(t *testing.T) {
 		}
 	}
 }
+
+func TestOrchestrationMetadataKeepsFamilyRootAndChildRolesDistinct(t *testing.T) {
+	if got := OrchestrationFor("RECON-4"); got.TargetRole != "sccm_client_via_management_point" || got.Execution != "management_point_authority" || !got.Implemented {
+		t.Fatalf("RECON-4 orchestration=%+v", got)
+	}
+	if got := OrchestrationFor("CRED-2"); got.TargetRole != "sccm_client" || got.Execution != "local_sccm_client" || !got.Implemented {
+		t.Fatalf("CRED-2 orchestration=%+v", got)
+	}
+	if got := OrchestrationFor("RECON-5"); got.Implemented || got.TargetRole != "environment_root" {
+		t.Fatalf("unsupported RECON-5 orchestration=%+v", got)
+	}
+}
+
 func TestCurrentEvidenceSkipsLDAP(t *testing.T) {
 	now := time.Now()
 	p := Resolve(Input{Technique: "CRED-2", Provider: "live", DomainController: "DC", Username: "user", Now: now, Evidence: []models.Evidence{{Type: "ldap_rootdse", RunID: "run-current", CollectedAt: now, Data: map[string]any{"server": "DC"}}, {Type: "ldap_sccm_object", RunID: "run-current", CollectedAt: now}}})

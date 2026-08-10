@@ -14,9 +14,15 @@ its own implementation and runtime state.
 | RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Read-only remote registry metadata through the `winreg` named pipe | Blocked | Requires a bounded SMB named-pipe/Remote Registry adapter |
 | RECON-7 — Enumerate SCCM site information via local files | Read SCCM client logs and management-point registry metadata | Partial | Requires local SCCM client access; current artifact workflow is metadata-only/offline |
 
-`RECON-ALL` runs implemented techniques in registry order and reports blocked
-techniques individually. It does not create remote execution or ConfigMgr
-orchestration capabilities implicitly.
+`RECON-ALL` treats its supplied target as an environment/site-system root and
+plans each child against the role it actually needs. RECON-3 retains the
+management-point logical authority and transport evidence; RECON-4 resolves a
+bounded ConfigMgr client candidate while using that management point as its
+AdminService authority. Missing identity/topology is reported as a blocked
+prerequisite, unsupported adapters remain unsupported, and protocol errors are
+reported as failures. Techniques run in deterministic registry order and one
+child does not prevent independent children from running. The selector does
+not create remote execution or ConfigMgr orchestration capabilities implicitly.
 
 The RECON-4 AdminService oracle returned the expected unauthenticated `401`
 with `WWW-Authenticate: Negotiate`. The explicit Kerberos/SPNEGO transport

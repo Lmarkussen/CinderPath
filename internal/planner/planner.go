@@ -74,6 +74,51 @@ type Plan struct {
 	Modules       []string   `json:"modules"`
 }
 
+// OrchestrationSpec describes how a family selector should interpret the
+// environment target. It is intentionally small: family runners use this
+// metadata to route a child without turning the planner into a scheduler.
+type OrchestrationSpec struct {
+	Technique   string `json:"technique"`
+	TargetRole  string `json:"target_role"`
+	Execution   string `json:"execution_locality"`
+	Capability  string `json:"required_capability,omitempty"`
+	Implemented bool   `json:"implemented"`
+}
+
+func OrchestrationFor(technique string) OrchestrationSpec {
+	id := strings.ToUpper(strings.TrimSpace(technique))
+	spec := OrchestrationSpec{Technique: id, TargetRole: "environment_root", Execution: "current_assessment_host"}
+	switch id {
+	case "RECON-1":
+		spec.TargetRole, spec.Capability = "directory_site_context", "ldap_identity"
+	case "RECON-2":
+		spec.TargetRole, spec.Capability = "site_system", "sccm_smb"
+	case "RECON-3":
+		spec.TargetRole, spec.Capability = "management_point", "sccm_http"
+	case "RECON-4":
+		spec.TargetRole, spec.Capability = "sccm_client_via_management_point", "explicit_configmgr_negotiate"
+		spec.Execution = "management_point_authority"
+	case "CRED-1":
+		spec.TargetRole, spec.Capability = "distribution_point_or_management_point", "packet_capture"
+	case "CRED-2", "CRED-3":
+		spec.TargetRole, spec.Capability = "sccm_client", "local_sccm_client_context"
+		spec.Execution = "local_sccm_client"
+	default:
+		return spec
+	}
+	spec.Implemented = familyTechniqueImplemented(id)
+	return spec
+}
+
+func familyTechniqueImplemented(id string) bool {
+	switch strings.ToUpper(id) {
+	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "CRED-1", "CRED-2", "CRED-3":
+		return true
+	default:
+		return false
+	}
+}
+
 func RequirementsFor(technique string) []Requirement {
 	switch strings.ToUpper(technique) {
 	case "RECON-1":

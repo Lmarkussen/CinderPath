@@ -551,7 +551,9 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 	}
 	sort.Strings(ids)
 	results := make([]map[string]any, 0, len(ids))
+	parentRun := "assess " + family + "-ALL"
 	executed, findings, blocked, failed, notApplicable := 0, 0, 0, 0, 0
+	blockedPrerequisites, unsupported, partial := 0, 0, 0
 	familyCRED1Blocked := false
 	if family == "CRED" && s.cfg.Workflow.Provider == "live" && o.format == "text" {
 		// Resolve the shared CRED-1 local capture requirement once before any
@@ -569,18 +571,27 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 			return ctx.Err()
 		default:
 		}
-		result := map[string]any{"technique_id": id, "technique_name": techniqueTitle(id)}
+		result := map[string]any{"technique_id": id, "technique_name": techniqueTitle(id), "parent_run": parentRun, "orchestration": planner.OrchestrationFor(id)}
 		if !familyTechniqueImplemented(id) {
 			result["status"] = "blocked"
-			result["reason"] = "canonical technique is registered, but no safe CinderPath adapter is available"
+			classification, reason := familyUnsupportedClassification(id)
+			result["classification"] = classification
+			result["reason"] = reason
 			blocked++
+			if classification == "partial" {
+				partial++
+			} else {
+				unsupported++
+			}
 			results = append(results, result)
 			continue
 		}
 		if id == "CRED-1" && familyCRED1Blocked {
 			result["status"] = "blocked"
+			result["classification"] = "blocked_prerequisite"
 			result["reason"] = "packet-capture prerequisite was not satisfied"
 			blocked++
+			blockedPrerequisites++
 			results = append(results, result)
 			continue
 		}
@@ -588,7 +599,10 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		if id == "RECON-3" || id == "RECON-4" {
 			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
 		}
-		if id == "RECON-4" && strings.EqualFold(strings.TrimSpace(o.target), strings.TrimSpace(os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY"))) {
+		// A family target is an environment/site-system root. RECON-4 always
+		// resolves its own bounded client target while retaining the ConfigMgr
+		// authority/transport established above.
+		if id == "RECON-4" && s.cfg.Workflow.Provider == "live" {
 			resolved, resolveErr := s.resolveFamilyRECON4Target(ctx)
 			if resolveErr != nil {
 				result["status"] = "blocked"
@@ -609,7 +623,15 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		if childErr != nil {
 			result["status"] = "failed"
 			result["reason"] = childErr.Error()
-			failed++
+			if isFamilyPrerequisiteError(id, childErr) {
+				result["status"] = "blocked"
+				result["classification"] = "blocked_prerequisite"
+				blocked++
+				blockedPrerequisites++
+			} else {
+				result["classification"] = "failed"
+				failed++
+			}
 		} else {
 			executed++
 			if o.format == "json" {
@@ -626,9 +648,15 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 									result["reason"] = status
 								}
 							}
+							if strings.Contains(status, "blocked") || strings.Contains(status, "requires_") {
+								result["classification"] = "blocked_prerequisite"
+							} else if strings.Contains(status, "failed") || strings.Contains(status, "error") {
+								result["classification"] = "failed"
+							}
 							if strings.Contains(status, "blocked") || strings.Contains(status, "not_run") || strings.Contains(status, "requires_") {
 								executed--
 								blocked++
+								blockedPrerequisites++
 							} else if strings.Contains(status, "failed") || strings.Contains(status, "error") || strings.Contains(status, "resolution_failed") || strings.Contains(status, "connection_failed") {
 								executed--
 								failed++
@@ -655,10 +683,13 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 					executed--
 					blocked++
 					result["status"] = "blocked"
+					result["classification"] = "blocked_prerequisite"
+					blockedPrerequisites++
 					result["reason"] = familyOutputReason(text, "blocked")
 				} else if strings.Contains(lower, "status: ✗") || strings.Contains(lower, "status: failed") || strings.Contains(lower, "endpoint_resolution_failed") {
 					executed--
 					failed++
+					result["classification"] = "failed"
 					result["status"] = "failed"
 				} else {
 					result["status"] = "completed"
@@ -674,7 +705,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		}
 	}
 	if o.format == "json" {
-		return json.NewEncoder(s.stdout).Encode(map[string]any{"family": family, "status": "completed", "techniques": results, "summary": map[string]int{"executed": executed, "findings": findings, "blocked": blocked, "failed": failed, "not_applicable": notApplicable}, "redaction": s.outputPolicy().Metadata()})
+		return json.NewEncoder(s.stdout).Encode(map[string]any{"family": family, "status": "completed", "parent_run": parentRun, "techniques": results, "summary": map[string]int{"executed": executed, "findings": findings, "blocked": blocked, "blocked_prerequisites": blockedPrerequisites, "unsupported": unsupported, "partial": partial, "failed": failed, "not_applicable": notApplicable}, "redaction": s.outputPolicy().Metadata()})
 	}
 	fmt.Fprintf(s.stdout, "%s family assessment\nTarget: %s\n\n", family, s.renderer.Target(redactedTarget(o.target)))
 	s.printIdentitySummary()
@@ -702,14 +733,27 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 	fmt.Fprintln(s.stdout, "Techniques")
 	for _, result := range results {
 		status, _ := result["status"].(string)
+		classification, _ := result["classification"].(string)
 		label := status
-		switch status {
-		case "blocked":
-			label = s.renderer.Warning("BLOCKED")
+		switch classification {
+		case "unsupported":
+			label = s.renderer.Warning("UNSUPPORTED")
+		case "partial":
+			label = s.renderer.Warning("PARTIAL")
+		case "blocked_prerequisite":
+			label = s.renderer.Warning("BLOCKED PREREQUISITE")
 		case "failed":
 			label = s.renderer.Failure("FAILED")
-		case "completed", "vulnerable", "completed_with_sccm_evidence":
-			label = s.renderer.Success("COMPLETED")
+		}
+		if classification == "" {
+			switch status {
+			case "blocked":
+				label = s.renderer.Warning("BLOCKED")
+			case "failed":
+				label = s.renderer.Failure("FAILED")
+			case "completed", "vulnerable", "completed_with_sccm_evidence":
+				label = s.renderer.Success("COMPLETED")
+			}
 		}
 		fmt.Fprintf(s.stdout, "%s %s — %s\n  %s", s.renderer.Target(fmt.Sprint(result["technique_id"])), fmt.Sprint(result["technique_name"]), label, status)
 		if reason, ok := result["reason"].(string); ok {
@@ -720,8 +764,37 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		}
 		fmt.Fprintln(s.stdout)
 	}
-	fmt.Fprintf(s.stdout, "Summary:\n  Executed: %d\n  Findings: %d\n  Blocked: %d\n  Failed: %d\n  Not applicable: %d\n", executed, findings, blocked, failed, notApplicable)
+	fmt.Fprintf(s.stdout, "Summary:\n  Executed: %d\n  Findings: %d\n  Blocked prerequisites: %d\n  Partial: %d\n  Unsupported: %d\n  Failed: %d\n  Not applicable: %d\n", executed, findings, blockedPrerequisites, partial, unsupported, failed, notApplicable)
 	return nil
+}
+
+func familyUnsupportedClassification(id string) (string, string) {
+	if snapshot, err := framework.EmbeddedSnapshot(); err == nil {
+		for _, coverage := range snapshot.Coverage {
+			if coverage.TechniqueID != id {
+				continue
+			}
+			if coverage.Assessment == framework.Partial {
+				return "partial", coverage.Reason
+			}
+			break
+		}
+	}
+	return "unsupported", "canonical technique is registered, but no safe CinderPath adapter is available"
+}
+
+func isFamilyPrerequisiteError(id string, err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	markers := []string{"requires explicit", "requires execution", "requires a", "not configured", "no current", "no applicable", "identity", "prerequisite", "target client is required", "not this host"}
+	for _, marker := range markers {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return id == "CRED-2" || id == "CRED-3"
 }
 
 func stripANSI(text string) string {

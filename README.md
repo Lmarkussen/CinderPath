@@ -211,10 +211,15 @@ Network-free planning and reporting:
 `assess technique RECON-1` remains a compatibility form. `assess TARGET`
 creates a safe target plan and never implies live validation; a technique ID is
 recognized from the embedded framework registry rather than hostname syntax.
-Family selectors such as `RECON-ALL` and `CRED-ALL` execute techniques in
-deterministic registry order, report each technique's name and state, and leave
-unavailable or context-incompatible techniques blocked rather than attempting
-remote orchestration.
+Family selectors such as `RECON-ALL` and `CRED-ALL` are bounded orchestration
+layers. Their target is an environment/root starting point; each child plan
+resolves the appropriate discovered role (for example, a management point for
+HTTP or a client device for CMPivot) instead of blindly inheriting that string.
+They execute in deterministic registry order, report each technique's name and
+state, and leave unavailable or context-incompatible techniques blocked rather
+than attempting remote orchestration. A blocked prerequisite (missing identity,
+topology, or local context) is distinct from an adapter that is unsupported and
+from an operation that actually failed.
 
 Before a live technique starts, CinderPath checks only the prerequisites that
 technique needs. For example, CRED-1 checks the Linux/libpcap capture path and
