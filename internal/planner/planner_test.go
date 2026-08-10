@@ -47,8 +47,19 @@ func TestOrchestrationMetadataKeepsFamilyRootAndChildRolesDistinct(t *testing.T)
 	if got := OrchestrationFor("CRED-2"); got.TargetRole != "sccm_client" || got.Execution != "local_sccm_client" || !got.Implemented {
 		t.Fatalf("CRED-2 orchestration=%+v", got)
 	}
-	if got := OrchestrationFor("RECON-5"); got.Implemented || got.TargetRole != "environment_root" {
-		t.Fatalf("unsupported RECON-5 orchestration=%+v", got)
+	if got := OrchestrationFor("RECON-5"); got.TargetRole != "management_point_sms_provider" || got.Execution != "management_point_authority" || !got.Implemented {
+		t.Fatalf("RECON-5 orchestration=%+v", got)
+	}
+}
+
+func TestRECON5RequiresProviderIdentityAndUsesManagementPointRole(t *testing.T) {
+	p := Resolve(Input{Technique: "RECON-5", Provider: "live", Target: "MECM.SCCM.LAB", Now: time.Now()})
+	if len(p.Prerequisites) != 2 || p.Prerequisites[0].Fact != SMSProvider || p.Prerequisites[1].Fact != Identity {
+		t.Fatalf("RECON-5 prerequisites=%+v", p.Prerequisites)
+	}
+	spec := OrchestrationFor("RECON-5")
+	if !spec.Implemented || spec.TargetRole != "management_point_sms_provider" || spec.Capability != "sms_provider" {
+		t.Fatalf("RECON-5 spec=%+v", spec)
 	}
 }
 

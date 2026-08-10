@@ -59,7 +59,7 @@ Use `cinderpath framework coverage` to inspect the current matrix. Full support 
 
 **RECON-3 — SCCM role reconnaissance via HTTP.** The bounded adapter accepts one explicit SCCM host and makes at most ten anonymous requests across a fixed HTTP/HTTPS SCCM route allowlist. It persists normalized request evidence, distinguishes transport failure from a completed run with no SCCM evidence, and permits one bounded TLS renegotiation required by the GOAD IIS endpoint. GOAD validation observed the anonymous MP list and bounded DP route responses. See [RECON-3](docs/TECHNIQUES/RECON-3.md).
 
-**RECON-4 through RECON-7 — additional reconnaissance.** RECON-4 is live validated through the explicit Kerberos/Negotiate AdminService path with one bounded `OperatingSystem` CMPivot query against one device. RECON-5 SMS Provider user/device inventory and RECON-6 winreg named-pipe enumeration remain blocked pending safe bounded protocol adapters. RECON-7 has a bounded offline/local-artifact metadata foundation but is not yet a normal live assessment. Family selectors report these states individually and never claim unsupported execution.
+**RECON-4 through RECON-7 — additional reconnaissance.** RECON-4 is live validated through the explicit Kerberos/Negotiate AdminService path with one bounded `OperatingSystem` CMPivot query against one device. RECON-5 is live validated through an explicit Kerberos/Negotiate AdminService WMI query of bounded user/device-affinity metadata. RECON-6 remains blocked pending a safe winreg named-pipe adapter, and RECON-7 has a bounded offline/local-artifact metadata foundation but is not yet a normal live assessment. Family selectors report these states individually and never claim unsupported execution.
 
 ### SCCM discovery and topology
 
@@ -87,7 +87,7 @@ The intended endgame is to identify deployed task sequences, validate PXE exposu
 | RECON-2 — Enumerate SCCM roles via SMB | Supported and GOAD runtime validated |
 | RECON-3 — Enumerate SCCM roles via HTTP | Complete and GOAD runtime validated |
 | RECON-4 — Query client devices via CMPivot | Complete and GOAD runtime validated; fixed single-device OperatingSystem query |
-| RECON-5 — Locate users via SMS Provider | Blocked; provider adapter missing |
+| RECON-5 — Locate users via SMS Provider | Complete; GOAD validated |
 | RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Blocked; winreg adapter missing |
 | RECON-7 — Enumerate SCCM site information via local files | Partial; offline metadata foundation only |
 | CRED-1 — Retrieve secrets from PXE boot media | Complete and GOAD validated |
@@ -289,9 +289,8 @@ existing scripts and transcript tests.
 ## Project maturity and limitations
 
 CinderPath is early-stage software under active development. RECON-1 through
-RECON-4 are supported and GOAD-runtime-validated. RECON-5 and
-RECON-6 are audited but blocked pending safe adapters, and RECON-7 remains
-partial. CRED-1,
+RECON-5 are supported and GOAD-runtime-validated. RECON-6 is audited but
+blocked pending a safe adapter, and RECON-7 remains partial. CRED-1,
 CRED-2, and CRED-3 are implemented and GOAD validated. The remaining catalog
 is documentation and planning metadata.
 

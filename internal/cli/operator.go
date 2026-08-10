@@ -144,7 +144,7 @@ func (s *state) assessWorkflowCommand(kind string) *cobra.Command {
 }
 
 type techniqueOptions struct {
-	target, runID, format, provider, domainController, username, passwordEnv, passwordFile string
+	target, runID, format, provider, domainController, username, passwordEnv, passwordFile, lookupUser string
 }
 
 func bindTechniqueOptions(f interface {
@@ -158,6 +158,7 @@ func bindTechniqueOptions(f interface {
 	f.StringVar(&o.username, "username", "", "authorized identity username")
 	f.StringVar(&o.passwordEnv, "password-env", "", "environment variable containing the identity password")
 	f.StringVar(&o.passwordFile, "password-file", "", "bounded file containing the identity password")
+	f.StringVar(&o.lookupUser, "lookup-user", "", "optional exact RECON-5 user identity filter")
 }
 
 func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
@@ -392,6 +393,53 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			fmt.Fprintf(s.stdout, "RECON-4 — Query Client Devices via CMPivot\n\nClient\n  Name: %s\n  Machine ID: %d\n  Site: %s\n  Client version: %s\n\nCMPivot\n  Fixed query: %s\n  Operation: %d\n  Rows: %d\n\nStatus: completed\n", out.Result.Device.Name, out.Result.Device.MachineID, out.Result.Device.SiteCode, out.Result.Device.ClientVersion, recon4.FixedQuery, out.Result.OperationID, len(out.Result.Rows))
 			return nil
 		}
+		if techniqueID == "RECON-5" {
+			if s.cfg.Workflow.Provider != "live" {
+				if o.format == "json" {
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": "not_run_no_connector", "target": redactedTarget(o.target), "network_behavior": "none", "limitations": []string{"configure the existing authorized live ConfigMgr connector; no SMS Provider request was sent"}, "redaction": s.outputPolicy().Metadata()})
+				}
+				fmt.Fprintf(s.stdout, "Technique: %s\nTarget: %s\nExecution status: not_run_no_connector\nResult: no assessment performed; no SMS Provider request was sent\n", techniqueID, redactedTarget(o.target))
+				return nil
+			}
+			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
+			parent := cmd.Context()
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(parent, s.cfg.Timeout)
+			defer cancel()
+			out, err := s.application.AssessRECON5(ctx, o.target, o.lookupUser)
+			if err != nil {
+				if o.format == "json" {
+					status := "failed"
+					if recon5ErrorIsBlocked(err) {
+						status = "blocked_prerequisite"
+					}
+					if strings.Contains(strings.ToLower(err.Error()), "authentication failed") {
+						status = "authentication_failed"
+					} else if strings.Contains(strings.ToLower(err.Error()), "authorization denied") {
+						status = "authorization_failed"
+					}
+					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": status, "reason": err.Error(), "target": redactedTarget(o.target), "redaction": s.outputPolicy().Metadata()})
+				}
+				if recon5ErrorIsBlocked(err) {
+					return s.renderBlocked(techniqueID, o.target, localPrerequisite{ID: "sms_provider_capability", Name: "SMS Provider capability", Status: "blocked", Reason: err.Error(), Remediation: "configure an explicit ConfigMgr-authorized Kerberos identity and current management-point topology"}, o.format)
+				}
+				return err
+			}
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": "completed", "target": redactedTarget(o.target), "records": out.Result.Records, "record_count": len(out.Result.Records), "truncated": out.Result.Truncated, "query": out.Result.Query, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata()})
+			}
+			fmt.Fprintf(s.stdout, "RECON-5 — Locate users via SMS Provider\n\nSMS Provider\n  Query: %s\n  Records: %d\n  Truncated: %t\n\nLocated users/devices\n", out.Result.Query, len(out.Result.Records), out.Result.Truncated)
+			for _, record := range out.Result.Records {
+				fmt.Fprintf(s.stdout, "  %s → %s (resource %d)\n", record.Username, record.Device, record.ResourceID)
+			}
+			if len(out.Result.Records) == 0 {
+				fmt.Fprintln(s.stdout, "  no matching user/device relationships")
+			}
+			fmt.Fprintln(s.stdout, "\nStatus: completed")
+			return nil
+		}
 		var prerequisiteRuns []app.Outcome
 		var executedPrerequisites []string
 		if s.cfg.Workflow.Provider == "live" && planHasCollection(plan) {
@@ -459,6 +507,19 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 func recon4ErrorIsBlocked(err error) bool {
 	text := strings.ToLower(err.Error())
 	for _, marker := range []string{"requires", "not found", "not configured", "unavailable", "unauthorized", "forbidden", "identity", "authority", "transport"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func recon5ErrorIsBlocked(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	for _, marker := range []string{"requires explicit", "requires an explicit", "not configured", "topology", "identity"} {
 		if strings.Contains(text, marker) {
 			return true
 		}
@@ -596,7 +657,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 			continue
 		}
 		childOptions := *o
-		if id == "RECON-3" || id == "RECON-4" {
+		if id == "RECON-3" || id == "RECON-4" || id == "RECON-5" {
 			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
 		}
 		// A family target is an environment/site-system root. RECON-4 always
@@ -836,7 +897,7 @@ func familyOutputReason(output, fallback string) string {
 
 func familyTechniqueImplemented(id string) bool {
 	switch id {
-	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "CRED-1", "CRED-2", "CRED-3":
+	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "CRED-1", "CRED-2", "CRED-3":
 		return true
 	default:
 		return false

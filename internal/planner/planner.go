@@ -98,6 +98,9 @@ func OrchestrationFor(technique string) OrchestrationSpec {
 	case "RECON-4":
 		spec.TargetRole, spec.Capability = "sccm_client_via_management_point", "explicit_configmgr_negotiate"
 		spec.Execution = "management_point_authority"
+	case "RECON-5":
+		spec.TargetRole, spec.Capability = "management_point_sms_provider", "sms_provider"
+		spec.Execution = "management_point_authority"
 	case "CRED-1":
 		spec.TargetRole, spec.Capability = "distribution_point_or_management_point", "packet_capture"
 	case "CRED-2", "CRED-3":
@@ -112,7 +115,7 @@ func OrchestrationFor(technique string) OrchestrationSpec {
 
 func familyTechniqueImplemented(id string) bool {
 	switch strings.ToUpper(id) {
-	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "CRED-1", "CRED-2", "CRED-3":
+	case "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "CRED-1", "CRED-2", "CRED-3":
 		return true
 	default:
 		return false

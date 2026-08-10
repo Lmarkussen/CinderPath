@@ -2757,21 +2757,23 @@
     {
       "technique_id": "RECON-5",
       "documentation": "supported",
-      "prerequisites": "partial",
-      "discovery": "unsupported",
-      "assessment": "blocked",
-      "validation": "unsupported",
-      "execution": "unsupported",
+      "prerequisites": "supported",
+      "discovery": "supported",
+      "assessment": "supported",
+      "validation": "supported",
+      "execution": "supported",
       "cleanup": "not_applicable",
       "defense_assessment": "unsupported",
-      "lab_validation": "unsupported",
-      "reason": "SMS Provider user/device inventory queries require an authenticated ConfigMgr provider adapter that is not implemented.",
+      "lab_validation": "supported",
+      "reason": "Bounded explicit-Kerberos AdminService WMI access to SMS_UserMachineRelationship is live validated; results are normalized to user/device metadata and arbitrary WQL is not exposed.",
       "modules": [
-        "planner"
+        "recon5.sms_provider",
+        "internal.negotiate",
+        "report"
       ],
       "limitations": [
-        "No SMS Provider or AdminService query",
-        "No user/device inventory evidence"
+        "Bounded to 128 user/device relationships per request",
+        "Optional exact-user filter only; arbitrary WQL is unsupported"
       ]
     },
     {

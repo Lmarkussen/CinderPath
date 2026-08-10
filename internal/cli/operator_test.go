@@ -195,6 +195,17 @@ func TestFamilyPreservesPartialCoverageClassification(t *testing.T) {
 	}
 }
 
+func TestRECON5MockDoesNotRequireLiveProviderOrExposeArbitraryQuery(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "recon5.db"))
+	out, stderr, err := executeForTest(t, "assess", "RECON-5", "--provider", "mock", "--target", "MECM.SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	if strings.Contains(out, "--query") || !strings.Contains(out, "not_run_no_connector") || !strings.Contains(out, "RECON-5") {
+		t.Fatalf("unexpected RECON-5 mock output: %s", out)
+	}
+}
+
 func TestCRED1CurrentOutputDoesNotReuseHistoricalSecret(t *testing.T) {
 	fresh := cred1.PolicyResult{TaskSequences: []cred1.TaskSequence{{
 		PackageID: "P01TEST", DeploymentID: "P01DEPLOYMENT",
