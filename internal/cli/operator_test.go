@@ -12,6 +12,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/cred1"
+	"github.com/Lmarkussen/CinderPath/internal/cred2"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/policy"
@@ -55,6 +56,19 @@ func TestCRED1CurrentOutputDoesNotReuseHistoricalSecret(t *testing.T) {
 	}
 	if got := cred1Secrets(fresh, true); len(got) != 1 || got[0]["value"] != "<redacted>" {
 		t.Fatalf("CRED-1 redaction=%v", got)
+	}
+}
+
+func TestCRED2SecretOutputRedaction(t *testing.T) {
+	fresh := cred2.Credential{Username: "Example\\naa", Password: "Example-Secret"}
+	if got := cred2SecretOutput(fresh, false); got["username"] != fresh.Username || got["password"] != fresh.Password {
+		t.Fatalf("unexpected current CRED-2 output: %v", got)
+	}
+	if got := cred2SecretOutput(fresh, true); got["username"] != "<redacted>" || got["password"] != "<redacted>" {
+		t.Fatalf("CRED-2 redaction failed: %v", got)
+	}
+	if got := cred2SecretOutput(cred2.Credential{}, false); got["username"] != "" || got["password"] != "" {
+		t.Fatalf("historical CRED-2 credential leaked into empty current result: %v", got)
 	}
 }
 

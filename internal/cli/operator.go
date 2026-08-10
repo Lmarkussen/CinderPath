@@ -16,6 +16,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/artifact"
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/cred1"
+	"github.com/Lmarkussen/CinderPath/internal/cred2"
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/framework"
@@ -373,6 +374,16 @@ func cred1Secrets(result cred1.PolicyResult, redact bool) []map[string]string {
 		}
 	}
 	return secrets
+}
+
+// cred2SecretOutput is derived only from the current in-memory recovery.
+// CRED-2 values are never rehydrated from SQLite or reports.
+func cred2SecretOutput(result cred2.Credential, redact bool) map[string]string {
+	username, password := result.Username, result.Password
+	if redact {
+		username, password = "<redacted>", "<redacted>"
+	}
+	return map[string]string{"credential_type": "network_access_account", "username": username, "password": password, "recovery_state": "locally_recovered_not_authenticated"}
 }
 
 func techniquePlanStatus(plan planner.Plan) string {
@@ -872,7 +883,21 @@ func (s *state) debugCommand(root *cobra.Command) *cobra.Command {
 	metrics := &cobra.Command{Use: "cli-complexity", Short: "Report generated CLI complexity metrics and public budgets", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 		return json.NewEncoder(s.stdout).Encode(buildComplexity(buildCommandInventory(root)))
 	}}
-	debug.AddCommand(inv, metrics)
+	var localFormat string
+	local := &cobra.Command{Use: "cred2-local", Short: "Recover the current local SCCM Network Access Account as SYSTEM", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		credential, err := cred2.RecoverLocal(cmd.Context())
+		if err != nil {
+			return err
+		}
+		result := cred2SecretOutput(credential, s.redactSecrets)
+		if localFormat == "json" {
+			return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": "CRED-2", "status": "completed", "source_namespace": cred2.NAANamespace, "source_class": cred2.NAAClass, "recovered_credential": cred2SecretOutput(credential, true), "plaintext_recovered": true, "redaction": s.outputPolicy().Metadata()})
+		}
+		fmt.Fprintf(s.stdout, "CRED-2 — Network Access Account Credential Recovery\n\nClient\n  SCCM client: detected\n\nNAA policy\n  Source: %s:%s\n  Username: protected\n  Password: protected\n\nRecovery\n  machine DPAPI context: usable (LOCAL SYSTEM)\n  username: recovered\n  password: recovered\n\nRecovered credential\n  %s: %s\n\nStatus: completed\n", cred2.NAANamespace, cred2.NAAClass, result["username"], result["password"])
+		return nil
+	}}
+	local.Flags().StringVar(&localFormat, "format", "text", "text or json")
+	debug.AddCommand(inv, metrics, local)
 	return debug
 }
 
