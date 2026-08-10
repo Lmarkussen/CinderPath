@@ -239,11 +239,11 @@ func (a *Application) executeModules(ctx context.Context, command string, args [
 		return Outcome{}, err
 	}
 	defer store.Close()
-	run, err := store.CreateRun(ctx, command, string(a.Config.Profile), version.Current().Version, args)
+	run, err := store.CreateRun(ctx, runCommand(ctx, command), string(a.Config.Profile), version.Current().Version, args)
 	if err != nil {
 		return Outcome{}, err
 	}
-	a.Logger.Info("run started", "run_id", run.ID, "command", command, "profile", run.Profile, "database", store.Path())
+	a.Logger.Info("run started", "run_id", run.ID, "command", run.Command, "profile", run.Profile, "database", store.Path())
 	assets, err := store.ListAssets(ctx)
 	if err != nil {
 		return Outcome{}, a.finishError(store, run, ctx, err)
@@ -275,6 +275,18 @@ func (a *Application) executeModules(ctx context.Context, command string, args [
 	if command == "assess RECON-3" {
 		techniqueStatus = deriveRECON3Status(summary, allEvidence, run.ID)
 		techniqueSummary = recon3SummaryForRun(allEvidence, run.ID)
+		if techniqueSummary == nil {
+			techniqueSummary = map[string]any{}
+		}
+		var errors []string
+		for _, execution := range summary.Executions {
+			if execution.Error != "" {
+				errors = append(errors, execution.Error)
+			}
+		}
+		if len(errors) > 0 {
+			techniqueSummary["root_error"] = strings.Join(errors, "; ")
+		}
 		runSummary["technique_status"] = techniqueStatus
 	}
 	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, status, runSummary)

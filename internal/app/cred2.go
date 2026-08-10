@@ -59,7 +59,7 @@ func (a *Application) assessLocalNAA(ctx context.Context, target, technique stri
 		return out, err
 	}
 	defer store.Close()
-	run, err := store.CreateRun(ctx, "assess "+technique, string(a.Config.Profile), version.Current().Version, []string{"assess", technique})
+	run, err := store.CreateRun(ctx, runCommand(ctx, "assess "+technique), string(a.Config.Profile), version.Current().Version, []string{"assess", technique})
 	if err != nil {
 		return out, err
 	}

@@ -69,7 +69,7 @@ func (a *Application) AssessRECON5(ctx context.Context, _, lookupUser string) (R
 		return RECON5Outcome{}, err
 	}
 	defer store.Close()
-	run, err := store.CreateRun(ctx, "assess RECON-5", string(a.Config.Profile), version.Current().Version, []string{"assess", "RECON-5"})
+	run, err := store.CreateRun(ctx, runCommand(ctx, "assess RECON-5"), string(a.Config.Profile), version.Current().Version, []string{"assess", "RECON-5"})
 	if err != nil {
 		return RECON5Outcome{}, err
 	}

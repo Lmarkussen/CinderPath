@@ -139,10 +139,87 @@ func TestLocalTechniqueContextIsBlockedRatherThanFailed(t *testing.T) {
 			if item["status"] != "blocked" {
 				t.Fatalf("%s status=%v", id, item["status"])
 			}
+			if item["technique_attempted"] != false {
+				t.Fatalf("%s attempted=%v", id, item["technique_attempted"])
+			}
+			if item["missing"] == nil || item["reason"] == nil || item["remediation"] == nil {
+				t.Fatalf("%s lost blocker detail: %v", id, item)
+			}
 		}
 	}
 	if !strings.Contains(out, "sccm_client_context") {
 		t.Fatalf("locality prerequisite missing: %s", out)
+	}
+}
+
+func TestFamilyPrerequisiteBlockPreservesPreciseMetadata(t *testing.T) {
+	cases := []struct {
+		id, missing, reason, remediation string
+	}{
+		{"RECON-1", "Domain / LDAP identity", familyBlockerReason("RECON-1", nil), familyBlockerRemediation("RECON-1")},
+		{"RECON-2", "authenticated SMB/domain identity", familyBlockerReason("RECON-2", nil), familyBlockerRemediation("RECON-2")},
+		{"RECON-4", "ConfigMgr identity with CMPivot permission", familyBlockerReason("RECON-4", nil), familyBlockerRemediation("RECON-4")},
+		{"RECON-5", "ConfigMgr identity with SMS Provider access", familyBlockerReason("RECON-5", nil), familyBlockerRemediation("RECON-5")},
+		{"RECON-6", "authenticated SMB/domain identity", familyBlockerReason("RECON-6", nil), familyBlockerRemediation("RECON-6")},
+		{"CRED-2", "SCCM client SYSTEM execution context", familyBlockerReason("CRED-2", nil), familyBlockerRemediation("CRED-2")},
+		{"CRED-3", "SCCM client SYSTEM execution context", familyBlockerReason("CRED-3", nil), familyBlockerRemediation("CRED-3")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			result := map[string]any{}
+			setFamilyPrerequisiteBlock(result, tc.id, tc.missing, tc.reason, tc.remediation)
+			if result["status"] != "blocked" || result["classification"] != "blocked_prerequisite" {
+				t.Fatalf("status=%v classification=%v", result["status"], result["classification"])
+			}
+			if result["technique_attempted"] != false || result["missing"] != tc.missing || result["reason"] != tc.reason || result["remediation"] != tc.remediation {
+				t.Fatalf("lost structured blocker: %v", result)
+			}
+		})
+	}
+}
+
+func TestFamilyJSONHasNoGenericBlockedReasons(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "recon-family-detail.db"))
+	out, _, err := executeForTest(t, "assess", "RECON-ALL", "--provider", "live", "--target", "MECM.SCCM.LAB", "--format", "json")
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if strings.Contains(out, "Reason: blocked") || strings.Contains(out, "! blocked") {
+		t.Fatalf("generic blocker leaked: %s", out)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range result["techniques"].([]any) {
+		item := raw.(map[string]any)
+		id := item["technique_id"].(string)
+		if item["classification"] == "blocked_prerequisite" {
+			for _, key := range []string{"missing", "reason", "remediation", "technique_attempted"} {
+				if item[key] == nil {
+					t.Fatalf("%s missing %s: %v", id, key, item)
+				}
+			}
+			if item["technique_attempted"] != false {
+				t.Fatalf("%s attempted=%v", id, item["technique_attempted"])
+			}
+		}
+	}
+}
+
+func TestFamilyHTMLFormatPreservesPreciseTextBlockers(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "recon-family-html.db"))
+	out, _, err := executeForTest(t, "assess", "RECON-ALL", "--provider", "live", "--target", "MECM.SCCM.LAB", "--format", "html")
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if strings.Contains(out, "Reason: blocked") || strings.Contains(out, "! blocked") {
+		t.Fatalf("generic blocker leaked: %s", out)
+	}
+	for _, want := range []string{"Domain / LDAP identity", "authenticated SMB/domain identity", "ConfigMgr identity with CMPivot permission", "Technique attempted: false"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("HTML/text family output missing %q: %s", want, out)
+		}
 	}
 }
 

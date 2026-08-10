@@ -82,7 +82,7 @@ func (a *Application) AssessRECON4(ctx context.Context, target string) (RECON4Ou
 		return RECON4Outcome{}, err
 	}
 	defer store.Close()
-	run, err := store.CreateRun(ctx, "assess RECON-4", string(a.Config.Profile), version.Current().Version, []string{"assess", "RECON-4"})
+	run, err := store.CreateRun(ctx, runCommand(ctx, "assess RECON-4"), string(a.Config.Profile), version.Current().Version, []string{"assess", "RECON-4"})
 	if err != nil {
 		return RECON4Outcome{}, err
 	}

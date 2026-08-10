@@ -45,7 +45,7 @@ func (a *Application) AssessCRED1(ctx context.Context, target string) (CRED1Outc
 		return out, err
 	}
 	defer store.Close()
-	run, err := store.CreateRun(ctx, "assess CRED-1", string(a.Config.Profile), version.Current().Version, []string{"assess", "CRED-1", "--target", target})
+	run, err := store.CreateRun(ctx, runCommand(ctx, "assess CRED-1"), string(a.Config.Profile), version.Current().Version, []string{"assess", "CRED-1", "--target", target})
 	if err != nil {
 		return out, err
 	}

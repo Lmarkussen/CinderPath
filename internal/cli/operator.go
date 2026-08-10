@@ -207,7 +207,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			if o.format != "text" && o.format != "json" {
 				return fmt.Errorf("%s format must be text or json", techniqueID)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 			defer cancel()
 			var host string
 			var runID string
@@ -263,7 +263,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			if o.target == "" {
 				return fmt.Errorf("CRED-1 requires --target DP_OR_MP")
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 			defer cancel()
 			out, err := s.application.AssessCRED1(ctx, o.target)
 			if err != nil {
@@ -285,7 +285,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 				item := localPrerequisite{ID: "ldap_identity", Name: "LDAP identity", Status: "blocked", Reason: "authenticated LDAP discovery requires an explicit identity or deliberate anonymous configuration", Remediation: "configure --username with --password-env/--password-file, or explicitly enable anonymous LDAP"}
 				return s.renderBlocked(techniqueID, o.target, item, o.format)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 			defer cancel()
 			opts := recon1LiveOptions(s.cfg, o.target)
 			if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
@@ -308,7 +308,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 					item := localPrerequisite{ID: "ldap_identity", Name: "LDAP identity", Status: "blocked", Reason: "the live discovery plan has no explicit LDAP identity", Remediation: "configure --username with --password-env/--password-file, or explicitly enable anonymous LDAP"}
 					return s.renderBlocked(techniqueID, o.target, item, o.format)
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 				defer cancel()
 				opts := recon2LiveOptions(s.cfg, o.target)
 				if err := live.ResolveSMBPassword(&opts.SMB); err != nil {
@@ -340,7 +340,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		if techniqueID == "RECON-3" {
 			if s.cfg.Workflow.Provider == "live" {
-				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+				ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 				defer cancel()
 				opts := recon3LiveOptions(s.cfg, o.target)
 				out, err := s.application.DiscoverWithOptions(ctx, []string{"assess", "technique", techniqueID}, app.DiscoverOptions{Provider: "live-recon3", Live: opts})
@@ -516,7 +516,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		var prerequisiteRuns []app.Outcome
 		var executedPrerequisites []string
 		if s.cfg.Workflow.Provider == "live" && planHasCollection(plan) {
-			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 			defer cancel()
 			opts := safePrerequisiteOptions(s.cfg, o.target)
 			if err := live.ResolveLDAPPasswordContext(ctx, &opts.LDAP); err != nil {
@@ -721,15 +721,17 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 			continue
 		}
 		if id == "CRED-1" && familyCRED1Blocked {
-			result["status"] = "blocked"
-			result["classification"] = "blocked_prerequisite"
-			result["reason"] = "packet-capture prerequisite was not satisfied"
+			setFamilyPrerequisiteBlock(result, id, "packet-capture capability", "CRED-1 requires libpcap and packet-capture capability on the assessment host", "grant the required capture capabilities to the CinderPath binary")
 			blocked++
 			blockedPrerequisites++
 			results = append(results, result)
 			continue
 		}
 		childOptions := *o
+		// Child output is an internal transport between the technique runner and
+		// the family renderer. Preserve structured prerequisite data regardless
+		// of the operator's requested presentation format.
+		childOptions.format = "json"
 		if id == "RECON-3" || id == "RECON-4" || id == "RECON-5" || id == "RECON-6" {
 			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
 		}
@@ -737,29 +739,37 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		// resolves its own bounded client target while retaining the ConfigMgr
 		// authority/transport established above.
 		if id == "RECON-4" && s.cfg.Workflow.Provider == "live" {
+			if !configuredIdentityAvailable(s.cfg) {
+				setFamilyPrerequisiteBlock(result, id, "ConfigMgr identity with CMPivot permission", "RECON-4 requires authenticated ConfigMgr/AdminService access", "configure a ConfigMgr identity using the normal credential-reference mechanism")
+				result["resolved"] = map[string]any{"adminservice_authority": valueOr(os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY"), o.target), "transport": os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP")}
+				blocked++
+				blockedPrerequisites++
+				results = append(results, result)
+				continue
+			}
 			resolved, resolveErr := s.resolveFamilyRECON4Target(ctx)
 			if resolveErr != nil {
-				result["status"] = "blocked"
-				result["reason"] = resolveErr.Error()
+				setFamilyPrerequisiteBlock(result, id, "applicable ConfigMgr client", resolveErr.Error(), "resolve a current managed SCCM client through the configured ConfigMgr authority")
 				blocked++
 				results = append(results, result)
 				continue
 			}
 			childOptions.target = resolved
 			result["execution_target"] = resolved
+			result["resolved"] = map[string]any{"adminservice_authority": os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY"), "transport": os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP"), "managed_client": resolved}
 		}
 		var captured bytes.Buffer
 		previous := s.stdout
 		s.stdout = &captured
 		child := s.assessTechniqueCommand(&childOptions)
+		child.SetContext(app.WithParentRun(ctx, parentRun))
 		childErr := child.RunE(child, []string{id})
 		s.stdout = previous
 		if childErr != nil {
 			result["status"] = "failed"
 			result["reason"] = childErr.Error()
 			if isFamilyPrerequisiteError(id, childErr) {
-				result["status"] = "blocked"
-				result["classification"] = "blocked_prerequisite"
+				setFamilyPrerequisiteBlock(result, id, familyMissingRequirement(id), familyBlockerReason(id, childErr), familyBlockerRemediation(id))
 				blocked++
 				blockedPrerequisites++
 			} else {
@@ -768,18 +778,33 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 			}
 		} else {
 			executed++
-			if o.format == "json" {
+			if childOptions.format == "json" {
 				var value any
 				if json.Unmarshal(captured.Bytes(), &value) == nil {
 					result["result"] = value
 					if nested, ok := value.(map[string]any); ok {
+						for _, key := range []string{"reason", "remediation", "technique_attempted", "execution", "prerequisite", "prerequisite_id", "requirement_state", "target", "transport", "resolved", "request_summary"} {
+							if detail, exists := nested[key]; exists {
+								result[key] = detail
+							}
+						}
 						if status, ok := nested["status"].(string); ok {
 							result["status"] = status
+							if summary, ok := nested["request_summary"].(map[string]any); ok {
+								if rootError, ok := summary["root_error"].(string); ok && rootError != "" {
+									result["reason"] = rootError
+								}
+							}
 							if status != "completed" && status != "vulnerable" && status != "completed_with_sccm_evidence" {
 								if reason, ok := nested["reason"].(string); ok && reason != "" {
 									result["reason"] = reason
 								} else {
 									result["reason"] = status
+								}
+							}
+							if summary, ok := nested["request_summary"].(map[string]any); ok {
+								if rootError, ok := summary["root_error"].(string); ok && rootError != "" {
+									result["reason"] = rootError
 								}
 							}
 							if strings.Contains(status, "blocked") || strings.Contains(status, "requires_") {
@@ -788,10 +813,29 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 								result["classification"] = "failed"
 							}
 							if strings.Contains(status, "blocked") || strings.Contains(status, "not_run") || strings.Contains(status, "requires_") {
+								if _, exists := result["missing"]; !exists {
+									missing := familyMissingRequirement(id)
+									if prerequisite, ok := nested["prerequisite"].(string); ok && prerequisite != "" {
+										missing = prerequisite
+									}
+									result["missing"] = missing
+								}
+								if _, exists := result["technique_attempted"]; !exists {
+									result["technique_attempted"] = false
+								}
+								if _, exists := result["remediation"]; !exists {
+									result["remediation"] = familyBlockerRemediation(id)
+								}
+								if id == "RECON-1" || id == "RECON-2" || id == "RECON-5" || id == "RECON-6" {
+									result["missing"] = familyMissingRequirement(id)
+									result["reason"] = familyBlockerReason(id, nil)
+									result["remediation"] = familyBlockerRemediation(id)
+								}
 								executed--
 								blocked++
 								blockedPrerequisites++
 							} else if strings.Contains(status, "failed") || strings.Contains(status, "error") || strings.Contains(status, "resolution_failed") || strings.Contains(status, "connection_failed") {
+								result["technique_attempted"] = true
 								executed--
 								failed++
 							}
@@ -802,6 +846,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 					if captured.Len() > 0 {
 						result["status"] = "completed"
 						result["output"] = captured.String()
+						result["technique_attempted"] = true
 					} else {
 						executed--
 						blocked++
@@ -844,26 +889,6 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 	fmt.Fprintf(s.stdout, "%s family assessment\nTarget: %s\n\n", family, s.renderer.Target(redactedTarget(o.target)))
 	s.printIdentitySummary()
 	s.printFamilyPlan(family)
-	reasons := map[string]bool{}
-	for _, result := range results {
-		if result["status"] == "blocked" {
-			if reason, ok := result["reason"].(string); ok && reason != "" {
-				reasons[reason] = true
-			}
-		}
-	}
-	if len(reasons) > 0 {
-		fmt.Fprintln(s.stdout, "Prerequisites / blockers")
-		reasonList := make([]string, 0, len(reasons))
-		for reason := range reasons {
-			reasonList = append(reasonList, reason)
-		}
-		sort.Strings(reasonList)
-		for _, reason := range reasonList {
-			fmt.Fprintf(s.stdout, "  %s %s\n", s.renderer.Warning("!"), reason)
-		}
-		fmt.Fprintln(s.stdout)
-	}
 	fmt.Fprintln(s.stdout, "Techniques")
 	for _, result := range results {
 		status, _ := result["status"].(string)
@@ -893,6 +918,15 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		if reason, ok := result["reason"].(string); ok {
 			fmt.Fprintf(s.stdout, "\n  Reason: %s", reason)
 		}
+		if missing, ok := result["missing"].(string); ok && missing != "" {
+			fmt.Fprintf(s.stdout, "\n  Missing: ✗ %s", missing)
+		}
+		if attempted, ok := result["technique_attempted"].(bool); ok {
+			fmt.Fprintf(s.stdout, "\n  Technique attempted: %t", attempted)
+		}
+		if remediation, ok := result["remediation"].(string); ok && remediation != "" {
+			fmt.Fprintf(s.stdout, "\n  How to fix: %s", remediation)
+		}
 		if summary, ok := result["summary"].(string); ok && summary != "" {
 			fmt.Fprintf(s.stdout, "\n  %s", summary)
 		}
@@ -915,6 +949,84 @@ func familyUnsupportedClassification(id string) (string, string) {
 		}
 	}
 	return "unsupported", "canonical technique is registered, but no safe CinderPath adapter is available"
+}
+
+func configuredIdentityAvailable(c config.Config) bool {
+	return c.Identity.Username != "" && (c.Identity.PasswordEnv != "" || c.Identity.PasswordFile != "" || c.Identity.KerberosCache != "")
+}
+
+func familyMissingRequirement(id string) string {
+	switch id {
+	case "RECON-1":
+		return "Domain / LDAP identity"
+	case "RECON-2":
+		return "authenticated SMB/domain identity"
+	case "RECON-4":
+		return "ConfigMgr identity with CMPivot permission"
+	case "RECON-5":
+		return "ConfigMgr identity with SMS Provider access"
+	case "RECON-6":
+		return "authenticated SMB/domain identity"
+	case "CRED-2", "CRED-3":
+		return "SCCM client SYSTEM execution context"
+	default:
+		return "required prerequisite"
+	}
+}
+
+func familyBlockerReason(id string, err error) string {
+	switch id {
+	case "RECON-1":
+		return "RECON-1 requires an authenticated LDAP identity to enumerate SCCM publishing/site information from Active Directory"
+	case "RECON-2":
+		return "RECON-2 requires authenticated SMB2/3 access with the configured domain identity to enumerate SCCM share metadata"
+	case "RECON-5":
+		return "RECON-5 requires authenticated access to the SMS Provider"
+	case "RECON-6":
+		return "RECON-6 requires authenticated SMB2/3 access to IPC$ and the winreg pipe"
+	}
+	if err != nil {
+		text := err.Error()
+		if id == "RECON-1" || id == "RECON-2" {
+			return "an explicit domain identity is required for the configured directory/SMB discovery path"
+		}
+		if id == "RECON-5" && strings.Contains(strings.ToLower(text), "identity") {
+			return "RECON-5 requires authenticated access to the SMS Provider"
+		}
+		if id == "RECON-6" && strings.Contains(strings.ToLower(text), "identity") {
+			return "RECON-6 requires authenticated SMB2/3 access to IPC$ and the winreg pipe"
+		}
+		if id == "CRED-2" || id == "CRED-3" {
+			return "the current controller cannot provide the required local execution context on the managed SCCM client"
+		}
+	}
+	return "the required prerequisite is not available in the current execution context"
+}
+
+func familyBlockerRemediation(id string) string {
+	switch id {
+	case "RECON-1", "RECON-2":
+		return "configure a domain identity using CinderPath's normal credential-reference mechanism"
+	case "RECON-4":
+		return "configure a ConfigMgr identity using CinderPath's normal credential-reference mechanism"
+	case "RECON-5":
+		return "configure a ConfigMgr identity with SMS Provider authorization using the normal credential-reference mechanism"
+	case "RECON-6":
+		return "configure an SMB/domain identity and verify that Remote Registry is available on the authorized target"
+	case "CRED-2", "CRED-3":
+		return "run CinderPath locally as SYSTEM on the managed SCCM client; no remote execution adapter is configured"
+	default:
+		return "configure the missing prerequisite before retrying"
+	}
+}
+
+func setFamilyPrerequisiteBlock(result map[string]any, id, missing, reason, remediation string) {
+	result["status"] = "blocked"
+	result["classification"] = "blocked_prerequisite"
+	result["technique_attempted"] = false
+	result["missing"] = missing
+	result["reason"] = reason
+	result["remediation"] = remediation
 }
 
 func isFamilyPrerequisiteError(id string, err error) bool {
@@ -1231,7 +1343,10 @@ func (s *state) printRECON2Text(id, target, status string, out app.Outcome, supp
 
 func (s *state) printRECON3Text(id, target, status string, out app.Outcome, support string) {
 	s.printTechniqueHeader(id, target, status)
-	fmt.Fprintf(s.stdout, "Framework revision: %s\nHTTP\n  Requests              %v / %v\n  Successful            %v\n  Failed                %v\nEvidence: assets=%d findings=%d\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\n", s.renderer.Dim(snapshotRevision()), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], out.Assets, sumFindings(out.Findings))
+	fmt.Fprintf(s.stdout, "Framework revision: %s\nHTTP\n  Logical host          %s\n  Transport             %s\n  Requests              %v / %v\n  Successful            %v\n  Failed                %v\n  Technique attempted   yes\nEvidence: assets=%d findings=%d\nNetwork behavior: fixed anonymous SCCM HTTP GET/HEAD allowlist only\n", s.renderer.Dim(snapshotRevision()), target, valueOr(os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP"), target), out.TechniqueSummary["actual_request_count"], out.TechniqueSummary["configured_maximum_requests"], out.TechniqueSummary["successful_response_count"], out.TechniqueSummary["failure_count"], out.Assets, sumFindings(out.Findings))
+	if rootError, ok := out.TechniqueSummary["root_error"].(string); ok && rootError != "" {
+		fmt.Fprintf(s.stdout, "Why\n  %s\n", rootError)
+	}
 	s.printTechniqueFooter([]string{"live.sccm.http_recon"}, out.Run.ID, support)
 }
 func printPrerequisites(w io.Writer, r terminal.Renderer, p planner.Plan) {
