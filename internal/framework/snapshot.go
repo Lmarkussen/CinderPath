@@ -545,8 +545,8 @@ func defaultCoverage(id string) CoverageRecord {
 		c.Reason = "Existing bounded SCCM discovery and offline evidence modules provide partial reconnaissance coverage."
 		c.Modules = []string{"discovery", "capture", "report"}
 	case "RECON-3":
-		c.Discovery, c.Assessment, c.LabValidation = Partial, Partial, Partial
-		c.Reason = "Bounded anonymous SCCM HTTP route reconnaissance is implemented; protocol-positive runtime validation remains partial."
+		c.Discovery, c.Assessment, c.LabValidation = Partial, Supported, Supported
+		c.Reason = "Bounded anonymous SCCM HTTP route reconnaissance is live validated against the GOAD site server; role routes remain read-only and allowlisted."
 		c.Modules = []string{"live.sccm.http_recon", "report"}
 	case "RECON-4":
 		c.Discovery, c.Assessment, c.LabValidation = Partial, Supported, Supported

@@ -95,7 +95,9 @@ func Defaults() Config {
 		LDAP:           LDAPConfig{PageSize: 500, MaxEntries: 10000, SearchTimeout: "30s"},
 		Staleness:      StalenessConfig{AssetDays: 30, EvidenceDays: 30, CertificateWarningDays: 30},
 		AuthValidation: AuthValidationConfig{Enabled: false, MaxTotalAttempts: 3, MaxAttemptsPerIdentity: 1, MaxAttemptsPerEndpoint: 1, MaxAttemptsPerIdentityEndpoint: 1, MinimumDelay: "2s", StopAfterSuccess: true, RefuseMultiplePasswordIdentities: true, Concurrency: 1},
-		Workflow:       WorkflowConfig{Provider: "mock", Discovery: true, LDAP: true, Assessment: true, Reporting: true},
+		// Real operator workflows are live by default. Tests and development
+		// tooling select the mock provider explicitly.
+		Workflow: WorkflowConfig{Provider: "live", Discovery: true, LDAP: true, Assessment: true, Reporting: true},
 	}
 }
 

@@ -153,7 +153,7 @@ func bindTechniqueOptions(f interface {
 	f.StringVar(&o.target, "target", "", "assessment target")
 	f.StringVar(&o.runID, "run", "", "existing run context")
 	f.StringVar(&o.format, "format", "text", "text or json")
-	f.StringVar(&o.provider, "provider", "", "provider override: mock or live")
+	f.StringVar(&o.provider, "provider", "", "provider override (live is default; mock is for development/testing)")
 	f.StringVar(&o.domainController, "domain-controller", "", "authorized domain controller")
 	f.StringVar(&o.username, "username", "", "authorized identity username")
 	f.StringVar(&o.passwordEnv, "password-env", "", "environment variable containing the identity password")
@@ -167,6 +167,9 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 	c := &cobra.Command{Use: "technique TECHNIQUE_ID", Short: "Assess one supported technique", Hidden: true, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		// These narrow overrides preserve config-first operation for one-off assessments.
 		if o.provider != "" {
+			if o.provider != "live" && o.provider != "mock" {
+				return fmt.Errorf("invalid provider %q (use live or mock; mock is for development/testing)", o.provider)
+			}
 			s.cfg.Workflow.Provider = o.provider
 		}
 		if o.domainController != "" {
@@ -190,12 +193,8 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			return fmt.Errorf("technique %q is out of scope: CinderPath supports attack families %s", techniqueID, strings.Join(framework.ProductFamilyNames(), ", "))
 		}
 		if s.cfg.Workflow.Provider == "live" && !(techniqueID == "CRED-1" && o.target == "") {
-			items := s.localPrerequisites(techniqueID, o.target, true)
-			if item := blockedLocal(items); item != nil {
-				if o.format != "json" {
-					s.printLocalPrerequisites(items)
-				}
-				return s.renderBlocked(techniqueID, o.target, *item, o.format)
+			if !s.resolveLocalRequirements(techniqueID, o.target, o.format) {
+				return nil
 			}
 		}
 		if (techniqueID == "CRED-2" || techniqueID == "CRED-3") && s.cfg.Workflow.Provider == "live" {
@@ -257,7 +256,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		if techniqueID == "CRED-1" {
 			if s.cfg.Workflow.Provider != "live" {
-				return fmt.Errorf("CRED-1 active PXE assessment requires --provider live and one explicit target")
+				return fmt.Errorf("CRED-1 active PXE assessment requires one explicit --target")
 			}
 			if o.target == "" {
 				return fmt.Errorf("CRED-1 requires --target DP_OR_MP")
@@ -364,9 +363,9 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		if techniqueID == "RECON-4" {
 			if s.cfg.Workflow.Provider != "live" {
-				return fmt.Errorf("RECON-4 requires --provider live")
+				return fmt.Errorf("RECON-4 requires the live provider")
 			}
-			resolveConfigMgrTopology(s.cfg.DBPath, o.target)
+			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
 			if os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY") == "" || os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP") == "" {
 				item := localPrerequisite{ID: "configmgr_topology", Name: "ConfigMgr authority and transport", Status: "blocked", Reason: "no current management-point topology evidence resolves the logical authority and transport IP", Remediation: "run bounded discovery first or configure the evidenced ConfigMgr authority and transport explicitly"}
 				return s.renderBlocked(techniqueID, o.target, item, o.format)
@@ -381,6 +380,9 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			if err != nil {
 				if o.format == "json" {
 					return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": techniqueID, "technique_name": techniqueTitle(techniqueID), "status": "blocked_or_failed", "reason": err.Error(), "target": redactedTarget(o.target), "redaction": s.outputPolicy().Metadata()})
+				}
+				if recon4ErrorIsBlocked(err) {
+					return s.renderBlocked(techniqueID, o.target, localPrerequisite{ID: "configmgr_capability", Name: "ConfigMgr CMPivot capability", Status: "blocked", Reason: err.Error(), Remediation: "verify the explicit ConfigMgr identity, authority, target role, and current device topology"}, o.format)
 				}
 				return err
 			}
@@ -454,10 +456,20 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 	return c
 }
 
+func recon4ErrorIsBlocked(err error) bool {
+	text := strings.ToLower(err.Error())
+	for _, marker := range []string{"requires", "not found", "not configured", "unavailable", "unauthorized", "forbidden", "identity", "authority", "transport"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveConfigMgrTopology reuses a current, explicitly persisted management
 // point observation when the operator supplied only the logical target. It
 // never falls back to ambient credentials or unverified DNS data.
-func resolveConfigMgrTopology(dbPath, target string) {
+func resolveConfigMgrTopology(dbPath, target, dnsServer string) {
 	if os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY") != "" && os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP") != "" {
 		return
 	}
@@ -482,6 +494,35 @@ func resolveConfigMgrTopology(dbPath, target string) {
 		}
 		return
 	}
+}
+
+func (s *state) resolveFamilyRECON4Target(ctx context.Context) (string, error) {
+	clients, err := s.application.ListRECON4Clients(ctx)
+	if err != nil {
+		return "", fmt.Errorf("no applicable ConfigMgr client could be selected: %w", err)
+	}
+	if len(clients) == 0 {
+		return "", errors.New("no current ConfigMgr client is available for RECON-4 CMPivot")
+	}
+	return selectRECON4Client(clients)
+}
+
+func selectRECON4Client(clients []recon4.Device) (string, error) {
+	if len(clients) == 0 {
+		return "", errors.New("no current ConfigMgr client is available for RECON-4 CMPivot")
+	}
+	// Prefer online clients, then use stable name/MachineId ordering so a
+	// family run never depends on an unordered AdminService response.
+	sort.Slice(clients, func(i, j int) bool {
+		if clients[i].Online != clients[j].Online {
+			return clients[i].Online
+		}
+		if !strings.EqualFold(clients[i].Name, clients[j].Name) {
+			return strings.ToUpper(clients[i].Name) < strings.ToUpper(clients[j].Name)
+		}
+		return clients[i].MachineID < clients[j].MachineID
+	})
+	return clients[0].Name, nil
 }
 
 func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, family string) error {
@@ -511,6 +552,17 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 	sort.Strings(ids)
 	results := make([]map[string]any, 0, len(ids))
 	executed, findings, blocked, failed, notApplicable := 0, 0, 0, 0, 0
+	familyCRED1Blocked := false
+	if family == "CRED" && s.cfg.Workflow.Provider == "live" && o.format == "text" {
+		// Resolve the shared CRED-1 local capture requirement once before any
+		// child technique starts. Child output remains independent and truthful.
+		s.familyPreflight = true
+		ok := s.resolveLocalRequirements("CRED-1", o.target, o.format)
+		s.familyPreflight = false
+		if !ok {
+			familyCRED1Blocked = blockedLocal(s.localPrerequisites("CRED-1", o.target, true)) != nil
+		}
+	}
 	for _, id := range ids {
 		select {
 		case <-ctx.Done():
@@ -525,7 +577,29 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 			results = append(results, result)
 			continue
 		}
+		if id == "CRED-1" && familyCRED1Blocked {
+			result["status"] = "blocked"
+			result["reason"] = "packet-capture prerequisite was not satisfied"
+			blocked++
+			results = append(results, result)
+			continue
+		}
 		childOptions := *o
+		if id == "RECON-3" || id == "RECON-4" {
+			resolveConfigMgrTopology(s.cfg.DBPath, o.target, s.cfg.WorkflowScope.DomainController)
+		}
+		if id == "RECON-4" && strings.EqualFold(strings.TrimSpace(o.target), strings.TrimSpace(os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY"))) {
+			resolved, resolveErr := s.resolveFamilyRECON4Target(ctx)
+			if resolveErr != nil {
+				result["status"] = "blocked"
+				result["reason"] = resolveErr.Error()
+				blocked++
+				results = append(results, result)
+				continue
+			}
+			childOptions.target = resolved
+			result["execution_target"] = resolved
+		}
 		var captured bytes.Buffer
 		previous := s.stdout
 		s.stdout = &captured
@@ -575,7 +649,8 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 				}
 			} else {
 				text := captured.String()
-				lower := strings.ToLower(text)
+				plainText := stripANSI(text)
+				lower := strings.ToLower(plainText)
 				if strings.Contains(lower, "status: blocked") {
 					executed--
 					blocked++
@@ -588,7 +663,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 				} else {
 					result["status"] = "completed"
 				}
-				result["summary"] = familyOutputSummary(text)
+				result["summary"] = familyOutputSummary(plainText)
 			}
 		}
 		results = append(results, result)
@@ -602,6 +677,8 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		return json.NewEncoder(s.stdout).Encode(map[string]any{"family": family, "status": "completed", "techniques": results, "summary": map[string]int{"executed": executed, "findings": findings, "blocked": blocked, "failed": failed, "not_applicable": notApplicable}, "redaction": s.outputPolicy().Metadata()})
 	}
 	fmt.Fprintf(s.stdout, "%s family assessment\nTarget: %s\n\n", family, s.renderer.Target(redactedTarget(o.target)))
+	s.printIdentitySummary()
+	s.printFamilyPlan(family)
 	reasons := map[string]bool{}
 	for _, result := range results {
 		if result["status"] == "blocked" {
@@ -645,6 +722,13 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 	}
 	fmt.Fprintf(s.stdout, "Summary:\n  Executed: %d\n  Findings: %d\n  Blocked: %d\n  Failed: %d\n  Not applicable: %d\n", executed, findings, blocked, failed, notApplicable)
 	return nil
+}
+
+func stripANSI(text string) string {
+	for _, code := range []string{"\x1b[0m", "\x1b[2m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[36m"} {
+		text = strings.ReplaceAll(text, code, "")
+	}
+	return text
 }
 
 func familyOutputSummary(output string) string {
@@ -1027,7 +1111,8 @@ func recon3LiveOptions(c config.Config, target string) live.Options {
 	if host <= 0 {
 		host = 30 * time.Second
 	}
-	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{80, 443}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{UserAgent: c.Discovery.UserAgent, MaxBodyBytes: c.Discovery.HTTPMaxBodyBytes, MaxRedirects: 0, Timeout: host}, LDAP: live.LDAPOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile}}
+	transport := os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP")
+	return live.Options{Domain: c.WorkflowScope.Domain, DC: server, Ports: []int{80, 443}, Concurrency: 1, ConnectTimeout: host, HostTimeout: host, Scope: scope.Input{Targets: []string{server}, MaxTargets: 1}, HTTP: live.HTTPOptions{UserAgent: c.Discovery.UserAgent, MaxBodyBytes: c.Discovery.HTTPMaxBodyBytes, MaxRedirects: 0, Timeout: host, TransportIP: transport}, LDAP: live.LDAPOptions{Enabled: true, Server: server, User: c.Identity.Username, PasswordEnv: c.Identity.PasswordEnv, PasswordFile: c.Identity.PasswordFile}}
 }
 
 func redactedTarget(v string) string {

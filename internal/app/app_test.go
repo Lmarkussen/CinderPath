@@ -63,6 +63,17 @@ func TestMockWorkflowIsDeduplicated(t *testing.T) {
 	}
 }
 
+func TestCRED1LookupTargetUsesEvidencedTransport(t *testing.T) {
+	t.Setenv("CINDERPATH_CONFIGMGR_AUTHORITY", "MECM.SCCM.LAB")
+	t.Setenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP", "10.1.10.41")
+	if got := cred1LookupTarget("mecm.sccm.lab"); got != "10.1.10.41" {
+		t.Fatalf("lookup target=%q", got)
+	}
+	if got := cred1LookupTarget("other.sccm.lab"); got != "other.sccm.lab" {
+		t.Fatalf("unrelated target rewritten: %q", got)
+	}
+}
+
 func TestDryRunPersistsRunStagesAndAllModuleDecisions(t *testing.T) {
 	c := config.Defaults()
 	c.DBPath = filepath.Join(t.TempDir(), "dry.db")

@@ -42,6 +42,34 @@ type Client struct {
 	pollInterval time.Duration
 }
 
+// ListClients returns a small, deterministic candidate set for family
+// orchestration. It is intentionally bounded and only exposes ConfigMgr
+// client metadata; CMPivot execution remains target-specific.
+func (c *Client) ListClients(ctx context.Context) ([]Device, error) {
+	b, code, err := c.request(ctx, http.MethodGet, "/Device?$filter=IsClient%20eq%201&$top=32", nil)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("ConfigMgr client discovery returned HTTP %d", code)
+	}
+	var d deviceEnvelope
+	if err := json.Unmarshal(b, &d); err != nil {
+		return nil, fmt.Errorf("malformed ConfigMgr client response: %w", err)
+	}
+	if len(d.Value) > 32 {
+		return nil, errors.New("ConfigMgr client discovery exceeded bounded result limit")
+	}
+	out := make([]Device, 0, len(d.Value))
+	for _, v := range d.Value {
+		if v.MachineID <= 0 || v.IsClient == 0 || strings.TrimSpace(v.Name) == "" {
+			continue
+		}
+		out = append(out, Device{Name: v.Name, MachineID: v.MachineID, SiteCode: v.SiteCode, ClientVersion: v.ClientVersion, IsClient: true, Online: v.Online})
+	}
+	return out, nil
+}
+
 type Device struct {
 	Name          string
 	MachineID     int

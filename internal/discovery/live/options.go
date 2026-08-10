@@ -38,6 +38,9 @@ type HTTPOptions struct {
 	MaxBodyBytes int64
 	MaxRedirects int
 	Timeout      time.Duration
+	// TransportIP is an evidenced dial address for the logical HTTP host.
+	// The request URL, Host header, and TLS authority remain the origin host.
+	TransportIP string
 }
 type LDAPOptions struct {
 	Enabled                                         bool

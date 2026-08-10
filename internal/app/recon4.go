@@ -19,13 +19,10 @@ type RECON4Outcome struct {
 	Result recon4.Result
 }
 
-// AssessRECON4 executes the bounded, fixed OperatingSystem CMPivot query. The
-// AdminService authority/transport are explicit configuration, never inferred
-// from ambient DNS or credentials.
-func (a *Application) AssessRECON4(ctx context.Context, target string) (RECON4Outcome, error) {
+func (a *Application) recon4Client(ctx context.Context) (*recon4.Client, error) {
 	authority, ip := os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY"), os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP")
 	if authority == "" || ip == "" {
-		return RECON4Outcome{}, errors.New("RECON-4 requires explicit ConfigMgr authority and transport IP configuration")
+		return nil, errors.New("RECON-4 requires explicit ConfigMgr authority and transport IP configuration")
 	}
 	realm := a.Config.WorkflowScope.Domain
 	if realm == "" {
@@ -36,10 +33,10 @@ func (a *Application) AssessRECON4(ctx context.Context, target string) (RECON4Ou
 		kdc = os.Getenv("CINDERPATH_CONFIGMGR_KDC")
 	}
 	if realm == "" || kdc == "" {
-		return RECON4Outcome{}, errors.New("RECON-4 requires explicit Kerberos realm and KDC configuration")
+		return nil, errors.New("RECON-4 requires explicit Kerberos realm and KDC configuration")
 	}
 	if a.Config.Identity.Username == "" {
-		return RECON4Outcome{}, errors.New("RECON-4 requires an explicit ConfigMgr Kerberos identity")
+		return nil, errors.New("RECON-4 requires an explicit ConfigMgr Kerberos identity")
 	}
 	passwordRef := ""
 	if a.Config.Identity.PasswordEnv != "" {
@@ -48,10 +45,31 @@ func (a *Application) AssessRECON4(ctx context.Context, target string) (RECON4Ou
 		passwordRef = "file:" + a.Config.Identity.PasswordFile
 	}
 	if passwordRef == "" && a.Config.Identity.KerberosCache == "" {
-		return RECON4Outcome{}, errors.New("RECON-4 requires an explicit Kerberos password reference or ccache")
+		return nil, errors.New("RECON-4 requires an explicit Kerberos password reference or ccache")
 	}
 	insecure := os.Getenv("CINDERPATH_CONFIGMGR_INSECURE_TLS") == "1"
 	client, err := recon4.New(ctx, recon4.Options{Authority: authority, TransportIP: ip, Realm: realm, KDC: kdc, Username: a.Config.Identity.Username, PasswordRef: passwordRef, CCachePath: a.Config.Identity.KerberosCache, TLSConfig: &tls.Config{InsecureSkipVerify: insecure}})
+	if err != nil {
+		return nil, fmt.Errorf("RECON-4 ConfigMgr authentication unavailable: %w", err)
+	}
+	return client, nil
+}
+
+// ListRECON4Clients resolves a bounded set of current ConfigMgr client
+// candidates for family routing without executing CMPivot.
+func (a *Application) ListRECON4Clients(ctx context.Context) ([]recon4.Device, error) {
+	client, err := a.recon4Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.ListClients(ctx)
+}
+
+// AssessRECON4 executes the bounded, fixed OperatingSystem CMPivot query. The
+// AdminService authority/transport are explicit configuration, never inferred
+// from ambient DNS or credentials.
+func (a *Application) AssessRECON4(ctx context.Context, target string) (RECON4Outcome, error) {
+	client, err := a.recon4Client(ctx)
 	if err != nil {
 		return RECON4Outcome{}, fmt.Errorf("RECON-4 ConfigMgr authentication unavailable: %w", err)
 	}

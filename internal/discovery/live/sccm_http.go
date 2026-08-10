@@ -126,15 +126,25 @@ func dedicatedSCCMClient(opts HTTPOptions, origin *url.URL, scopedHosts map[stri
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS12,
-		Certificates:       nil,
+		// Some supported SCCM/IIS HTTPS endpoints request one client-side
+		// renegotiation while probing the anonymous route. Permit only the
+		// single bounded renegotiation; no client certificate or credentials
+		// are supplied by this discovery transport.
+		Renegotiation: tls.RenegotiateOnceAsClient,
+		Certificates:  nil,
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			tracker.clientCertRequested.Store(true)
 			return &tls.Certificate{}, nil
 		},
 	} // #nosec G402 -- collection is scoped; certificate verification is profiled independently.
 	transport := &http.Transport{
-		Proxy:                  nil,
-		DialContext:            (&net.Dialer{Timeout: opts.Timeout}).DialContext,
+		Proxy: nil,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if opts.TransportIP == "" {
+				return (&net.Dialer{Timeout: opts.Timeout}).DialContext(ctx, network, address)
+			}
+			return (&net.Dialer{Timeout: opts.Timeout}).DialContext(ctx, network, net.JoinHostPort(opts.TransportIP, strconv.Itoa(effectivePort(origin))))
+		},
 		TLSClientConfig:        tlsConfig,
 		TLSHandshakeTimeout:    opts.Timeout,
 		ResponseHeaderTimeout:  opts.Timeout,

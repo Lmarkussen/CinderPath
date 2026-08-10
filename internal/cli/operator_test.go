@@ -16,6 +16,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/policy"
+	"github.com/Lmarkussen/CinderPath/internal/recon4"
 	"github.com/Lmarkussen/CinderPath/internal/terminal"
 )
 
@@ -29,14 +30,43 @@ func executeForTest(t *testing.T, args ...string) (string, string, error) {
 }
 
 func TestCRED1RequiresExplicitLiveTarget(t *testing.T) {
-	for _, args := range [][]string{
-		{"assess", "CRED-1", "--target", "MECM.SCCM.LAB"},
-		{"assess", "CRED-1", "--provider", "live"},
-	} {
+	for _, args := range [][]string{{"assess", "CRED-1", "--provider", "live"}} {
 		_, _, err := executeForTest(t, args...)
 		if err == nil || !strings.Contains(err.Error(), "CRED-1") {
 			t.Fatalf("args=%v err=%v", args, err)
 		}
+	}
+}
+
+func TestLiveProviderIsTheOperatorDefault(t *testing.T) {
+	if got := config.Defaults().Workflow.Provider; got != "live" {
+		t.Fatalf("default provider=%q", got)
+	}
+	c := New(&bytes.Buffer{}, &bytes.Buffer{})
+	if got := c.CommandPath(); got != "cinderpath" {
+		t.Fatalf("root=%q", got)
+	}
+	discover, _, err := c.Find([]string{"discover"})
+	if err != nil || discover.Flag("provider").DefValue != "live" {
+		t.Fatalf("discover provider default=%v err=%v", discover.Flag("provider").DefValue, err)
+	}
+	_, _, err = executeForTest(t, "discover", "--provider", "invalid", "--target", "127.0.0.1")
+	if err == nil || !strings.Contains(err.Error(), "use live or mock") {
+		t.Fatalf("invalid provider err=%v", err)
+	}
+}
+
+func TestIdentitySummaryNeverIncludesSecretMaterial(t *testing.T) {
+	var out bytes.Buffer
+	c := config.Defaults()
+	c.Identity = config.IdentityConfig{Username: "cinderpath-ldap@SCCM.LAB", PasswordEnv: "CINDERPATH_TEST_PASSWORD"}
+	s := &state{cfg: c, stdout: &out, renderer: terminal.New(terminal.Never, &out)}
+	s.printIdentitySummary()
+	if strings.Contains(out.String(), "CINDERPATH_TEST_PASSWORD") || strings.Contains(out.String(), "password") {
+		t.Fatalf("secret reference leaked in identity summary: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "cinderpath-ldap@SCCM.LAB") {
+		t.Fatalf("identity provenance missing: %q", out.String())
 	}
 }
 
@@ -49,6 +79,45 @@ func TestLivePrerequisitesAreTechniqueAware(t *testing.T) {
 	}
 	if got := s.localPrerequisites("CRED-1", "target", true); len(got) < 2 {
 		t.Fatalf("CRED-1 capture prerequisites missing: %+v", got)
+	}
+}
+
+func TestCaptureRequirementCarriesStructuredRepairMetadata(t *testing.T) {
+	c := config.Defaults()
+	s := &state{cfg: c}
+	items := s.localPrerequisites("CRED-1", "target", true)
+	var capture *localPrerequisite
+	for i := range items {
+		if items[i].ID == "cred1_capture" {
+			capture = &items[i]
+		}
+	}
+	if capture == nil {
+		t.Fatal("capture requirement missing")
+	}
+	if capture.Status == "blocked" && (!capture.AutoFixSupported || !capture.ElevationRequired || !capture.Persistent || capture.repair == nil) {
+		t.Fatalf("missing repair metadata: %+v", *capture)
+	}
+}
+
+func TestNonInteractiveCaptureRequirementIsStructuredAndDoesNotPrompt(t *testing.T) {
+	var out, errout bytes.Buffer
+	c := New(&out, &errout)
+	c.SetArgs([]string{"assess", "CRED-1", "--target", "MECM.SCCM.LAB", "--format", "json"})
+	if err := c.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Apply fix") {
+		t.Fatalf("noninteractive output offered elevation: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "requirement_state") {
+		t.Fatalf("structured requirement state missing: %q", out.String())
+	}
+}
+
+func TestStripANSIPreservesFamilyStatusParsing(t *testing.T) {
+	if got := familyOutputSummary(stripANSI("Status: \x1b[33mBLOCKED\x1b[0m")); got != "Status: BLOCKED" {
+		t.Fatalf("summary=%q", got)
 	}
 }
 
@@ -187,7 +256,7 @@ func TestAssessWorkflowAndContextPrecedence(t *testing.T) {
 }
 
 func TestRECON2ReportsNoConnectorWithoutNetwork(t *testing.T) {
-	out, stderr, err := executeForTest(t, "assess", "technique", "RECON-2", "--target", "srv01", "--format", "json")
+	out, stderr, err := executeForTest(t, "assess", "technique", "RECON-2", "--provider", "mock", "--target", "srv01", "--format", "json")
 	if err != nil || stderr != "" {
 		t.Fatalf("err=%v stderr=%q", err, stderr)
 	}
@@ -204,7 +273,7 @@ func TestRECON2ReportsNoConnectorWithoutNetwork(t *testing.T) {
 }
 
 func TestRedactSecretsFlagIsReportedInJSON(t *testing.T) {
-	out, stderr, err := executeForTest(t, "--redact-secrets", "assess", "technique", "RECON-2", "--target", "SCCM.LAB", "--format", "json")
+	out, stderr, err := executeForTest(t, "--redact-secrets", "assess", "technique", "RECON-2", "--provider", "mock", "--target", "SCCM.LAB", "--format", "json")
 	if err != nil || stderr != "" {
 		t.Fatalf("err=%v stderr=%q", err, stderr)
 	}
@@ -214,7 +283,7 @@ func TestRedactSecretsFlagIsReportedInJSON(t *testing.T) {
 }
 
 func TestRECON3ReportsNoConnectorWithoutNetwork(t *testing.T) {
-	out, stderr, err := executeForTest(t, "assess", "technique", "RECON-3", "--target", "srv01", "--format", "json")
+	out, stderr, err := executeForTest(t, "assess", "technique", "RECON-3", "--provider", "mock", "--target", "srv01", "--format", "json")
 	if err != nil || stderr != "" {
 		t.Fatalf("err=%v stderr=%q", err, stderr)
 	}
@@ -258,11 +327,11 @@ func TestDefensiveTechniquesAreOutOfProductScope(t *testing.T) {
 
 func TestTechniquePlannerAndColorControlsRemainMachineClean(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-2", "--target", "SCCM.LAB", "--format", "json")
+	out, stderr, err := executeForTest(t, "--color", "always", "assess", "technique", "CRED-2", "--provider", "mock", "--target", "SCCM.LAB", "--format", "json")
 	if err != nil || stderr != "" || strings.Contains(out, "\x1b[") || !strings.Contains(out, "policy_acquisition") {
 		t.Fatalf("err=%v stderr=%q output=%q", err, stderr, out)
 	}
-	out, _, err = executeForTest(t, "--color", "always", "assess", "technique", "RECON-1", "--target", "SCCM.LAB")
+	out, _, err = executeForTest(t, "--color", "always", "assess", "technique", "RECON-1", "--provider", "mock", "--target", "SCCM.LAB")
 	if err != nil || !strings.Contains(out, "\x1b[36mSCCM.LAB") {
 		t.Fatalf("err=%v output=%q", err, out)
 	}
@@ -291,12 +360,12 @@ func TestColorControlsAndTechniqueSemanticRendering(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot be combined") || strings.Contains(out, "\x1b[") {
 		t.Fatalf("conflicting color controls: err=%v output=%q", err, out)
 	}
-	out, _, err = executeForTest(t, "--no-color", "assess", "RECON-1", "--target", "SCCM.LAB")
+	out, _, err = executeForTest(t, "--no-color", "assess", "RECON-1", "--provider", "mock", "--target", "SCCM.LAB")
 	if err != nil || strings.Contains(out, "\x1b[") {
 		t.Fatalf("--no-color: err=%v output=%q", err, out)
 	}
 	t.Setenv("NO_COLOR", "1")
-	out, _, err = executeForTest(t, "--color", "always", "assess", "RECON-1", "--target", "SCCM.LAB")
+	out, _, err = executeForTest(t, "--color", "always", "assess", "RECON-1", "--provider", "mock", "--target", "SCCM.LAB")
 	if err != nil || strings.Contains(out, "\x1b[") {
 		t.Fatalf("NO_COLOR: err=%v output=%q", err, out)
 	}
@@ -380,7 +449,7 @@ func TestPolicySecretRenderingHonorsGlobalRedaction(t *testing.T) {
 }
 
 func TestSimplifiedAssessmentAndRunForms(t *testing.T) {
-	out, stderr, err := executeForTest(t, "assess", "RECON-1", "--target", "SCCM.LAB", "--format", "json")
+	out, stderr, err := executeForTest(t, "assess", "RECON-1", "--provider", "mock", "--target", "SCCM.LAB", "--format", "json")
 	if err != nil || stderr != "" || !strings.Contains(out, `"technique_id":"RECON-1"`) {
 		t.Fatalf("direct technique: err=%v stderr=%q output=%q", err, stderr, out)
 	}
@@ -396,7 +465,7 @@ func TestSimplifiedAssessmentAndRunForms(t *testing.T) {
 }
 
 func TestFamilySelectorsAreRegistryBackedAndDeterministic(t *testing.T) {
-	out, stderr, err := executeForTest(t, "assess", "RECON-ALL", "--target", "SCCM.LAB", "--format", "json")
+	out, stderr, err := executeForTest(t, "assess", "RECON-ALL", "--provider", "mock", "--target", "SCCM.LAB", "--format", "json")
 	if err != nil || stderr != "" || !strings.Contains(out, `"family":"RECON"`) || !strings.Contains(out, `"technique_id":"RECON-7"`) {
 		t.Fatalf("RECON-ALL: err=%v stderr=%q output=%q", err, stderr, out)
 	}
@@ -408,7 +477,7 @@ func TestFamilySelectorsAreRegistryBackedAndDeterministic(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &result); err != nil || len(result.Techniques) != 7 || result.Techniques[0].ID != "RECON-1" || result.Techniques[6].ID != "RECON-7" {
 		t.Fatalf("unexpected deterministic family result: err=%v result=%+v", err, result)
 	}
-	out, _, err = executeForTest(t, "assess", "CRED-ALL", "--target", "SCCM.LAB", "--format", "json")
+	out, _, err = executeForTest(t, "assess", "CRED-ALL", "--provider", "mock", "--target", "SCCM.LAB", "--format", "json")
 	if err != nil || !strings.Contains(out, `"family":"CRED"`) || !strings.Contains(out, `"technique_id":"CRED-3"`) {
 		t.Fatalf("CRED-ALL: err=%v output=%q", err, out)
 	}
@@ -555,5 +624,23 @@ func TestWorkflowHelpGoldenSurfaces(t *testing.T) {
 				t.Fatalf("%s help missing %s", path, want)
 			}
 		}
+	}
+}
+
+func TestSelectRECON4ClientDeterministicOnlineThenName(t *testing.T) {
+	clients := []recon4.Device{
+		{Name: "zeta", MachineID: 2, Online: true},
+		{Name: "alpha", MachineID: 1, Online: true},
+		{Name: "aardvark", MachineID: 3, Online: false},
+	}
+	got, err := selectRECON4Client(clients)
+	if err != nil || got != "alpha" {
+		t.Fatalf("selected client=%q err=%v", got, err)
+	}
+}
+
+func TestSelectRECON4ClientEmpty(t *testing.T) {
+	if _, err := selectRECON4Client(nil); err == nil {
+		t.Fatal("expected empty client set to block")
 	}
 }

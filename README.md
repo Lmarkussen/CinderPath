@@ -21,7 +21,7 @@ discover SCCM infrastructure
 | SCCM infrastructure discovery | Implemented |
 | LDAP site and role enumeration | Runtime validated in GOAD |
 | SMB role enumeration | Runtime validated in GOAD |
-| HTTP SCCM route assessment | Implemented; partial GOAD validation |
+| HTTP SCCM route assessment | RECON-3 implemented and GOAD validated |
 | Evidence database and JSON/HTML reports | Implemented |
 | Local client policy analysis | Implemented; current NAA recovery supported on Windows SCCM clients |
 | PXE/OSD posture analysis | Implemented; active deployment path not proven |
@@ -57,7 +57,7 @@ Use `cinderpath framework coverage` to inspect the current matrix. Full support 
 
 **RECON-2 — SCCM role reconnaissance via SMB.** The bounded adapter authenticates with SMB2/3, uses only `IPC$` and `srvsvc`, performs one `NetShareEnumAll` operation, distinguishes generic shares from SCCM shares, and persists evidence. It has been runtime validated in GOAD; the validated target exposed generic administrative shares but no SCCM-specific share. See [RECON-2](docs/TECHNIQUES/RECON-2.md).
 
-**RECON-3 — SCCM role reconnaissance via HTTP.** The implemented adapter accepts one explicit SCCM host and makes at most ten anonymous requests across a fixed HTTP/HTTPS SCCM route allowlist. It persists request evidence and distinguishes transport failure from a completed run with no SCCM evidence. GOAD collection reached the selected target, but ports 80 and 443 refused connections, so RECON-3 remains only partially runtime validated. See [RECON-3](docs/TECHNIQUES/RECON-3.md).
+**RECON-3 — SCCM role reconnaissance via HTTP.** The bounded adapter accepts one explicit SCCM host and makes at most ten anonymous requests across a fixed HTTP/HTTPS SCCM route allowlist. It persists normalized request evidence, distinguishes transport failure from a completed run with no SCCM evidence, and permits one bounded TLS renegotiation required by the GOAD IIS endpoint. GOAD validation observed the anonymous MP list and bounded DP route responses. See [RECON-3](docs/TECHNIQUES/RECON-3.md).
 
 **RECON-4 through RECON-7 — additional reconnaissance.** RECON-4 is live validated through the explicit Kerberos/Negotiate AdminService path with one bounded `OperatingSystem` CMPivot query against one device. RECON-5 SMS Provider user/device inventory and RECON-6 winreg named-pipe enumeration remain blocked pending safe bounded protocol adapters. RECON-7 has a bounded offline/local-artifact metadata foundation but is not yet a normal live assessment. Family selectors report these states individually and never claim unsupported execution.
 
@@ -65,7 +65,7 @@ Use `cinderpath framework coverage` to inspect the current matrix. Full support 
 
 The discovery pipeline supports explicit-scope DNS and bounded endpoint discovery, TCP connect checks, HTTP/TLS profiling, LDAP SCCM directory discovery, fixed management-point and distribution-point route checks, and passive role inference. Normalized assets, relationships, evidence, findings, credentials references, and capabilities are incrementally persisted in SQLite and rendered as machine-clean JSON or portable HTML reports.
 
-The default discovery provider is `mock`. Network discovery occurs only when an operator explicitly selects the live provider and supplies scope.
+Live is the normal provider for operator-selected discovery and technique assessment. Use `--provider mock` only for deterministic development and testing; CinderPath never silently changes an explicitly requested provider.
 
 ### Credential and policy research
 
@@ -85,7 +85,7 @@ The intended endgame is to identify deployed task sequences, validate PXE exposu
 |---|---|
 | RECON-1 — Enumerate SCCM site information via LDAP | Supported and GOAD runtime validated |
 | RECON-2 — Enumerate SCCM roles via SMB | Supported and GOAD runtime validated |
-| RECON-3 — Enumerate SCCM roles via HTTP | Implemented; partial GOAD runtime validation |
+| RECON-3 — Enumerate SCCM roles via HTTP | Complete and GOAD runtime validated |
 | RECON-4 — Query client devices via CMPivot | Complete and GOAD runtime validated; fixed single-device OperatingSystem query |
 | RECON-5 — Locate users via SMS Provider | Blocked; provider adapter missing |
 | RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Blocked; winreg adapter missing |
@@ -188,11 +188,11 @@ one-off LDAP assessment needs no separate `discover` command or LDAP-enable flag
 ```bash
 export CINDERPATH_PASSWORD='example-only'
 ./bin/cinderpath assess RECON-1 --target SCCM.LAB \
-  --provider live --domain-controller DC.SCCM.LAB \
+  --domain-controller DC.SCCM.LAB \
   --username cinderpath-ldap@SCCM.LAB --password-env CINDERPATH_PASSWORD
 ```
 
-Without a configured live connector, the technique command returns a truthful plan and performs no network activity.
+If an explicit identity or other safe prerequisite is missing, the technique command returns a concise truthful `BLOCKED` result rather than requiring a manual discovery ceremony.
 
 ## Example operator workflows
 
@@ -203,7 +203,7 @@ Network-free planning and reporting:
 ./bin/cinderpath run SCCM.LAB --dry-run
 ./bin/cinderpath run SCCM.LAB --profile yolo --dry-run
 ./bin/cinderpath run --config config.example.yaml --dry-run
-./bin/cinderpath discover --provider mock
+./bin/cinderpath discover --provider mock  # deterministic development/testing
 ./bin/cinderpath assess
 ./bin/cinderpath report
 ```
@@ -226,20 +226,31 @@ means a required context, identity, or local dependency is unavailable;
 `FAILED` means an operation was attempted and unexpectedly failed. Local-only
 techniques such as CRED-2 and CRED-3 are reported as blocked when the current
 host is not an SCCM client rather than being run against a server target.
+For bounded local repairs, an interactive terminal may ask for consent and
+invoke `sudo` only for the specific repair (for example, granting capture
+capabilities to the CinderPath binary); CinderPath itself is not run as root.
+Automation and JSON/non-TTY runs never elevate or prompt. Rebuilt binaries
+may need their local file capabilities granted again because the executable
+state is checked each run.
 
 Explicit-scope discovery for an authorized target:
 
 ```bash
-./bin/cinderpath discover --provider live --target sccm01.example.local
+./bin/cinderpath discover --target sccm01.example.local
 ```
 
-The live provider is never selected implicitly. Focused research commands, capture workflows, and advanced diagnostics live below `research` and `debug`; see the documentation index instead of treating those primitives as the primary product interface.
+The live provider is selected by default for operator discovery and technique
+assessment; `--provider live` remains accepted for compatibility and
+`--provider mock` is reserved for deterministic testing. Individual techniques
+and family selectors acquire safe prerequisites directly, so a manual
+`discover` or `RECON-ALL` ceremony is not required. Focused research commands,
+capture workflows, and advanced diagnostics live below `research` and `debug`.
 
 ## Safety model
 
 CinderPath is intended for authorized security assessments and controlled labs. Safe, read-only behavior is the default.
 
-- `discover` defaults to `--provider mock`; live activity requires an explicit provider and scope.
+- `discover` and live technique assessment default to the live provider; mock activity requires explicit `--provider mock`.
 - Exclusions and target-expansion limits are enforced before network activity.
 - Protocol operations are bounded by context, concurrency, timeouts, response limits, and exact route or class allowlists.
 - Reachability and naming patterns are supporting evidence, not vulnerabilities or confirmed SCCM roles.
@@ -272,9 +283,8 @@ existing scripts and transcript tests.
 
 ## Project maturity and limitations
 
-CinderPath is early-stage software under active development. RECON-1,
-RECON-2, and RECON-4 are supported and GOAD-runtime-validated; RECON-3 is
-implemented with partial protocol-positive runtime validation. RECON-5 and
+CinderPath is early-stage software under active development. RECON-1 through
+RECON-4 are supported and GOAD-runtime-validated. RECON-5 and
 RECON-6 are audited but blocked pending safe adapters, and RECON-7 remains
 partial. CRED-1,
 CRED-2, and CRED-3 are implemented and GOAD validated. The remaining catalog

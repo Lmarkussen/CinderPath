@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/netip"
 	neturl "net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/cred1"
@@ -25,7 +27,8 @@ type CRED1Outcome struct {
 // AssessCRED1 executes the bounded CRED-1 chain against one explicit target.
 func (a *Application) AssessCRED1(ctx context.Context, target string) (CRED1Outcome, error) {
 	var out CRED1Outcome
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip4", target)
+	lookupTarget := cred1LookupTarget(target)
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip4", lookupTarget)
 	if err != nil || len(ips) == 0 {
 		return out, fmt.Errorf("CRED-1 target resolution: %w", err)
 	}
@@ -65,6 +68,16 @@ func (a *Application) AssessCRED1(ctx context.Context, target string) (CRED1Outc
 	_ = store.FinishRun(context.WithoutCancel(ctx), run.ID, models.RunCompleted, map[string]any{"cred1": ev.ID, "secret_count": countCRED1Secrets(result), "live_policy_requests": 1})
 	out = CRED1Outcome{Run: *run, TargetIP: dp.String(), Interface: iface, Identity: identity, Result: result}
 	return out, nil
+}
+
+func cred1LookupTarget(target string) string {
+	// Preserve the logical SCCM authority while using an explicitly evidenced
+	// transport address when local DNS is stale (the same authority/transport
+	// split used by RECON-3 and RECON-4).
+	if authority, transport := os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY"), os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP"); authority != "" && transport != "" && strings.EqualFold(strings.TrimSuffix(authority, "."), strings.TrimSuffix(target, ".")) {
+		return transport
+	}
+	return target
 }
 func routeInterface(dst netip.Addr) (string, error) {
 	c, e := net.DialUDP("udp4", nil, &net.UDPAddr{IP: dst.AsSlice(), Port: 4011})

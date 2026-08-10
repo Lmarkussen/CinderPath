@@ -37,6 +37,7 @@ type state struct {
 	cfg                                       config.Config
 	application                               *app.Application
 	stdout, stderr                            io.Writer
+	familyPreflight                           bool
 	discover                                  discoverFlags
 	identity                                  identity.Input
 	auth                                      authFlags
@@ -266,7 +267,7 @@ func (s *state) versionCommand() *cobra.Command {
 	return &cobra.Command{Use: "version", Short: "Print version and build information", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { fmt.Fprintln(s.stdout, version.Current().String()); return nil }}
 }
 func (s *state) discoverCommand() *cobra.Command {
-	c := &cobra.Command{Use: "discover", Short: "Discover SCCM with safe profile defaults", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	c := &cobra.Command{Use: "discover", Short: "Discover SCCM with bounded live defaults", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(cmd.Context(), s.cfg.Timeout)
 		defer cancel()
 		options, err := s.discoverOptions()
@@ -277,7 +278,7 @@ func (s *state) discoverCommand() *cobra.Command {
 		s.printOutcome(out)
 		return err
 	}}
-	c.Flags().StringVar(&s.discover.provider, "provider", "mock", "mock or explicitly selected live discovery")
+	c.Flags().StringVar(&s.discover.provider, "provider", "live", "live by default; use mock for development/testing")
 	c.Flags().StringArrayVar(&s.discover.targets, "target", nil, "target hostname, address, or CIDR (repeatable)")
 	return c
 }
@@ -295,7 +296,7 @@ func (s *state) advancedDiscoverCommand() *cobra.Command {
 		return err
 	}}
 	f := c.Flags()
-	f.StringVar(&s.discover.provider, "provider", "mock", "discovery provider: mock or live")
+	f.StringVar(&s.discover.provider, "provider", "live", "live by default; use mock for development/testing")
 	f.StringArrayVar(&s.discover.targets, "target", nil, "target hostname, address, or CIDR (repeatable)")
 	f.StringArrayVar(&s.discover.targetFiles, "targets-file", nil, "file containing targets")
 	f.StringVar(&s.discover.domain, "domain", "", "domain name hint")
@@ -330,8 +331,11 @@ func (s *state) advancedDiscoverCommand() *cobra.Command {
 
 func (s *state) discoverOptions() (app.DiscoverOptions, error) {
 	d := s.discover
-	if d.provider != "live" {
+	if d.provider == "mock" {
 		return app.DiscoverOptions{Provider: d.provider}, nil
+	}
+	if d.provider != "live" {
+		return app.DiscoverOptions{}, fmt.Errorf("invalid provider %q (use live or mock; mock is for development/testing)", d.provider)
 	}
 	portsRaw := d.ports
 	if portsRaw == "" {
@@ -385,7 +389,7 @@ func (s *state) discoverOptions() (app.DiscoverOptions, error) {
 func (s *state) assessCommand() *cobra.Command {
 	var frameworkName string
 	technique := &techniqueOptions{}
-	c := &cobra.Command{Use: "assess [TARGET_OR_TECHNIQUE]", Short: "Assess a target or supported technique without active validation", Long: "Assess stored or mock-safe evidence. A technique ID selects its bounded adapter; another target creates a safe assessment plan. Unsupported and active stages remain clearly blocked.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	c := &cobra.Command{Use: "assess [TARGET_OR_TECHNIQUE]", Short: "Assess a target or supported technique", Long: "Assess a target or run a bounded technique. Live is the normal provider; use --provider mock only for deterministic development/testing. A technique ID selects its bounded adapter and acquires safe prerequisites directly.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 {
 			if strings.HasSuffix(strings.ToUpper(strings.TrimSpace(args[0])), "-ALL") && !isFrameworkTechnique(args[0]) {
 				return fmt.Errorf("%q is not a framework technique or supported family selector", args[0])

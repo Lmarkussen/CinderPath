@@ -121,7 +121,7 @@ func NewWorkflow(domain string, profile Profile) Config {
 	c.Project.Name = domain
 	c.WorkflowScope.Domain = domain
 	c.WorkflowScope.MaxTargets = c.Scope.MaxExpandedTargets
-	c.Workflow = WorkflowConfig{Provider: "mock", Discovery: true, LDAP: true, Authentication: profile != ProfileSafe, Assessment: true, Reporting: true}
+	c.Workflow = WorkflowConfig{Provider: "live", Discovery: true, LDAP: true, Authentication: profile != ProfileSafe, Assessment: true, Reporting: true}
 	c.Safety = SafetyConfig{AllowAuthentication: profile != ProfileSafe}
 	c.Output = OutputConfig{Directory: derivedReportDir(domain), HTML: true, JSON: true, SecretsFile: profile == ProfileAggressive || profile == ProfileYolo}
 	c.OutputDir = c.Output.Directory
@@ -223,9 +223,6 @@ func Validate(c Config) []Diagnostic {
 	}
 	if c.Workflow.Provider != "" && c.Workflow.Provider != "mock" && c.Workflow.Provider != "live" {
 		add("ERROR", "workflow.provider must be mock or live")
-	}
-	if c.Workflow.Provider == "live" && len(c.WorkflowScope.Targets) == 0 && c.WorkflowScope.TargetsFile == "" && len(c.WorkflowScope.IncludeCIDRs) == 0 && c.WorkflowScope.DomainController == "" {
-		add("ERROR", "live provider requires explicit target scope")
 	}
 	if c.WorkflowScope.DNSServer != "" {
 		h := c.WorkflowScope.DNSServer

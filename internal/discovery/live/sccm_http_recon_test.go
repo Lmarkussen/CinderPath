@@ -2,7 +2,12 @@ package live
 
 import (
 	"context"
+	"crypto/tls"
+	"net"
+	"net/url"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/modules"
@@ -54,6 +59,38 @@ func TestSCCMHTTPReconRequestBound(t *testing.T) {
 	if planned := len(sccmRouteAllowlist) * len(sccmHTTPReconOrigins("example.test")); planned > sccmHTTPReconRequestBound() {
 		t.Fatalf("request plan=%d exceeds bound=%d", planned, sccmHTTPReconRequestBound())
 	}
+}
+
+func TestSCCMHTTPTransportAllowsOneBoundedRenegotiation(t *testing.T) {
+	origin, err := url.Parse("https://mecm.example.test:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, transport, _ := dedicatedSCCMClient(HTTPOptions{Timeout: time.Second}, origin, map[string]bool{"mecm.example.test": true}, &requestTracker{})
+	defer transport.CloseIdleConnections()
+	if client == nil || transport.TLSClientConfig.Renegotiation != tls.RenegotiateOnceAsClient {
+		t.Fatalf("unexpected TLS renegotiation policy: %#v", transport.TLSClientConfig)
+	}
+}
+
+func TestSCCMHTTPTransportUsesEvidencedIPForLogicalAuthority(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	origin, err := url.Parse("https://mecm.sccm.lab:" + strconv.Itoa(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, transport, _ := dedicatedSCCMClient(HTTPOptions{Timeout: time.Second, TransportIP: "127.0.0.1"}, origin, map[string]bool{"mecm.sccm.lab": true}, &requestTracker{})
+	defer transport.CloseIdleConnections()
+	conn, err := transport.DialContext(context.Background(), "tcp", "mecm.sccm.lab:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("evidenced transport dial failed: %v", err)
+	}
+	_ = conn.Close()
 }
 
 func structScope(target string) scope.Input {

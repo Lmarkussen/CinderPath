@@ -8,7 +8,7 @@ its own implementation and runtime state.
 |---|---|---|---|
 | RECON-1 — Enumerate SCCM site information via LDAP | Authenticated LDAP discovery of System Management, sites, and management points | Complete; GOAD validated | Authorized assessment host with LDAP credentials |
 | RECON-2 — Enumerate SCCM roles via SMB | Authenticated SMB2/3 `IPC$`/`srvsvc` share metadata | Complete; GOAD validated | Authorized assessment host with SMB credentials |
-| RECON-3 — Enumerate SCCM roles via HTTP | Fixed anonymous SCCM route reconnaissance on an explicit site-system host | Implemented; partial GOAD runtime validation | Authorized assessment host; no content retrieval |
+| RECON-3 — Enumerate SCCM roles via HTTP | Fixed anonymous SCCM route reconnaissance on an explicit site-system host | Complete; GOAD validated | Authorized assessment host; no content retrieval |
 | RECON-4 — Query client devices via CMPivot | Authenticated ConfigMgr CMPivot query against a collection or device | Complete; GOAD validated | One explicit Kerberos/Negotiate AdminService request targets one device with the fixed `OperatingSystem` query; polling and result normalization are bounded |
 | RECON-5 — Locate users via SMS Provider | Read-only SMS Provider inventory and user-device affinity queries | Blocked | Requires authenticated SMS Provider/AdminService access |
 | RECON-6 — Enumerate SCCM roles via SMB Named Pipe winreg | Read-only remote registry metadata through the `winreg` named pipe | Blocked | Requires a bounded SMB named-pipe/Remote Registry adapter |
