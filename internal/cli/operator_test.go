@@ -240,14 +240,14 @@ func TestCRED2SecretOutputRedaction(t *testing.T) {
 
 func TestPublicSurface(t *testing.T) {
 	c := New(&bytes.Buffer{}, &bytes.Buffer{})
-	want := map[string]bool{"discover": true, "assess": true, "validate": true, "exploit": true, "cleanup": true, "report": true, "run": true, "framework": true, "research": true, "debug": true}
+	want := map[string]bool{"discover": true, "assess": true, "validate": true, "exploit": true, "cleanup": true, "report": true, "run": true, "framework": true, "research": true, "debug": true, "techniques": true}
 	for _, x := range c.Commands() {
 		if want[x.Name()] {
 			delete(want, x.Name())
 		}
 		if !x.Hidden && x.Name() != "completion" && x.Name() != "help" && x.Name() != "version" {
 			switch x.Name() {
-			case "discover", "assess", "validate", "exploit", "cleanup", "report", "run", "framework", "research", "debug":
+			case "discover", "assess", "validate", "exploit", "cleanup", "report", "run", "framework", "research", "debug", "techniques":
 			default:
 				t.Fatalf("internal top-level command exposed: %s", x.Name())
 			}
@@ -255,6 +255,29 @@ func TestPublicSurface(t *testing.T) {
 	}
 	if len(want) > 0 {
 		t.Fatalf("missing public commands: %v", want)
+	}
+}
+
+func TestTechniqueListingAndHelpAreCaseInsensitive(t *testing.T) {
+	out, stderr, err := executeForTest(t, "techniques", "--family", "cred")
+	if err != nil || stderr != "" || !strings.Contains(out, "CRED-1  Retrieve secrets from PXE boot media") || !strings.Contains(out, "CRED-3  Dump Currently Deployed NAA Credentials") {
+		t.Fatalf("techniques output: err=%v stderr=%q output=%q", err, stderr, out)
+	}
+	out, stderr, err = executeForTest(t, "help", "cred-3")
+	if err != nil || stderr != "" || !strings.Contains(out, "CRED-3 — Dump Currently Deployed NAA Credentials") || !strings.Contains(out, "NT AUTHORITY\\SYSTEM") || !strings.Contains(out, "no remote execution adapter") {
+		t.Fatalf("technique help: err=%v stderr=%q output=%q", err, stderr, out)
+	}
+	_, _, err = executeForTest(t, "help", "CRED-99")
+	if err == nil || !strings.Contains(err.Error(), `unknown technique "CRED-99"`) || !strings.Contains(err.Error(), "cinderpath techniques") {
+		t.Fatalf("unknown technique error=%v", err)
+	}
+}
+
+func TestBlockedLocalTechniqueExplainsRequiredSystemContext(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "blocked-help.db"))
+	out, stderr, err := executeForTest(t, "assess", "CRED-3", "--provider", "live", "--target", "MECM.SCCM.LAB")
+	if err != nil || stderr != "" || !strings.Contains(out, "NT AUTHORITY\\SYSTEM") || !strings.Contains(out, "Technique attempted: no") || !strings.Contains(out, "managed SCCM client") {
+		t.Fatalf("blocked output: err=%v stderr=%q output=%q", err, stderr, out)
 	}
 }
 

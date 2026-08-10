@@ -51,6 +51,14 @@ CinderPath embeds a deterministic upstream snapshot, while its product-visible c
 
 Use `cinderpath framework coverage` to inspect the current matrix. Full support details live in the [framework roadmap](docs/MISCONFIGURATION_MANAGER_ROADMAP.md) and [implementation status](docs/STATUS.md).
 
+Technique requirements are exposed from the same planner metadata used during
+assessment. Use `cinderpath techniques` (or `--family CRED` / `--family RECON`)
+for a compact inventory, and `cinderpath help CRED-3` for execution context,
+identity, privilege, services, evidence, and current limitations. A blocked
+prerequisite means the technique was not attempted; it is distinct from a
+protocol failure. In particular, CRED-2 and CRED-3 require `NT AUTHORITY\\SYSTEM`
+on a managed SCCM client and currently have no remote execution adapter.
+
 ### Runtime-validated reconnaissance
 
 **RECON-1 — SCCM roles and site information via LDAP.** Authenticated RootDSE collection, `System Management` discovery, SCCM Active Directory publishing detection, site-code and management-point discovery, and evidence-backed assets and relationships have been runtime validated in GOAD. See [RECON-1](docs/TECHNIQUES/RECON-1.md).

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Lmarkussen/CinderPath/internal/config"
 	"github.com/Lmarkussen/CinderPath/internal/cred1"
+	"github.com/Lmarkussen/CinderPath/internal/planner"
 )
 
 type localPrerequisite struct {
@@ -57,9 +58,9 @@ func (s *state) localPrerequisites(technique, target string, live bool) []localP
 	}
 	if technique == "CRED-2" || technique == "CRED-3" {
 		if localTechniqueTarget(target) {
-			items = append(items, localPrerequisite{ID: "sccm_client_context", Name: "SCCM client execution context", Status: "pass", State: requirementSatisfied, Reason: "current host is the requested client"})
+			items = append(items, localPrerequisite{ID: "sccm_client_context", Name: "SCCM client SYSTEM context", Status: "pass", State: requirementSatisfied, Reason: "current host is the requested client; runtime will verify NT AUTHORITY\\SYSTEM"})
 		} else {
-			items = append(items, localPrerequisite{ID: "sccm_client_context", Name: "SCCM client execution context", Status: "blocked", State: requirementBlocked, Reason: "this technique requires execution on the SCCM client itself", Remediation: "run CinderPath locally as the required SCCM client context"})
+			items = append(items, localPrerequisite{ID: "sccm_client_context", Name: "SCCM client SYSTEM context", Status: "blocked", State: requirementBlocked, Reason: "this technique requires NT AUTHORITY\\SYSTEM on the managed SCCM client; the current host is not that client", Remediation: "run CinderPath locally as SYSTEM on the managed SCCM client; no remote execution adapter is configured"})
 		}
 	}
 	return items
@@ -204,14 +205,29 @@ func localTechniqueTarget(target string) bool {
 }
 
 func (s *state) renderBlocked(technique, target string, item localPrerequisite, format string) error {
+	spec := planner.OrchestrationFor(technique)
 	if format == "json" {
-		return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": technique, "technique_name": techniqueTitle(technique), "status": "blocked", "target": redactedTarget(target), "prerequisite_id": item.ID, "prerequisite": item.Name, "requirement_state": item.State, "reason": item.Reason, "remediation": item.Remediation, "auto_fix_supported": item.AutoFixSupported, "elevation_required": item.ElevationRequired, "persistent": item.Persistent, "redaction": s.outputPolicy().Metadata()})
+		return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": technique, "technique_name": techniqueTitle(technique), "status": "blocked", "technique_attempted": false, "target": redactedTarget(target), "prerequisite_id": item.ID, "prerequisite": item.Name, "requirement_state": item.State, "reason": item.Reason, "remediation": item.Remediation, "execution": spec, "auto_fix_supported": item.AutoFixSupported, "elevation_required": item.ElevationRequired, "persistent": item.Persistent, "redaction": s.outputPolicy().Metadata()})
 	}
-	fmt.Fprintf(s.stdout, "%s — %s\n\nTarget: %s\nStatus: %s\n\nMissing prerequisite: %s\nReason: %s\n", technique, techniqueTitle(technique), s.renderer.Target(redactedTarget(target)), s.renderer.Warning("BLOCKED"), item.Name, item.Reason)
+	fmt.Fprintf(s.stdout, "%s — %s\n\nStatus: %s\n\nRequired\n  Host role:          %s\n  Platform:           %s\n  Identity:           %s\n  Privilege:          %s\n\nCurrent context\n  Host:               %s\n  Platform:           %s\n\nMissing\n  ✗ %s\n\nTechnique attempted: no\nWhy\n  %s\n", technique, techniqueTitle(technique), s.renderer.Warning("BLOCKED"), spec.TargetRole, spec.Platform, spec.Identity, spec.Privilege, currentHostname(), runtime.GOOS, item.Name, item.Reason)
+	if target != "" {
+		fmt.Fprintf(s.stdout, "\nResolved target\n  %s\n", redactedTarget(target))
+	}
 	if item.Remediation != "" {
-		fmt.Fprintf(s.stdout, "Fix: %s\n", item.Remediation)
+		fmt.Fprintf(s.stdout, "\nHow to fix\n  %s\n", item.Remediation)
+	}
+	if len(spec.Limitations) > 0 {
+		fmt.Fprintf(s.stdout, "\nCurrent limitation\n  %s\n", strings.Join(spec.Limitations, "; "))
 	}
 	return nil
+}
+
+func currentHostname() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		return "unknown"
+	}
+	return host
 }
 
 func (s *state) confirmRepair(item localPrerequisite) bool {

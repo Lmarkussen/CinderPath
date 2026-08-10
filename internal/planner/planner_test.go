@@ -52,6 +52,15 @@ func TestOrchestrationMetadataKeepsFamilyRootAndChildRolesDistinct(t *testing.T)
 	}
 }
 
+func TestImplementedTechniquesExposeOperatorMetadata(t *testing.T) {
+	for _, id := range []string{"CRED-1", "CRED-2", "CRED-3", "RECON-1", "RECON-2", "RECON-3", "RECON-4", "RECON-5", "RECON-6"} {
+		spec := OrchestrationFor(id)
+		if !spec.Implemented || spec.Description == "" || spec.Platform == "" || spec.Privilege == "" || spec.Evidence == "" {
+			t.Fatalf("%s metadata incomplete: %+v", id, spec)
+		}
+	}
+}
+
 func TestRECON5RequiresProviderIdentityAndUsesManagementPointRole(t *testing.T) {
 	p := Resolve(Input{Technique: "RECON-5", Provider: "live", Target: "MECM.SCCM.LAB", Now: time.Now()})
 	if len(p.Prerequisites) != 2 || p.Prerequisites[0].Fact != SMSProvider || p.Prerequisites[1].Fact != Identity {

@@ -70,6 +70,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{Use: "cinderpath", Short: "Safe SCCM discovery and Misconfiguration Manager assessment", Long: "CinderPath discovers SCCM, assesses supported Misconfiguration Manager techniques, validates findings through explicit safety gates, records cleanup obligations, and generates evidence-backed reports. Advanced offline tooling lives under research; diagnostic tooling lives under debug.", Example: "  cinderpath discover --provider mock\n  cinderpath assess --framework misconfiguration-manager --target lab.example\n  cinderpath assess pxe --target srv01\n  cinderpath report\n  cinderpath research --help", SilenceUsage: true, SilenceErrors: true, PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return s.configure(cmd) }}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
+	root.SetHelpCommand(s.helpCommand(root))
 	f := root.PersistentFlags()
 	f.StringVar(&s.configPath, "config", "", "optional YAML configuration file")
 	f.StringVar(&s.db, "db", d.DBPath, "SQLite database path")
@@ -82,7 +83,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	f.BoolVar(&s.redactSecrets, "redact-secrets", false, "redact secret values in operator output and reports")
 	f.StringVar(&s.timeout, "timeout", d.TimeoutText, "command timeout")
 	f.StringVar(&s.profile, "profile", string(d.Profile), "policy profile: safe, standard, aggressive, yolo, or research")
-	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.validationCommand(), s.exploitCommand(), s.cleanupCommand(), s.reportCommand(), s.runCommand(), s.frameworkCommand(), s.researchCommand(), s.debugCommand(root))
+	root.AddCommand(s.versionCommand(), s.discoverCommand(), s.assessCommand(), s.validationCommand(), s.exploitCommand(), s.cleanupCommand(), s.reportCommand(), s.runCommand(), s.frameworkCommand(), s.researchCommand(), s.debugCommand(root), s.techniquesCommand())
 	return root
 }
 func (s *state) authCommand() *cobra.Command {

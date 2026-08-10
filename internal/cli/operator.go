@@ -201,7 +201,7 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		if (techniqueID == "CRED-2" || techniqueID == "CRED-3") && s.cfg.Workflow.Provider == "live" {
 			if !localTechniqueTarget(o.target) {
-				item := localPrerequisite{ID: "sccm_client_context", Name: "SCCM client execution context", Status: "blocked", Reason: "this technique requires execution on the SCCM client itself", Remediation: "run CinderPath locally as the required SCCM client context"}
+				item := localPrerequisite{ID: "sccm_client_context", Name: "SCCM client SYSTEM context", Status: "blocked", State: requirementBlocked, Reason: "this technique requires NT AUTHORITY\\SYSTEM on the managed SCCM client; the current host is not that client", Remediation: "run CinderPath locally as SYSTEM on the managed SCCM client; no remote execution adapter is configured"}
 				return s.renderBlocked(techniqueID, o.target, item, o.format)
 			}
 			if o.format != "text" && o.format != "json" {

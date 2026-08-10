@@ -78,11 +78,21 @@ type Plan struct {
 // environment target. It is intentionally small: family runners use this
 // metadata to route a child without turning the planner into a scheduler.
 type OrchestrationSpec struct {
-	Technique   string `json:"technique"`
-	TargetRole  string `json:"target_role"`
-	Execution   string `json:"execution_locality"`
-	Capability  string `json:"required_capability,omitempty"`
-	Implemented bool   `json:"implemented"`
+	Technique   string   `json:"technique"`
+	TargetRole  string   `json:"target_role"`
+	Execution   string   `json:"execution_locality"`
+	Capability  string   `json:"required_capability,omitempty"`
+	Implemented bool     `json:"implemented"`
+	Description string   `json:"description,omitempty"`
+	Platform    string   `json:"platform,omitempty"`
+	Identity    string   `json:"identity,omitempty"`
+	Privilege   string   `json:"privilege,omitempty"`
+	Services    []string `json:"services,omitempty"`
+	Evidence    string   `json:"evidence,omitempty"`
+	Remote      bool     `json:"remote_from_kali"`
+	Anonymous   bool     `json:"anonymous_supported"`
+	Limitations []string `json:"limitations,omitempty"`
+	Remediation string   `json:"remediation,omitempty"`
 }
 
 func OrchestrationFor(technique string) OrchestrationSpec {
@@ -91,24 +101,65 @@ func OrchestrationFor(technique string) OrchestrationSpec {
 	switch id {
 	case "RECON-1":
 		spec.TargetRole, spec.Capability = "directory_site_context", "ldap_identity"
+		spec.Description = "Enumerates SCCM site information through bounded LDAP discovery."
+		spec.Platform, spec.Identity, spec.Privilege = "any", "explicit LDAP/domain identity", "user"
+		spec.Services, spec.Evidence, spec.Remote, spec.Anonymous = []string{"LDAP", "DNS"}, "site code, site systems, and directory provenance", true, false
 	case "RECON-2":
 		spec.TargetRole, spec.Capability = "site_system", "sccm_smb"
+		spec.Description = "Enumerates SCCM roles and shares through authenticated SMB metadata."
+		spec.Platform, spec.Identity, spec.Privilege = "any", "explicit SMB/domain identity", "user"
+		spec.Services, spec.Evidence, spec.Remote = []string{"SMB2/3", "IPC$", "srvsvc"}, "bounded SCCM role/share evidence", true
 	case "RECON-3":
 		spec.TargetRole, spec.Capability = "management_point", "sccm_http"
+		spec.Description = "Profiles the SCCM site-system HTTP route allowlist without authentication."
+		spec.Platform, spec.Identity, spec.Privilege = "any", "none", "none"
+		spec.Services, spec.Evidence, spec.Remote, spec.Anonymous = []string{"HTTP/HTTPS"}, "allowlisted SCCM route metadata", true, true
 	case "RECON-4":
 		spec.TargetRole, spec.Capability = "sccm_client_via_management_point", "explicit_configmgr_negotiate"
 		spec.Execution = "management_point_authority"
+		spec.Description = "Queries one selected SCCM client with the fixed OperatingSystem CMPivot query."
+		spec.Platform, spec.Identity, spec.Privilege = "any", "explicit ConfigMgr identity with CMPivot RBAC", "ConfigMgr authorization"
+		spec.Services, spec.Evidence, spec.Remote = []string{"HTTPS AdminService", "Kerberos/Negotiate", "CMPivot"}, "bounded client operating-system metadata", true
+		spec.Limitations = []string{"fixed OperatingSystem query", "one bounded client target", "no arbitrary KQL"}
+		spec.Remediation = "Configure an explicit ConfigMgr identity and current AdminService authority/transport."
 	case "RECON-5":
 		spec.TargetRole, spec.Capability = "management_point_sms_provider", "sms_provider"
 		spec.Execution = "management_point_authority"
+		spec.Description = "Locates bounded user/device relationships through the SMS Provider."
+		spec.Platform, spec.Identity, spec.Privilege = "any", "explicit ConfigMgr-authorized identity", "ConfigMgr authorization"
+		spec.Services, spec.Evidence, spec.Remote = []string{"HTTPS AdminService", "Kerberos/Negotiate", "SMS Provider"}, "bounded user/device relationship metadata", true
+		spec.Limitations = []string{"bounded relationship count", "optional exact-user filter", "no arbitrary WQL"}
 	case "RECON-6":
 		spec.TargetRole, spec.Capability = "site_system", "remote_registry_read"
 		spec.Execution = "remote_network"
+		spec.Description = "Enumerates SCCM roles through read-only Remote Registry RPC over the SMB winreg pipe."
+		spec.Platform, spec.Identity, spec.Privilege = "any", "explicit SMB/domain identity", "read-only Remote Registry access"
+		spec.Services, spec.Evidence, spec.Remote = []string{"SMB2/3", "IPC$", "\\PIPE\\winreg", "Remote Registry"}, "bounded SCCM registry role/site metadata", true
+		spec.Limitations = []string{"fixed registry allowlist", "Remote Registry must already be available", "no registry mutation"}
+	case "RECON-7":
+		spec.TargetRole, spec.Capability = "sccm_client", "local_sccm_files"
+		spec.Execution = "local_sccm_client"
+		spec.Description = "Collects bounded local SCCM artifact metadata for offline analysis."
+		spec.Platform, spec.Identity, spec.Privilege = "windows", "none", "user-readable artifact access"
+		spec.Services, spec.Evidence = []string{"local SCCM files"}, "metadata-only local artifact evidence"
+		spec.Limitations = []string{"normal live local-file assessment is not integrated"}
 	case "CRED-1":
 		spec.TargetRole, spec.Capability = "distribution_point_or_management_point", "packet_capture"
+		spec.Description = "Recovers secrets exposed through supported SCCM PXE boot-media policy paths."
+		spec.Platform, spec.Identity, spec.Privilege = "linux", "none", "CAP_NET_RAW + CAP_NET_ADMIN"
+		spec.Services, spec.Evidence, spec.Remote, spec.Anonymous = []string{"libpcap", "DHCP/PXE/WDS"}, "bounded PXE policy and recovered secret metadata", true, true
+		spec.Limitations = []string{"requires capture interface and capabilities", "bounded policy collection"}
 	case "CRED-2", "CRED-3":
 		spec.TargetRole, spec.Capability = "sccm_client", "local_sccm_client_context"
 		spec.Execution = "local_sccm_client"
+		spec.Platform, spec.Identity, spec.Privilege = "windows", "none", "NT AUTHORITY\\SYSTEM"
+		spec.Services, spec.Evidence = []string{"SCCM client WMI", "machine DPAPI"}, "current client NAA credential metadata"
+		spec.Limitations = []string{"requires execution on the managed SCCM client", "no remote execution adapter"}
+		if id == "CRED-2" {
+			spec.Description = "Recovers an NAA from the current SCCM client policy path."
+		} else {
+			spec.Description = "Dumps currently deployed NAA credentials from the SCCM client WMI state."
+		}
 	default:
 		return spec
 	}
