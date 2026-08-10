@@ -15,6 +15,7 @@ import (
 	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/artifact"
 	"github.com/Lmarkussen/CinderPath/internal/config"
+	"github.com/Lmarkussen/CinderPath/internal/cred1"
 	"github.com/Lmarkussen/CinderPath/internal/database"
 	"github.com/Lmarkussen/CinderPath/internal/discovery/live"
 	"github.com/Lmarkussen/CinderPath/internal/framework"
@@ -193,6 +194,30 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 				}
 			}
 		}
+		if techniqueID == "CRED-1" {
+			if s.cfg.Workflow.Provider != "live" {
+				return fmt.Errorf("CRED-1 active PXE assessment requires --provider live and one explicit target")
+			}
+			if o.target == "" {
+				return fmt.Errorf("CRED-1 requires --target DP_OR_MP")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+			defer cancel()
+			out, err := s.application.AssessCRED1(ctx, o.target)
+			if err != nil {
+				return err
+			}
+			secrets := cred1Secrets(out.Result, s.outputPolicy().RedactSecrets)
+			if o.format == "json" {
+				return json.NewEncoder(s.stdout).Encode(map[string]any{"technique_id": "CRED-1", "status": "completed", "target": redactedTarget(o.target), "dp": out.TargetIP, "interface": out.Interface, "site": out.Identity.SiteCode, "certificate": out.Result.Certificate, "assignment_count": len(out.Result.Assignments), "task_sequence_policies": len(out.Result.Policies), "recovered_secrets": secrets, "run_id": out.Run.ID, "redaction": s.outputPolicy().Metadata(), "network_activity": map[string]int{"pxe_requests": 1, "tftp_bootvar": 1, "mp_metadata": 1, "assignment": 1, "policies": len(out.Result.Policies)}})
+			}
+			fmt.Fprintf(s.stdout, "CRED-1 — PXE boot-media credential recovery\n\nTarget\n  DP: %s\n  Site: %s\n  Interface: %s\n\nPXE bootstrap\n  WDS reply: received\n  boot.var: recovered\n  media identity: recovered\n  certificate: usable\n\nPolicy\n  assignment: received\n  task-sequence policies: %d\n\nRecovered secrets\n", out.TargetIP, out.Identity.SiteCode, out.Interface, len(out.Result.Policies))
+			for _, v := range secrets {
+				fmt.Fprintf(s.stdout, "  %s: %s\n", v["name"], v["value"])
+			}
+			fmt.Fprintln(s.stdout, "\nStatus: completed")
+			return nil
+		}
 		if techniqueID == "RECON-1" && s.cfg.Workflow.Provider == "live" {
 			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			defer cancel()
@@ -330,6 +355,24 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		return nil
 	}}
 	return c
+}
+
+// cred1Secrets intentionally derives output solely from this fresh assessment
+// result. CRED-1 never rehydrates secret values from historical SQLite
+// evidence, so a later assignment without the policy cannot render a prior
+// run's secret as current output.
+func cred1Secrets(result cred1.PolicyResult, redact bool) []map[string]string {
+	secrets := []map[string]string{}
+	for _, seq := range result.TaskSequences {
+		for _, v := range seq.Variables {
+			value := v.Value
+			if redact {
+				value = "<redacted>"
+			}
+			secrets = append(secrets, map[string]string{"name": v.Name, "value": value, "package_id": seq.PackageID, "deployment_id": seq.DeploymentID})
+		}
+	}
+	return secrets
 }
 
 func techniquePlanStatus(plan planner.Plan) string {

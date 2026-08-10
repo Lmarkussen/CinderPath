@@ -11,6 +11,7 @@ import (
 
 	"github.com/Lmarkussen/CinderPath/internal/app"
 	"github.com/Lmarkussen/CinderPath/internal/config"
+	"github.com/Lmarkussen/CinderPath/internal/cred1"
 	"github.com/Lmarkussen/CinderPath/internal/models"
 	"github.com/Lmarkussen/CinderPath/internal/planner"
 	"github.com/Lmarkussen/CinderPath/internal/policy"
@@ -24,6 +25,37 @@ func executeForTest(t *testing.T, args ...string) (string, string, error) {
 	c.SetArgs(args)
 	e := c.Execute()
 	return out.String(), errout.String(), e
+}
+
+func TestCRED1RequiresExplicitLiveTarget(t *testing.T) {
+	for _, args := range [][]string{
+		{"assess", "CRED-1", "--target", "MECM.SCCM.LAB"},
+		{"assess", "CRED-1", "--provider", "live"},
+	} {
+		_, _, err := executeForTest(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "CRED-1") {
+			t.Fatalf("args=%v err=%v", args, err)
+		}
+	}
+}
+
+func TestCRED1CurrentOutputDoesNotReuseHistoricalSecret(t *testing.T) {
+	fresh := cred1.PolicyResult{TaskSequences: []cred1.TaskSequence{{
+		PackageID: "P01TEST", DeploymentID: "P01DEPLOYMENT",
+		Variables: []cred1.RecoveredVariable{{Name: "ExampleVariable", Value: "Example-Secret-Value"}},
+	}}}
+	if got := cred1Secrets(fresh, false); len(got) != 1 || got[0]["value"] != "Example-Secret-Value" {
+		t.Fatalf("fresh CRED-1 result=%v", got)
+	}
+	// This models run N+1 after a fresh assignment does not contain the seed
+	// policy. Rendering receives only its fresh in-memory result; historical
+	// database evidence cannot contribute a secret value.
+	if got := cred1Secrets(cred1.PolicyResult{}, false); len(got) != 0 {
+		t.Fatalf("historical secret leaked into current CRED-1 output: %v", got)
+	}
+	if got := cred1Secrets(fresh, true); len(got) != 1 || got[0]["value"] != "<redacted>" {
+		t.Fatalf("CRED-1 redaction=%v", got)
+	}
 }
 
 func TestPublicSurface(t *testing.T) {
