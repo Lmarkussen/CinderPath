@@ -40,6 +40,43 @@ func TestCRED1RequiresExplicitLiveTarget(t *testing.T) {
 	}
 }
 
+func TestLivePrerequisitesAreTechniqueAware(t *testing.T) {
+	c := config.Defaults()
+	c.Workflow.Provider = "live"
+	s := &state{cfg: c}
+	if got := s.localPrerequisites("RECON-3", "target", true); len(got) != 1 || got[0].ID != "platform" {
+		t.Fatalf("RECON-3 unexpectedly requires capture prerequisites: %+v", got)
+	}
+	if got := s.localPrerequisites("CRED-1", "target", true); len(got) < 2 {
+		t.Fatalf("CRED-1 capture prerequisites missing: %+v", got)
+	}
+}
+
+func TestLocalTechniqueContextIsBlockedRatherThanFailed(t *testing.T) {
+	t.Setenv("CINDERPATH_DB", filepath.Join(t.TempDir(), "test.db"))
+	out, stderr, err := executeForTest(t, "assess", "CRED-ALL", "--provider", "live", "--target", "MECM.SCCM.LAB", "--format", "json")
+	if err != nil || stderr != "" {
+		t.Fatalf("err=%v stderr=%q", err, stderr)
+	}
+	var result map[string]any
+	if json.Unmarshal([]byte(out), &result) != nil {
+		t.Fatal("invalid family JSON")
+	}
+	techniques, _ := result["techniques"].([]any)
+	for _, raw := range techniques {
+		item, _ := raw.(map[string]any)
+		id, _ := item["technique_id"].(string)
+		if id == "CRED-2" || id == "CRED-3" {
+			if item["status"] != "blocked" {
+				t.Fatalf("%s status=%v", id, item["status"])
+			}
+		}
+	}
+	if !strings.Contains(out, "sccm_client_context") {
+		t.Fatalf("locality prerequisite missing: %s", out)
+	}
+}
+
 func TestCRED1CurrentOutputDoesNotReuseHistoricalSecret(t *testing.T) {
 	fresh := cred1.PolicyResult{TaskSequences: []cred1.TaskSequence{{
 		PackageID: "P01TEST", DeploymentID: "P01DEPLOYMENT",

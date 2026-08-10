@@ -189,7 +189,20 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		if !framework.IsProductTechnique(techniqueID) {
 			return fmt.Errorf("technique %q is out of scope: CinderPath supports attack families %s", techniqueID, strings.Join(framework.ProductFamilyNames(), ", "))
 		}
+		if s.cfg.Workflow.Provider == "live" && !(techniqueID == "CRED-1" && o.target == "") {
+			items := s.localPrerequisites(techniqueID, o.target, true)
+			if item := blockedLocal(items); item != nil {
+				if o.format != "json" {
+					s.printLocalPrerequisites(items)
+				}
+				return s.renderBlocked(techniqueID, o.target, *item, o.format)
+			}
+		}
 		if (techniqueID == "CRED-2" || techniqueID == "CRED-3") && s.cfg.Workflow.Provider == "live" {
+			if !localTechniqueTarget(o.target) {
+				item := localPrerequisite{ID: "sccm_client_context", Name: "SCCM client execution context", Status: "blocked", Reason: "this technique requires execution on the SCCM client itself", Remediation: "run CinderPath locally as the required SCCM client context"}
+				return s.renderBlocked(techniqueID, o.target, item, o.format)
+			}
 			if o.format != "text" && o.format != "json" {
 				return fmt.Errorf("%s format must be text or json", techniqueID)
 			}
@@ -267,6 +280,10 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 			return nil
 		}
 		if techniqueID == "RECON-1" && s.cfg.Workflow.Provider == "live" {
+			if !ldapIdentityConfigured(s.cfg) {
+				item := localPrerequisite{ID: "ldap_identity", Name: "LDAP identity", Status: "blocked", Reason: "authenticated LDAP discovery requires an explicit identity or deliberate anonymous configuration", Remediation: "configure --username with --password-env/--password-file, or explicitly enable anonymous LDAP"}
+				return s.renderBlocked(techniqueID, o.target, item, o.format)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 			defer cancel()
 			opts := recon1LiveOptions(s.cfg, o.target)
@@ -286,6 +303,10 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		}
 		if techniqueID == "RECON-2" {
 			if s.cfg.Workflow.Provider == "live" {
+				if !ldapIdentityConfigured(s.cfg) {
+					item := localPrerequisite{ID: "ldap_identity", Name: "LDAP identity", Status: "blocked", Reason: "the live discovery plan has no explicit LDAP identity", Remediation: "configure --username with --password-env/--password-file, or explicitly enable anonymous LDAP"}
+					return s.renderBlocked(techniqueID, o.target, item, o.format)
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 				defer cancel()
 				opts := recon2LiveOptions(s.cfg, o.target)
@@ -344,6 +365,11 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 		if techniqueID == "RECON-4" {
 			if s.cfg.Workflow.Provider != "live" {
 				return fmt.Errorf("RECON-4 requires --provider live")
+			}
+			resolveConfigMgrTopology(s.cfg.DBPath, o.target)
+			if os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY") == "" || os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP") == "" {
+				item := localPrerequisite{ID: "configmgr_topology", Name: "ConfigMgr authority and transport", Status: "blocked", Reason: "no current management-point topology evidence resolves the logical authority and transport IP", Remediation: "run bounded discovery first or configure the evidenced ConfigMgr authority and transport explicitly"}
+				return s.renderBlocked(techniqueID, o.target, item, o.format)
 			}
 			parent := cmd.Context()
 			if parent == nil {
@@ -428,6 +454,36 @@ func (s *state) assessTechniqueCommand(o *techniqueOptions) *cobra.Command {
 	return c
 }
 
+// resolveConfigMgrTopology reuses a current, explicitly persisted management
+// point observation when the operator supplied only the logical target. It
+// never falls back to ambient credentials or unverified DNS data.
+func resolveConfigMgrTopology(dbPath, target string) {
+	if os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY") != "" && os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP") != "" {
+		return
+	}
+	store, err := database.Open(context.Background(), dbPath)
+	if err != nil {
+		return
+	}
+	defer store.Close()
+	assets, err := store.ListAssets(context.Background())
+	if err != nil {
+		return
+	}
+	for _, asset := range assets {
+		if asset.Kind != models.AssetManagementPoint || !strings.EqualFold(asset.FQDN, target) || len(asset.IPAddresses) == 0 {
+			continue
+		}
+		if os.Getenv("CINDERPATH_CONFIGMGR_AUTHORITY") == "" {
+			_ = os.Setenv("CINDERPATH_CONFIGMGR_AUTHORITY", asset.FQDN)
+		}
+		if os.Getenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP") == "" {
+			_ = os.Setenv("CINDERPATH_CONFIGMGR_TRANSPORT_IP", asset.IPAddresses[0])
+		}
+		return
+	}
+}
+
 func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, family string) error {
 	if family == "" {
 		return errors.New("family selector requires a family name")
@@ -454,7 +510,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 	}
 	sort.Strings(ids)
 	results := make([]map[string]any, 0, len(ids))
-	executed, findings, blocked, notApplicable := 0, 0, 0, 0
+	executed, findings, blocked, failed, notApplicable := 0, 0, 0, 0, 0
 	for _, id := range ids {
 		select {
 		case <-ctx.Done():
@@ -479,7 +535,7 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		if childErr != nil {
 			result["status"] = "failed"
 			result["reason"] = childErr.Error()
-			blocked++
+			failed++
 		} else {
 			executed++
 			if o.format == "json" {
@@ -489,9 +545,19 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 					if nested, ok := value.(map[string]any); ok {
 						if status, ok := nested["status"].(string); ok {
 							result["status"] = status
+							if status != "completed" && status != "vulnerable" && status != "completed_with_sccm_evidence" {
+								if reason, ok := nested["reason"].(string); ok && reason != "" {
+									result["reason"] = reason
+								} else {
+									result["reason"] = status
+								}
+							}
 							if strings.Contains(status, "blocked") || strings.Contains(status, "not_run") || strings.Contains(status, "requires_") {
 								executed--
 								blocked++
+							} else if strings.Contains(status, "failed") || strings.Contains(status, "error") || strings.Contains(status, "resolution_failed") || strings.Contains(status, "connection_failed") {
+								executed--
+								failed++
 							}
 						}
 					}
@@ -508,8 +574,21 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 					}
 				}
 			} else {
-				result["status"] = "completed"
-				result["output"] = captured.String()
+				text := captured.String()
+				lower := strings.ToLower(text)
+				if strings.Contains(lower, "status: blocked") {
+					executed--
+					blocked++
+					result["status"] = "blocked"
+					result["reason"] = familyOutputReason(text, "blocked")
+				} else if strings.Contains(lower, "status: ✗") || strings.Contains(lower, "status: failed") || strings.Contains(lower, "endpoint_resolution_failed") {
+					executed--
+					failed++
+					result["status"] = "failed"
+				} else {
+					result["status"] = "completed"
+				}
+				result["summary"] = familyOutputSummary(text)
 			}
 		}
 		results = append(results, result)
@@ -520,21 +599,82 @@ func (s *state) assessTechniqueFamily(ctx context.Context, o *techniqueOptions, 
 		}
 	}
 	if o.format == "json" {
-		return json.NewEncoder(s.stdout).Encode(map[string]any{"family": family, "status": "completed", "techniques": results, "summary": map[string]int{"executed": executed, "findings": findings, "blocked": blocked, "not_applicable": notApplicable}, "redaction": s.outputPolicy().Metadata()})
+		return json.NewEncoder(s.stdout).Encode(map[string]any{"family": family, "status": "completed", "techniques": results, "summary": map[string]int{"executed": executed, "findings": findings, "blocked": blocked, "failed": failed, "not_applicable": notApplicable}, "redaction": s.outputPolicy().Metadata()})
 	}
-	fmt.Fprintf(s.stdout, "%s family assessment\n\n", family)
+	fmt.Fprintf(s.stdout, "%s family assessment\nTarget: %s\n\n", family, s.renderer.Target(redactedTarget(o.target)))
+	reasons := map[string]bool{}
 	for _, result := range results {
-		fmt.Fprintf(s.stdout, "%s — %s\n  %s", result["technique_id"], result["technique_name"], result["status"])
-		if reason, ok := result["reason"].(string); ok {
-			fmt.Fprintf(s.stdout, "\n  Reason: %s", reason)
+		if result["status"] == "blocked" {
+			if reason, ok := result["reason"].(string); ok && reason != "" {
+				reasons[reason] = true
+			}
 		}
-		if output, ok := result["output"].(string); ok {
-			fmt.Fprintf(s.stdout, "\n%s", output)
+	}
+	if len(reasons) > 0 {
+		fmt.Fprintln(s.stdout, "Prerequisites / blockers")
+		reasonList := make([]string, 0, len(reasons))
+		for reason := range reasons {
+			reasonList = append(reasonList, reason)
+		}
+		sort.Strings(reasonList)
+		for _, reason := range reasonList {
+			fmt.Fprintf(s.stdout, "  %s %s\n", s.renderer.Warning("!"), reason)
 		}
 		fmt.Fprintln(s.stdout)
 	}
-	fmt.Fprintf(s.stdout, "Summary:\n  Executed: %d\n  Findings: %d\n  Blocked: %d\n  Not applicable: %d\n", executed, findings, blocked, notApplicable)
+	fmt.Fprintln(s.stdout, "Techniques")
+	for _, result := range results {
+		status, _ := result["status"].(string)
+		label := status
+		switch status {
+		case "blocked":
+			label = s.renderer.Warning("BLOCKED")
+		case "failed":
+			label = s.renderer.Failure("FAILED")
+		case "completed", "vulnerable", "completed_with_sccm_evidence":
+			label = s.renderer.Success("COMPLETED")
+		}
+		fmt.Fprintf(s.stdout, "%s %s — %s\n  %s", s.renderer.Target(fmt.Sprint(result["technique_id"])), fmt.Sprint(result["technique_name"]), label, status)
+		if reason, ok := result["reason"].(string); ok {
+			fmt.Fprintf(s.stdout, "\n  Reason: %s", reason)
+		}
+		if summary, ok := result["summary"].(string); ok && summary != "" {
+			fmt.Fprintf(s.stdout, "\n  %s", summary)
+		}
+		fmt.Fprintln(s.stdout)
+	}
+	fmt.Fprintf(s.stdout, "Summary:\n  Executed: %d\n  Findings: %d\n  Blocked: %d\n  Failed: %d\n  Not applicable: %d\n", executed, findings, blocked, failed, notApplicable)
 	return nil
+}
+
+func familyOutputSummary(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Status:") {
+			return line
+		}
+		if strings.HasPrefix(line, "Execution status:") {
+			return line
+		}
+	}
+	return "completed"
+}
+
+func familyOutputReason(output, fallback string) string {
+	var missing string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Reason:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Reason:"))
+		}
+		if strings.HasPrefix(line, "Missing prerequisite:") {
+			missing = strings.TrimSpace(strings.TrimPrefix(line, "Missing prerequisite:"))
+		}
+	}
+	if missing != "" {
+		return missing
+	}
+	return fallback
 }
 
 func familyTechniqueImplemented(id string) bool {

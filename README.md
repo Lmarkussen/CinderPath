@@ -216,6 +216,17 @@ deterministic registry order, report each technique's name and state, and leave
 unavailable or context-incompatible techniques blocked rather than attempting
 remote orchestration.
 
+Before a live technique starts, CinderPath checks only the prerequisites that
+technique needs. For example, CRED-1 checks the Linux/libpcap capture path and
+reports a concise, actionable `BLOCKED` result when capture capability is
+missing; it does not check packet capture for RECON-only commands. Interactive
+terminals may offer an explicitly confirmed local `setcap` repair. Non-TTY and
+JSON runs never prompt and return structured prerequisite metadata. `BLOCKED`
+means a required context, identity, or local dependency is unavailable;
+`FAILED` means an operation was attempted and unexpectedly failed. Local-only
+techniques such as CRED-2 and CRED-3 are reported as blocked when the current
+host is not an SCCM client rather than being run against a server target.
+
 Explicit-scope discovery for an authorized target:
 
 ```bash
