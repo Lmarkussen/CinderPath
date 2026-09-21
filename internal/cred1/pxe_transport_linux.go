@@ -26,7 +26,7 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 	if err != nil {
 		return out, fmt.Errorf("PXE interface: %w", err)
 	}
-	clientIP, err := interfaceIPv4(iface)
+	clientIP, err := pxeSourceIPv4(iface, dp)
 	if err != nil {
 		return out, err
 	}
@@ -50,16 +50,22 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 		return out, fmt.Errorf("PXE capture filter: %w", err)
 	}
 
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: clientIP.AsSlice(), Port: pxeClientPort})
-	if err != nil {
-		return out, fmt.Errorf("PXE source port %d: %w", pxeClientPort, err)
-	}
-	defer conn.Close()
-
 	// Opening the capture and installing BPF before transmission eliminates the
 	// WDS reply race. Packet decoding begins before the one send below.
-	if _, err := conn.WriteToUDP(request, &net.UDPAddr{IP: dp.AsSlice(), Port: pxeProxyDHCPPort}); err != nil {
-		return out, fmt.Errorf("PXE request: %w", err)
+	//
+	// The request is transmitted through a raw IP socket so it can carry the
+	// conventional DHCP client source port 68 without binding it. A normal
+	// DHCP-managed workstation already has that port owned by the host DHCP
+	// client (for example NetworkManager), and CRED-1 must coexist with it
+	// rather than take it over. The reply is still received only through the
+	// bounded libpcap capture below.
+	transmitter, err := newRawTransmitter(clientIP)
+	if err != nil {
+		return out, err
+	}
+	defer transmitter.Close()
+	if err := transmitPXERequest(transmitter, clientIP, dp, request); err != nil {
+		return out, err
 	}
 	deadline := time.Now().Add(timeout)
 	frames := 0
@@ -94,23 +100,6 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 		}
 	}
 	return out, fmt.Errorf("PXE capture frame limit reached after %d filtered frames", frames)
-}
-
-func interfaceIPv4(iface *net.Interface) (netip.Addr, error) {
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return netip.Addr{}, err
-	}
-	for _, addr := range addrs {
-		ip, _, err := net.ParseCIDR(addr.String())
-		if err != nil {
-			continue
-		}
-		if ip4 := ip.To4(); ip4 != nil {
-			return netip.AddrFrom4([4]byte(ip4)), nil
-		}
-	}
-	return netip.Addr{}, errors.New("PXE interface has no IPv4 address")
 }
 
 // parsePXEFrame reads only Ethernet/IPv4/UDP framing. It intentionally does

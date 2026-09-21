@@ -907,3 +907,33 @@ but not route-response parsing, so runtime validation remains partial. HTTP
 authentication is never attempted. All connection-level failures are
 classified as `connection_failed`, name resolution failures as
 `endpoint_resolution_failed`, and mixed outcomes as `completed_with_errors`.
+
+`CRED-1` no longer opens a conventional UDP socket on the DHCP client port.
+The bounded WDS proxy-DHCP request is now built as a complete IPv4/L4 datagram
+with source port 68 and destination port 4011 and transmitted through an
+`IPPROTO_UDP` raw socket, so the host DHCP client (for example NetworkManager)
+keeps sole ownership of UDP/68 and the assessment no longer fails with
+`bind: address already in use`. The kernel still performs route, interface, and
+source-address selection, and the client address must be the route-selected
+IPv4 assigned to the capture interface; no operator-supplied address,
+interface, or port is introduced. The reply path is unchanged and remains
+libpcap-only because the observed WDS reply carries a checksum the Linux UDP
+stack drops, and its filter and correlation still require the DP source
+address, ports 4011/68, and the request transaction ID. The raw socket needs
+the same CAP_NET_RAW the capture already required, so no capability is
+broadened.
+
+On 2026-09-21 a local comparison under the same capabilities confirmed the
+pre-fix collision on an assessment host whose DHCP client owned UDP/68: the
+previous `0.0.0.0:68` bind returned `address already in use`, while the
+replacement raw transmit socket succeeded and coexisted with it, and the
+capability-gated transport tests passed with that ownership in place. The
+authorized single-target run then passed the prerequisites and entered the
+CRED-1 transport without any bind failure, and stopped at `invalid PXE client
+address` because the route to that target used a Tailscale TUN interface with
+no 6-byte hardware address; libpcap also reports that interface as `Raw` rather
+than Ethernet. A live PXE/WDS exchange over such an interface would require a
+separate, explicitly authorized transport change (relaxing the BOOTP
+hardware-address requirement and parsing non-Ethernet capture framing). No
+packets were sent to the target, no other technique or target was contacted,
+and the DHCP client was left untouched.

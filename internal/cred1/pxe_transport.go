@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 )
 
@@ -113,4 +114,173 @@ func matchPXEReply(frame pxeFrame, dp, clientIP netip.Addr, xid [4]byte) (PXERep
 		UDPChecksum: frame.udpChecksum,
 	}
 	return out, nil
+}
+
+// validateSourceIPv4 rejects a source address that cannot carry the one CRED-1
+// request. The route-selected client address is used verbatim; the operator
+// never supplies it.
+func validateSourceIPv4(clientIP netip.Addr) error {
+	if !clientIP.IsValid() || !clientIP.Is4() || clientIP.IsUnspecified() || clientIP.IsMulticast() {
+		return fmt.Errorf("PXE transport requires a usable route-selected IPv4 source address, got %q", clientIP)
+	}
+	return nil
+}
+
+// routeSourceIPv4 returns the kernel's route-selected IPv4 source address for
+// the PXE distribution point. Dialing a UDP socket only performs route
+// selection and source-address selection; it transmits nothing.
+func routeSourceIPv4(dp netip.Addr) (netip.Addr, error) {
+	if !dp.Is4() {
+		return netip.Addr{}, fmt.Errorf("PXE transport requires an IPv4 distribution point, got %q", dp)
+	}
+	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: dp.AsSlice(), Port: pxeProxyDHCPPort})
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("CRED-1 cannot find a route to PXE DP %s; add an IPv4 route to the authorized DP before assessment: %w", dp, err)
+	}
+	defer conn.Close()
+	local, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return netip.Addr{}, errors.New("CRED-1 could not determine the route-selected source address")
+	}
+	source, ok := netip.AddrFromSlice(local.IP)
+	if !ok {
+		return netip.Addr{}, errors.New("CRED-1 route-selected source address is unusable")
+	}
+	source = source.Unmap()
+	if err := validateSourceIPv4(source); err != nil {
+		return netip.Addr{}, err
+	}
+	return source, nil
+}
+
+// pxeSourceIPv4 resolves the route-selected client address and confirms it is
+// assigned to the capture interface. The capture filter, the request ciaddr,
+// and the reply correlation therefore all use the same address the kernel
+// stamps on the request.
+func pxeSourceIPv4(iface *net.Interface, dp netip.Addr) (netip.Addr, error) {
+	source, err := routeSourceIPv4(dp)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("PXE interface %s addresses: %w", iface.Name, err)
+	}
+	for _, addr := range addrs {
+		ip, _, splitErr := net.ParseCIDR(addr.String())
+		if splitErr != nil {
+			continue
+		}
+		if ip4 := ip.To4(); ip4 != nil && netip.AddrFrom4([4]byte(ip4)) == source {
+			return source, nil
+		}
+	}
+	return netip.Addr{}, fmt.Errorf("CRED-1 route to PXE DP %s selects source %s, which is not assigned to capture interface %s; use a host with an IPv4 interface on the authorized DP route", dp, source, iface.Name)
+}
+
+// pxeUDPDatagram builds the complete IPv4 UDP datagram (UDP header plus BOOTP
+// payload) for the one CRED-1 request. Constructing the header locally is what
+// lets the request carry the conventional DHCP client source port 68 without
+// binding it, because on a normal DHCP-managed workstation that port already
+// belongs to the host DHCP client (for example NetworkManager).
+func pxeUDPDatagram(clientIP, dp netip.Addr, payload []byte) ([]byte, error) {
+	if err := validateSourceIPv4(clientIP); err != nil {
+		return nil, err
+	}
+	if !dp.Is4() || dp.IsUnspecified() || dp.IsMulticast() {
+		return nil, fmt.Errorf("PXE transport requires a usable IPv4 distribution point, got %q", dp)
+	}
+	if len(payload) < bootpHeaderBytes+dhcpCookieBytes || len(payload) > maxPXEPayloadBytes {
+		return nil, errors.New("invalid PXE request payload size")
+	}
+	datagram := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint16(datagram[0:2], pxeClientPort)
+	binary.BigEndian.PutUint16(datagram[2:4], pxeProxyDHCPPort)
+	binary.BigEndian.PutUint16(datagram[4:6], uint16(len(datagram)))
+	copy(datagram[8:], payload)
+	// For IPv4 a zero UDP checksum means "not computed", so a computed zero is
+	// transmitted as 0xffff as required by RFC 768.
+	if sum := udpChecksum(clientIP, dp, datagram); sum == 0 {
+		binary.BigEndian.PutUint16(datagram[6:8], 0xffff)
+	} else {
+		binary.BigEndian.PutUint16(datagram[6:8], sum)
+	}
+	return datagram, nil
+}
+
+// udpChecksum computes the RFC 768 checksum over the IPv4 pseudo-header and the
+// UDP datagram. The caller passes the datagram with its checksum field zeroed.
+func udpChecksum(clientIP, dp netip.Addr, datagram []byte) uint16 {
+	full := make([]byte, 0, 12+len(datagram)+1)
+	full = append(full, clientIP.AsSlice()...)
+	full = append(full, dp.AsSlice()...)
+	full = append(full, 0, 17, byte(len(datagram)>>8), byte(len(datagram)))
+	full = append(full, datagram...)
+	if len(full)%2 != 0 {
+		full = append(full, 0)
+	}
+	var sum uint32
+	for i := 0; i < len(full); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(full[i : i+2]))
+	}
+	for sum>>16 != 0 {
+		sum = (sum & 0xffff) + (sum >> 16)
+	}
+	return ^uint16(sum)
+}
+
+// pxeTransmitter transmits one prepared IPv4 UDP datagram to the distribution
+// point. Implementations must not bind the DHCP client port: the request
+// carries source port 68 in its own header so the host DHCP client keeps sole
+// ownership of UDP/68.
+type pxeTransmitter interface {
+	Transmit(datagram []byte, dp netip.Addr) error
+	Close() error
+}
+
+// rawTransmitter sends IPv4 datagrams through an IPPROTO_UDP raw socket. The
+// kernel performs route, interface, and source-address selection (preserving
+// automatic route-selected source IPv4) and adds the IPv4 header, while the
+// application supplies the UDP header. No local UDP port is bound, so a
+// conventional listener cannot collide with the host DHCP client's UDP/68
+// socket.
+type rawTransmitter struct{ conn net.PacketConn }
+
+func newRawTransmitter(clientIP netip.Addr) (pxeTransmitter, error) {
+	if err := validateSourceIPv4(clientIP); err != nil {
+		return nil, err
+	}
+	conn, err := net.ListenPacket("ip4:udp", clientIP.String())
+	if err != nil {
+		return nil, fmt.Errorf("CRED-1 PXE raw transmit socket on %s: %w", clientIP, err)
+	}
+	return rawTransmitter{conn: conn}, nil
+}
+
+func (t rawTransmitter) Transmit(datagram []byte, dp netip.Addr) error {
+	if !dp.Is4() || dp.IsUnspecified() || dp.IsMulticast() {
+		return fmt.Errorf("invalid PXE distribution point address %q", dp)
+	}
+	if _, err := t.conn.WriteTo(datagram, &net.IPAddr{IP: dp.AsSlice()}); err != nil {
+		return fmt.Errorf("CRED-1 PXE request: %w", err)
+	}
+	return nil
+}
+
+func (t rawTransmitter) Close() error {
+	if t.conn == nil {
+		return nil
+	}
+	return t.conn.Close()
+}
+
+// transmitPXERequest builds the UDP datagram and hands it to the transmitter.
+// It never opens a conventional client socket, so UDP/68 being owned by the
+// host DHCP client cannot fail the exchange.
+func transmitPXERequest(transmitter pxeTransmitter, clientIP, dp netip.Addr, payload []byte) error {
+	datagram, err := pxeUDPDatagram(clientIP, dp, payload)
+	if err != nil {
+		return err
+	}
+	return transmitter.Transmit(datagram, dp)
 }
