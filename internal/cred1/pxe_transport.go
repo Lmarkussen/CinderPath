@@ -7,15 +7,22 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strings"
 )
 
 const (
-	pxeClientPort        = 68
-	pxeProxyDHCPPort     = 4011
-	bootpHeaderBytes     = 236
-	dhcpCookieBytes      = 4
-	maxPXEPayloadBytes   = 2048
-	maxPXECapturedFrames = 16
+	pxeClientPort      = 68
+	pxeProxyDHCPPort   = 4011
+	bootpHeaderBytes   = 236
+	dhcpCookieBytes    = 4
+	maxPXEPayloadBytes = 2048
+	// maxPXEObservedFrames bounds the total frames the capture loop inspects.
+	// The capture filter is observational (it also shows what the selected DP
+	// sent and ICMP addressed to this client), so the bound is work, not
+	// correctness: acceptance still requires the exact reply correlation.
+	maxPXEObservedFrames          = 64
+	maxPXEObservationSignatures   = 4
+	maxPXEObservationSummaryBytes = 400
 )
 
 var (
@@ -283,4 +290,117 @@ func transmitPXERequest(transmitter pxeTransmitter, clientIP, dp netip.Addr, pay
 		return err
 	}
 	return transmitter.Transmit(datagram, dp)
+}
+
+// pxeObservationSignature returns a bounded, payload-free description of one
+// captured frame. It is used only to explain a failed exchange: the selected
+// DP sending ICMP port-unreachable, answering on an unexpected port, or staying
+// silent are all different outcomes that must not look identical to the
+// operator. It never influences acceptance, which stays with matchPXEReply.
+func pxeObservationSignature(data []byte, clientIP, dp netip.Addr) string {
+	const ethernetBytes = 14
+	if len(data) < ethernetBytes+20 || binary.BigEndian.Uint16(data[12:14]) != 0x0800 {
+		return "non-IPv4 frame"
+	}
+	ip := data[ethernetBytes:]
+	if ip[0]>>4 != 4 {
+		return "non-IPv4 frame"
+	}
+	headerBytes := int(ip[0]&0x0f) * 4
+	if headerBytes < 20 || len(ip) < headerBytes {
+		return "truncated IPv4 header"
+	}
+	src := netip.AddrFrom4([4]byte(ip[12:16]))
+	dst := netip.AddrFrom4([4]byte(ip[16:20]))
+	switch ip[9] {
+	case 17:
+		if len(ip) < headerBytes+8 {
+			return "truncated UDP"
+		}
+		return fmt.Sprintf("udp %s:%d -> %s:%d", src, binary.BigEndian.Uint16(ip[headerBytes:]), dst, binary.BigEndian.Uint16(ip[headerBytes+2:]))
+	case 1:
+		if len(ip) < headerBytes+8 {
+			return "truncated ICMP"
+		}
+		icmpType, icmpCode := ip[headerBytes], ip[headerBytes+1]
+		// ICMP error messages quote the datagram that triggered them, so only a
+		// quote of this exact request is reported as related to the exchange.
+		if quoted, ok := quotedPXERequest(ip[headerBytes+8:], clientIP, dp); ok {
+			return fmt.Sprintf("icmp type %d code %d for the PXE request (%s)", icmpType, icmpCode, quoted)
+		}
+		return fmt.Sprintf("icmp type %d code %d %s -> %s", icmpType, icmpCode, src, dst)
+	default:
+		return fmt.Sprintf("ip protocol %d %s -> %s", ip[9], src, dst)
+	}
+}
+
+// quotedPXERequest reports whether an ICMP error quote describes this exact
+// PXE request (client:68 to DP:4011).
+func quotedPXERequest(quoted []byte, clientIP, dp netip.Addr) (string, bool) {
+	if len(quoted) < 28 || quoted[0]>>4 != 4 || quoted[9] != 17 {
+		return "", false
+	}
+	qsrc, qdst := netip.AddrFrom4([4]byte(quoted[12:16])), netip.AddrFrom4([4]byte(quoted[16:20]))
+	qsport, qdport := binary.BigEndian.Uint16(quoted[20:22]), binary.BigEndian.Uint16(quoted[22:24])
+	if qsrc != clientIP || qdst != dp || qsport != pxeClientPort || qdport != pxeProxyDHCPPort {
+		return "", false
+	}
+	return fmt.Sprintf("udp %s:%d -> %s:%d", qsrc, qsport, qdst, qdport), true
+}
+
+// summarizePXEObservations renders observed frame signatures in first-seen
+// order with counts, bounded by signature count and total length. It never
+// includes payload content.
+func summarizePXEObservations(observed []string, maxSignatures, maxBytes int) string {
+	if len(observed) == 0 || maxSignatures <= 0 {
+		return ""
+	}
+	order := make([]string, 0, maxSignatures)
+	counts := make(map[string]int, maxSignatures)
+	other := 0
+	for _, signature := range observed {
+		if seen, ok := counts[signature]; ok {
+			counts[signature] = seen + 1
+			continue
+		}
+		if len(order) >= maxSignatures {
+			other++
+			continue
+		}
+		order = append(order, signature)
+		counts[signature] = 1
+	}
+	parts := make([]string, 0, len(order)+1)
+	for _, signature := range order {
+		if counts[signature] == 1 {
+			parts = append(parts, signature)
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s x%d", signature, counts[signature]))
+	}
+	if other > 0 {
+		parts = append(parts, fmt.Sprintf("%d other frames", other))
+	}
+	summary := strings.Join(parts, "; ")
+	if maxBytes > 0 && len(summary) > maxBytes {
+		summary = summary[:maxBytes] + "..."
+	}
+	return summary
+}
+
+// pxeReplyTimeoutError explains a failed exchange using the frames the capture
+// actually observed, so silence, a closed port, and an unexpected reply shape
+// are distinguishable.
+func pxeReplyTimeoutError(frames int, lastRejection string, observed []string) error {
+	detail := summarizePXEObservations(observed, maxPXEObservationSignatures, maxPXEObservationSummaryBytes)
+	switch {
+	case detail != "" && lastRejection != "":
+		return fmt.Errorf("PXE reply timeout after %d observed frames: %s; last rejection: %s", frames, detail, lastRejection)
+	case detail != "":
+		return fmt.Errorf("PXE reply timeout after %d observed frames: %s", frames, detail)
+	case lastRejection != "":
+		return fmt.Errorf("PXE reply timeout after %d observed frames; last rejection: %s", frames, lastRejection)
+	default:
+		return fmt.Errorf("PXE reply timeout after %d observed frames; the distribution point sent no UDP or ICMP response to this request", frames)
+	}
 }

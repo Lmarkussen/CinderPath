@@ -45,7 +45,12 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 		return out, fmt.Errorf("CRED-1 PXE capture on %s requires libpcap and packet-capture privileges because WDS replies with invalid UDP checksums bypass the normal UDP stack; install libpcap and grant CAP_NET_RAW/CAP_NET_ADMIN (or run with equivalent authorized capture privileges): %w", ifaceName, err)
 	}
 	defer handle.Close()
-	filter := fmt.Sprintf("udp and src host %s and src port %d and dst port %d", dp, pxeProxyDHCPPort, pxeClientPort)
+	// The BPF filter is deliberately observational: it captures what the
+	// selected distribution point sent and ICMP addressed to this client so a
+	// failed exchange can be explained (port unreachable, unexpected ports, or
+	// genuine silence). It never carries another host into scope, and
+	// acceptance remains the strict matchPXEReply correlation below.
+	filter := fmt.Sprintf("(udp and src host %s) or (icmp and dst host %s)", dp, clientIP)
 	if err := handle.SetBPFFilter(filter); err != nil {
 		return out, fmt.Errorf("PXE capture filter: %w", err)
 	}
@@ -70,15 +75,13 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 	deadline := time.Now().Add(timeout)
 	frames := 0
 	lastRejection := ""
-	for frames < maxPXECapturedFrames {
+	observed := make([]string, 0, 8)
+	for frames < maxPXEObservedFrames {
 		if err := ctx.Err(); err != nil {
 			return out, err
 		}
 		if time.Now().After(deadline) {
-			if lastRejection != "" {
-				return out, fmt.Errorf("PXE reply timeout after %d filtered frames: %s", frames, lastRejection)
-			}
-			return out, fmt.Errorf("PXE reply timeout after %d filtered frames", frames)
+			return out, pxeReplyTimeoutError(frames, lastRejection, observed)
 		}
 		data, _, err := handle.ReadPacketData()
 		if err == pcap.NextErrorTimeoutExpired {
@@ -88,6 +91,7 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 			return out, fmt.Errorf("PXE capture: %w", err)
 		}
 		frames++
+		observed = append(observed, pxeObservationSignature(data, clientIP, dp))
 		frame, err := parsePXEFrame(data)
 		if err != nil {
 			lastRejection = err.Error()
@@ -99,7 +103,8 @@ func AcquirePXEReply(ctx context.Context, ifaceName string, dp netip.Addr, timeo
 			lastRejection = err.Error()
 		}
 	}
-	return out, fmt.Errorf("PXE capture frame limit reached after %d filtered frames", frames)
+	return out, fmt.Errorf("PXE capture frame limit reached after %d observed frames: %s", frames,
+		summarizePXEObservations(observed, maxPXEObservationSignatures, maxPXEObservationSummaryBytes))
 }
 
 // parsePXEFrame reads only Ethernet/IPv4/UDP framing. It intentionally does

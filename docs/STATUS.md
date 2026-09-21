@@ -918,10 +918,15 @@ source-address selection, and the client address must be the route-selected
 IPv4 assigned to the capture interface; no operator-supplied address,
 interface, or port is introduced. The reply path is unchanged and remains
 libpcap-only because the observed WDS reply carries a checksum the Linux UDP
-stack drops, and its filter and correlation still require the DP source
-address, ports 4011/68, and the request transaction ID. The raw socket needs
-the same CAP_NET_RAW the capture already required, so no capability is
-broadened.
+stack drops. Acceptance is unchanged and still requires the DP source address,
+ports 4011/68, and the request transaction ID. The capture filter around that
+correlation is now observational: UDP sourced by the selected DP, plus ICMP
+addressed to this client, so a failed exchange can report whether the DP
+answered on an unexpected port, returned an ICMP error quoting this exact
+request, or stayed silent instead of collapsing every outcome into a bare
+timeout. Frame, signature, and text bounds keep that explanation small, and the
+signatures are metadata only. The raw socket needs the same CAP_NET_RAW the
+capture already required, so no capability is broadened.
 
 On 2026-09-21 a local comparison under the same capabilities confirmed the
 pre-fix collision on an assessment host whose DHCP client owned UDP/68: the

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // occupyDHCPClientPort reproduces the reported real-world condition: the host
@@ -221,6 +222,47 @@ func TestPXERawTransmitterCoexistsWithDHCPClientPort(t *testing.T) {
 	defer transmitter.Close()
 }
 
+// TestPXEUDPDatagramIsAcceptedByKernelLoopback validates the hand-built IPv4
+// UDP framing and checksum end to end: the datagram is transmitted through the
+// production raw socket and must survive the kernel's own receive-side UDP
+// validation to reach a loopback listener. It skips without raw-socket
+// privileges and never contacts a remote host.
+func TestPXEUDPDatagramIsAcceptedByKernelLoopback(t *testing.T) {
+	requireUDPSockets(t)
+	loopback := netip.MustParseAddr("127.0.0.1")
+	listener, err := net.ListenUDP("udp4", &net.UDPAddr{IP: loopback.AsSlice(), Port: pxeProxyDHCPPort})
+	if err != nil {
+		t.Skipf("cannot bind the loopback PXE destination port: %v", err)
+	}
+	defer listener.Close()
+	transmitter, err := newRawTransmitter(loopback)
+	if err != nil {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, os.ErrPermission) {
+			t.Skipf("raw transmit socket requires packet-capture privileges: %v", err)
+		}
+		t.Fatal(err)
+	}
+	defer transmitter.Close()
+	_, request, err := newPXERequest(loopback, []byte{2, 3, 4, 5, 6, 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transmitPXERequest(transmitter, loopback, loopback, request); err != nil {
+		t.Fatal(err)
+	}
+	if err := listener.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, maxPXEPayloadBytes)
+	n, _, err := listener.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("kernel rejected the hand-built PXE datagram framing/checksum: %v", err)
+	}
+	if string(buf[:n]) != string(request) {
+		t.Fatalf("loopback payload mismatch: got %d bytes", n)
+	}
+}
+
 // buildPXEReplyFrame assembles an Ethernet/IPv4/UDP frame carrying a BOOTP
 // reply. The UDP checksum is deliberately invalid to mirror the observed WDS
 // reply that the Linux UDP stack drops but libpcap still delivers.
@@ -310,5 +352,124 @@ func TestPXETransportNeverOpensClientPortListener(t *testing.T) {
 		if !strings.Contains(string(linuxSource), want) {
 			t.Fatalf("Linux PXE transport does not use %s", want)
 		}
+	}
+}
+
+// buildQuotedPXERequestHeader returns the IPv4 header plus the first eight
+// bytes of the UDP header, exactly what an ICMP error quotes.
+func buildQuotedPXERequestHeader(clientIP, dp netip.Addr, payload []byte) []byte {
+	datagram, _ := pxeUDPDatagram(clientIP, dp, payload)
+	ip := make([]byte, 20)
+	ip[0], ip[8], ip[9] = 0x45, 64, 17
+	binary.BigEndian.PutUint16(ip[2:4], uint16(20+len(datagram)))
+	copy(ip[12:16], clientIP.AsSlice())
+	copy(ip[16:20], dp.AsSlice())
+	return append(ip, datagram[:8]...)
+}
+
+// buildICMPFrame assembles an Ethernet/IPv4/ICMP frame with an RFC 792 style
+// quoted datagram.
+func buildICMPFrame(srcIP, dstIP netip.Addr, icmpType, icmpCode uint8, quoted []byte) []byte {
+	icmp := make([]byte, 8+len(quoted))
+	icmp[0], icmp[1] = icmpType, icmpCode
+	copy(icmp[8:], quoted)
+	ip := make([]byte, 20)
+	ip[0], ip[8], ip[9] = 0x45, 64, 1
+	binary.BigEndian.PutUint16(ip[2:4], uint16(20+len(icmp)))
+	copy(ip[12:16], srcIP.AsSlice())
+	copy(ip[16:20], dstIP.AsSlice())
+	eth := make([]byte, 14)
+	for i := 0; i < 6; i++ {
+		eth[i] = 0xff
+	}
+	eth[6], eth[7], eth[8], eth[9], eth[10], eth[11] = 2, 0, 0, 0, 0, 1
+	binary.BigEndian.PutUint16(eth[12:14], 0x0800)
+	return append(append(eth, ip...), icmp...)
+}
+
+// TestPXEObservationSignaturesClassifyReplies proves a failed exchange can be
+// explained without weakening acceptance: every signature is metadata-only,
+// and an ICMP error is reported as related only when it quotes this request.
+func TestPXEObservationSignaturesClassifyReplies(t *testing.T) {
+	dp := netip.MustParseAddr("10.128.116.90")
+	clientIP := netip.MustParseAddr("172.20.133.162")
+	_, request, err := newPXERequest(clientIP, []byte{2, 3, 4, 5, 6, 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated := buildQuotedPXERequestHeader(netip.MustParseAddr("203.0.113.9"), netip.MustParseAddr("198.51.100.9"), request)
+	for name, tc := range map[string]struct {
+		frame []byte
+		want  string
+	}{
+		"expected reply shape": {
+			frame: buildPXEReplyFrame(dp, broadcastIPv4, pxeProxyDHCPPort, pxeClientPort, testPXEPayload([4]byte{1, 2, 3, 4})),
+			want:  "udp 10.128.116.90:4011 -> 255.255.255.255:68",
+		},
+		"proxy DHCP on 67": {
+			frame: buildPXEReplyFrame(dp, broadcastIPv4, 67, pxeClientPort, testPXEPayload([4]byte{1, 2, 3, 4})),
+			want:  "udp 10.128.116.90:67 -> 255.255.255.255:68",
+		},
+		"icmp port unreachable for this request": {
+			frame: buildICMPFrame(dp, clientIP, 3, 3, buildQuotedPXERequestHeader(clientIP, dp, request)),
+			want:  "icmp type 3 code 3 for the PXE request (udp 172.20.133.162:68 -> 10.128.116.90:4011)",
+		},
+		"icmp quoting another datagram": {
+			frame: buildICMPFrame(dp, clientIP, 3, 3, unrelated),
+			want:  "icmp type 3 code 3 10.128.116.90 -> 172.20.133.162",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := pxeObservationSignature(tc.frame, clientIP, dp); got != tc.want {
+				t.Fatalf("signature = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	for name, frame := range map[string][]byte{
+		"non IPv4":  {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x86, 0xdd, 0x00},
+		"truncated": {0x00, 0x01},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := pxeObservationSignature(frame, clientIP, dp); got == "" {
+				t.Fatal("expected a bounded description for an unparseable frame")
+			}
+		})
+	}
+}
+
+// TestSummarizePXEObservationsIsBounded keeps the timeout explanation
+// deterministic and short even if the distribution point is chatty.
+func TestSummarizePXEObservationsIsBounded(t *testing.T) {
+	if got := summarizePXEObservations(nil, 4, 400); got != "" {
+		t.Fatalf("empty observation set rendered %q", got)
+	}
+	got := summarizePXEObservations([]string{"a", "b", "a", "c", "d", "e", "e"}, 3, 400)
+	for _, want := range []string{"a x2", "b", "c", "other frames"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "d") {
+		t.Fatalf("summary %q exceeded the signature bound", got)
+	}
+	long := make([]string, 0, 40)
+	for i := 0; i < 40; i++ {
+		long = append(long, strings.Repeat("x", 40))
+	}
+	if out := summarizePXEObservations(long, 4, 40); len(out) > 43 {
+		t.Fatalf("summary %d bytes exceeded the textual bound: %q", len(out), out)
+	}
+}
+
+// TestPXEReplyTimeoutErrorDistinguishesSilenceFromReplies keeps the operator
+// facing message honest about what was actually observed.
+func TestPXEReplyTimeoutErrorDistinguishesSilenceFromReplies(t *testing.T) {
+	silent := pxeReplyTimeoutError(0, "", nil).Error()
+	if !strings.Contains(silent, "no UDP or ICMP response") {
+		t.Fatalf("silent timeout message is not explicit: %q", silent)
+	}
+	replied := pxeReplyTimeoutError(3, "PXE reply ports do not match", []string{"icmp type 3 code 3 for the PXE request (udp 172.20.133.162:68 -> 10.128.116.90:4011)"}).Error()
+	if !strings.Contains(replied, "icmp type 3 code 3") || !strings.Contains(replied, "last rejection") {
+		t.Fatalf("observed timeout message is not explicit: %q", replied)
 	}
 }
